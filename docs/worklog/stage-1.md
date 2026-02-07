@@ -87,3 +87,22 @@
 **Open questions:**
 
 - None — ready for Task 5 (write real Airline template adapters).
+
+## 2026-02-07 — Airline Template Adapters (Task 5)
+
+**What:** Created 7 YAML template adapter files in `adapter/testdata/templates/airline/` mapping each Airline booking graph node to its real API endpoint. Added `template_airline_test.go` with 21 tests covering loading, request building, and output extraction. All 65 adapter tests pass.
+
+**Decisions:**
+
+- **One template per graph node:** 7 files matching the 7 nodes in `airline_booking.yaml`. Each template maps graph inputs to API request structure and extracts graph outputs from response JSON using GJSON paths.
+- **Real Airline API structures:** Request bodies use actual `@type` discriminators and schema structures from the Airline JSON API spec: `FlightOffersQueryRequest`, `OfferQueryFromFlightOffers`, `ReservationID`, `Traveler` with `PersonName`, `ReservationQueryConfirmItinerary`. Extract paths follow the real response envelope structure (`FlightOffersResponse`, `OfferListResponse`, `ReservationResponse`, `TravelerResponse`).
+- **Path parameters via placeholder substitution:** Templates like `addOffer`, `addTraveler`, `commitBooking`, and `ignoreItinerary` embed `{{itineraryId}}` in the URL path. The existing `substitutePlaceholders` function handles this naturally — no code changes needed.
+- **Content-Type only on templates with bodies:** The DELETE template (`ignoreItinerary`) omits the `Content-Type` header since it has no request body. Other common headers (Authorization, X_ACCESS_GROUP, TraceId, etc.) come from `EnvironmentConfig.Headers` at runtime.
+- **One-way search only:** The search template omits optional inputs (`returnDate`, `cabinPreference`). Tier 1 templates don't support conditional body sections, so round-trip and cabin filtering are deferred to Tier 2/3.
+- **Ordering inputs not in body:** `commitBooking` accepts `offerStatus` and `travelerId` as graph inputs for ordering but doesn't use them in the request body — the itinerary already holds that state.
+- **Known Tier 1 gap documented:** `ignoreItinerary` (DELETE) has no response body to extract `acknowledged: boolean` from. Documented in the template file as a gap for the engine (Task 6) to handle by inferring success from HTTP status.
+- **Separate test directory:** Templates live in `adapter/testdata/templates/airline/` alongside the existing `valid/` and `invalid/` fixture dirs. The existing 3 parser test fixtures are untouched.
+
+**Open questions:**
+
+- None — ready for Task 6 (sequential plan runner with dependency-aware scheduler).

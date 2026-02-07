@@ -1,0 +1,41 @@
+adapter: airline.addOffer
+protocol: http
+
+request:
+  method: POST
+  path: /v1/air/book/airoffer/reservationitinerary/{{itineraryId}}/offers/fromflightoffers
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "@type": "OfferQueryFromFlightOffers",
+      "FromFlightOffersRequest": {
+        "@type": "FromFlightOffersRequest",
+        "FlightOffersIdentifier": {
+          "Identifier": {
+            "value": "{{catalogOfferingsId}}"
+          }
+        },
+        "FlightOfferSelection": [
+          {
+            "FlightOfferIdentifier": {
+              "Identifier": {
+                "value": "{{offeringId}}"
+              }
+            },
+            "ProductIdentifier": [
+              {
+                "Identifier": {
+                  "value": "{{offeringId}}"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+response:
+  extract:
+    offerStatus: "$.OfferListResponse.reservationStatus"
+    totalPrice: "$.OfferListResponse.OfferID.0.Price.TotalPrice"

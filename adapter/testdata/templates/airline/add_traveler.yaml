@@ -1,0 +1,24 @@
+adapter: airline.addTraveler
+protocol: http
+
+request:
+  method: POST
+  path: /v1/air/book/traveler/reservationitinerary/{{itineraryId}}/travelers
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "@type": "Traveler",
+      "PersonName": {
+        "@type": "PersonName",
+        "Surname": "{{surname}}",
+        "Given": "{{givenName}}"
+      },
+      "birthDate": "{{birthDate}}",
+      "gender": "{{gender}}",
+      "passengerTypeCode": "{{passengerTypeCode}}"
+    }
+
+response:
+  extract:
+    travelerId: "$.TravelerResponse.Identifier.value"

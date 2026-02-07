@@ -1,0 +1,16 @@
+adapter: airline.createItinerary
+protocol: http
+
+request:
+  method: POST
+  path: /v1/air/book/session/reservationitinerary
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "@type": "ReservationID"
+    }
+
+response:
+  extract:
+    itineraryId: "$.ReservationResponse.Identifier.value"

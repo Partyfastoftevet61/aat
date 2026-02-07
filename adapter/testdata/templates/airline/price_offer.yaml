@@ -1,0 +1,42 @@
+adapter: airline.priceOffer
+protocol: http
+
+request:
+  method: POST
+  path: /v1/air/price/offers/fromflightoffers
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "@type": "OfferQueryFromFlightOffers",
+      "FromFlightOffersRequest": {
+        "@type": "FromFlightOffersRequest",
+        "FlightOffersIdentifier": {
+          "Identifier": {
+            "value": "{{catalogOfferingsId}}"
+          }
+        },
+        "FlightOfferSelection": [
+          {
+            "FlightOfferIdentifier": {
+              "Identifier": {
+                "value": "{{offeringId}}"
+              }
+            },
+            "ProductIdentifier": [
+              {
+                "Identifier": {
+                  "value": "{{offeringId}}"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+response:
+  extract:
+    totalPrice: "$.OfferListResponse.OfferID.0.Price.TotalPrice"
+    currencyCode: "$.OfferListResponse.OfferID.0.Price.CurrencyCode.value"
+    confirmedOfferingId: "$.OfferListResponse.OfferID.0.Identifier.value"

@@ -1,0 +1,39 @@
+adapter: airline.searchFlights
+protocol: http
+
+request:
+  method: POST
+  path: /v1/air/catalog/search/flightoffers
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "@type": "FlightOffersQueryRequest",
+      "FlightOffersRequest": {
+        "@type": "FlightOffersRequest",
+        "offersPerPage": 10,
+        "PassengerCriteria": [
+          {
+            "@type": "PassengerCriteria",
+            "number": {{passengers}},
+            "passengerTypeCode": "ADT"
+          }
+        ],
+        "SearchCriteriaFlight": [
+          {
+            "departureDate": "{{departureDate}}",
+            "From": {
+              "value": "{{origin}}"
+            },
+            "To": {
+              "value": "{{destination}}"
+            }
+          }
+        ]
+      }
+    }
+
+response:
+  extract:
+    catalogOfferings: "$.FlightOffersResponse.FlightOffers.FlightOffer"
+    catalogOfferingsId: "$.FlightOffersResponse.FlightOffers.Identifier.value"

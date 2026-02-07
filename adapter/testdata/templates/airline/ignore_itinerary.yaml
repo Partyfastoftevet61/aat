@@ -1,0 +1,14 @@
+adapter: airline.ignoreItinerary
+protocol: http
+
+# Cleanup adapter: discard the reservation itinerary.
+# Known Tier 1 gap: the graph declares an "acknowledged: boolean" output,
+# but the DELETE endpoint returns no response body. The engine (Task 6)
+# will need to infer success from the HTTP 200 status code and synthesize
+# the acknowledged output.
+
+request:
+  method: DELETE
+  path: /v1/air/book/session/reservationitinerary/{{itineraryId}}
+
+response: {}
