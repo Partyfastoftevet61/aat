@@ -54,7 +54,7 @@ execution:
     - node: createItinerary
 
     - node: addOffer
-      dependsOn: [priceOffer, createItinerary]
+      dependsOn: [searchFlights, createItinerary]
 
     - node: addTraveler
       dependsOn: [createItinerary]

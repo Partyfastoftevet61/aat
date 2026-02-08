@@ -1,6 +1,9 @@
 adapter: airline.addOffer
 protocol: http
 
+# Uses FromFlightOffers on the itinerary to add an offer
+# by referencing the catalog offering identifiers from the Search response.
+
 request:
   method: POST
   path: /v1/air/book/airoffer/reservationitinerary/{{itineraryId}}/offers/fromflightoffers
@@ -26,7 +29,7 @@ request:
             "ProductIdentifier": [
               {
                 "Identifier": {
-                  "value": "{{offeringId}}"
+                  "value": "{{productRef}}"
                 }
               }
             ]
@@ -37,5 +40,4 @@ request:
 
 response:
   extract:
-    offerStatus: "$.OfferListResponse.reservationStatus"
-    totalPrice: "$.OfferListResponse.OfferID.0.Price.TotalPrice"
+    offerStatus: "$.OfferListResponse.OfferID.0.Identifier.value"

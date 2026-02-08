@@ -13,4 +13,4 @@ request:
 
 response:
   extract:
-    itineraryId: "$.ReservationResponse.Identifier.value"
+    itineraryId: "$.ReservationResponse.Reservation.Identifier.value"
