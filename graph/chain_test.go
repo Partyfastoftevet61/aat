@@ -699,3 +699,493 @@ func TestBackwardChain_WithConditionContextValues(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, result.Nodes, "addPassportInfo")
 }
+
+// --- Requires/Satisfies Tests ---
+
+// buildRequiresGraph creates the Airline-like graph from the plan design.
+// confirmItinerary requires [offerAdded, travelerAdded, paymentApplied]
+// addOffer satisfies [offerAdded], requires [offerPriced, itineraryCreated]
+// addTraveler satisfies [travelerAdded], requires [itineraryCreated]
+// addPayment satisfies [paymentApplied], requires [paymentMethodAdded, offerAdded]
+// addPaymentMethod satisfies [paymentMethodAdded], requires [itineraryCreated]
+// createItinerary satisfies [itineraryCreated]
+// priceOffer satisfies [offerPriced], requires [flightsSearched]
+// searchFlights satisfies [flightsSearched]
+func buildRequiresGraph() *Graph {
+	g := &Graph{
+		Version: "1.0.0",
+		Nodes: map[string]*Node{
+			"searchFlights": {
+				Name: "searchFlights", Adapter: "search",
+				Satisfies: []string{"flightsSearched"},
+				Inputs:    []Input{{Name: "origin", Type: "string"}},
+				Outputs:   []Output{{Name: "offerings", Type: "offering[]"}},
+			},
+			"priceOffer": {
+				Name: "priceOffer", Adapter: "price",
+				Requires:  []string{"flightsSearched"},
+				Satisfies: []string{"offerPriced"},
+				Preferred: true,
+				Inputs:    []Input{{Name: "offeringId", Type: "string"}},
+				Outputs:   []Output{{Name: "pricedOffer", Type: "string"}},
+			},
+			"createItinerary": {
+				Name: "createItinerary", Adapter: "createWB",
+				Satisfies: []string{"itineraryCreated"},
+				Preferred: true,
+				Outputs:   []Output{{Name: "itineraryId", Type: "string"}},
+			},
+			"addOffer": {
+				Name: "addOffer", Adapter: "addOffer",
+				Requires:  []string{"offerPriced", "itineraryCreated"},
+				Satisfies: []string{"offerAdded"},
+				Inputs:    []Input{{Name: "itineraryId", Type: "string"}},
+				Outputs:   []Output{{Name: "offerStatus", Type: "string"}},
+			},
+			"addTraveler": {
+				Name: "addTraveler", Adapter: "addTraveler",
+				Requires:  []string{"itineraryCreated"},
+				Satisfies: []string{"travelerAdded"},
+				Inputs:    []Input{{Name: "itineraryId", Type: "string"}},
+				Outputs:   []Output{{Name: "travelerId", Type: "string"}},
+			},
+			"addPaymentMethod": {
+				Name: "addPaymentMethod", Adapter: "addFOP",
+				Requires:  []string{"itineraryCreated"},
+				Satisfies: []string{"paymentMethodAdded"},
+				Preferred: true,
+				Inputs:    []Input{{Name: "itineraryId", Type: "string"}},
+				Outputs:   []Output{{Name: "fopId", Type: "string"}},
+			},
+			"addPayment": {
+				Name: "addPayment", Adapter: "addPayment",
+				Requires:  []string{"paymentMethodAdded", "offerAdded"},
+				Satisfies: []string{"paymentApplied"},
+				Inputs:    []Input{{Name: "itineraryId", Type: "string"}},
+				Outputs:   []Output{{Name: "paymentId", Type: "string"}},
+			},
+			"confirmItinerary": {
+				Name: "confirmItinerary", Adapter: "commit",
+				Requires: []string{"offerAdded", "travelerAdded", "paymentApplied"},
+				Inputs:   []Input{{Name: "itineraryId", Type: "string"}},
+				Outputs:  []Output{{Name: "locator", Type: "string"}},
+			},
+		},
+		// Data-flow: itineraryId flows from createItinerary to all consumers.
+		Edges: []Edge{
+			{From: "createItinerary.itineraryId", To: "addOffer.itineraryId"},
+			{From: "createItinerary.itineraryId", To: "addTraveler.itineraryId"},
+			{From: "createItinerary.itineraryId", To: "addPaymentMethod.itineraryId"},
+			{From: "createItinerary.itineraryId", To: "addPayment.itineraryId"},
+			{From: "createItinerary.itineraryId", To: "confirmItinerary.itineraryId"},
+		},
+	}
+	g.BuildEdgeIndex()
+	return g
+}
+
+func TestBackwardChain_RequiresSatisfies_BasicChain(t *testing.T) {
+	g := buildRequiresGraph()
+
+	result, err := BackwardChain(g, ChainOptions{Goals: []string{"confirmItinerary"}})
+	require.NoError(t, err)
+
+	// All state-mutation nodes should be included.
+	assert.Contains(t, result.Nodes, "searchFlights")
+	assert.Contains(t, result.Nodes, "priceOffer")
+	assert.Contains(t, result.Nodes, "createItinerary")
+	assert.Contains(t, result.Nodes, "addOffer")
+	assert.Contains(t, result.Nodes, "addTraveler")
+	assert.Contains(t, result.Nodes, "addPaymentMethod")
+	assert.Contains(t, result.Nodes, "addPayment")
+	assert.Contains(t, result.Nodes, "confirmItinerary")
+
+	// confirmItinerary should be last.
+	assert.Equal(t, "confirmItinerary", result.Nodes[len(result.Nodes)-1])
+
+	// RequiresEdges should be populated.
+	assert.NotEmpty(t, result.RequiresEdges)
+
+	// Verify ordering via indexOf.
+	indexOf := map[string]int{}
+	for i, n := range result.Nodes {
+		indexOf[n] = i
+	}
+	// searchFlights before priceOffer (flightsSearched)
+	assert.Less(t, indexOf["searchFlights"], indexOf["priceOffer"])
+	// priceOffer before addOffer (offerPriced)
+	assert.Less(t, indexOf["priceOffer"], indexOf["addOffer"])
+	// createItinerary before addOffer, addTraveler, addPaymentMethod
+	assert.Less(t, indexOf["createItinerary"], indexOf["addOffer"])
+	assert.Less(t, indexOf["createItinerary"], indexOf["addTraveler"])
+	assert.Less(t, indexOf["createItinerary"], indexOf["addPaymentMethod"])
+	// addOffer before addPayment (offerAdded)
+	assert.Less(t, indexOf["addOffer"], indexOf["addPayment"])
+	// addPaymentMethod before addPayment (paymentMethodAdded)
+	assert.Less(t, indexOf["addPaymentMethod"], indexOf["addPayment"])
+	// addOffer, addTraveler, addPayment before confirmItinerary
+	assert.Less(t, indexOf["addOffer"], indexOf["confirmItinerary"])
+	assert.Less(t, indexOf["addTraveler"], indexOf["confirmItinerary"])
+	assert.Less(t, indexOf["addPayment"], indexOf["confirmItinerary"])
+}
+
+func TestBackwardChain_RequiresSatisfies_SingleSatisfier(t *testing.T) {
+	// Simple case: A requires [tokenX], B satisfies [tokenX].
+	g := &Graph{
+		Version: "1.0.0",
+		Nodes: map[string]*Node{
+			"producer": {Name: "producer", Adapter: "p", Satisfies: []string{"dataReady"},
+				Outputs: []Output{{Name: "data", Type: "string"}}},
+			"consumer": {Name: "consumer", Adapter: "c", Requires: []string{"dataReady"},
+				Inputs: []Input{{Name: "x", Type: "string"}}},
+		},
+	}
+	g.BuildEdgeIndex()
+
+	result, err := BackwardChain(g, ChainOptions{Goals: []string{"consumer"}})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"producer", "consumer"}, result.Nodes)
+	require.Len(t, result.RequiresEdges, 1)
+	assert.Equal(t, "producer", result.RequiresEdges[0].From)
+	assert.Equal(t, "consumer", result.RequiresEdges[0].To)
+	assert.Equal(t, "dataReady", result.RequiresEdges[0].Token)
+}
+
+func TestBackwardChain_RequiresSatisfies_PreferredWins(t *testing.T) {
+	// Two nodes satisfy the same token; preferred one should be chosen.
+	g := &Graph{
+		Version: "1.0.0",
+		Nodes: map[string]*Node{
+			"fastPath": {Name: "fastPath", Adapter: "fast", Satisfies: []string{"processed"},
+				Preferred: true, Outputs: []Output{{Name: "out", Type: "string"}}},
+			"slowPath": {Name: "slowPath", Adapter: "slow", Satisfies: []string{"processed"},
+				Outputs: []Output{{Name: "out", Type: "string"}}},
+			"consumer": {Name: "consumer", Adapter: "c", Requires: []string{"processed"},
+				Inputs: []Input{{Name: "x", Type: "string"}}},
+		},
+	}
+	g.BuildEdgeIndex()
+
+	result, err := BackwardChain(g, ChainOptions{Goals: []string{"consumer"}})
+	require.NoError(t, err)
+
+	assert.Contains(t, result.Nodes, "fastPath")
+	assert.Contains(t, result.Nodes, "consumer")
+	assert.NotContains(t, result.Nodes, "slowPath")
+
+	// Should have a satisfier decision.
+	var hasSatisfierDecision bool
+	for _, d := range result.Decisions {
+		if d.Type == DecisionSatisfier {
+			hasSatisfierDecision = true
+			assert.Equal(t, "fastPath", d.Node)
+			assert.Contains(t, d.Alternatives, "slowPath")
+		}
+	}
+	assert.True(t, hasSatisfierDecision)
+}
+
+func TestBackwardChain_RequiresSatisfies_NoPreferredPicksAlphabetical(t *testing.T) {
+	// Two satisfiers, neither preferred. Should pick alphabetically.
+	g := &Graph{
+		Version: "1.0.0",
+		Nodes: map[string]*Node{
+			"beta":     {Name: "beta", Adapter: "b", Satisfies: []string{"processed"}, Outputs: []Output{{Name: "out", Type: "string"}}},
+			"alpha":    {Name: "alpha", Adapter: "a", Satisfies: []string{"processed"}, Outputs: []Output{{Name: "out", Type: "string"}}},
+			"consumer": {Name: "consumer", Adapter: "c", Requires: []string{"processed"}, Inputs: []Input{{Name: "x", Type: "string"}}},
+		},
+	}
+	g.BuildEdgeIndex()
+
+	result, err := BackwardChain(g, ChainOptions{Goals: []string{"consumer"}})
+	require.NoError(t, err)
+
+	assert.Contains(t, result.Nodes, "alpha")
+	assert.Contains(t, result.Nodes, "consumer")
+	assert.NotContains(t, result.Nodes, "beta")
+}
+
+func TestBackwardChain_RequiresSatisfies_RecursiveRequires(t *testing.T) {
+	// A requires B requires C (transitive chain via tokens).
+	g := &Graph{
+		Version: "1.0.0",
+		Nodes: map[string]*Node{
+			"step1":  {Name: "step1", Adapter: "s1", Satisfies: []string{"phase1Done"}, Outputs: []Output{{Name: "out", Type: "string"}}},
+			"step2":  {Name: "step2", Adapter: "s2", Requires: []string{"phase1Done"}, Satisfies: []string{"phase2Done"}, Outputs: []Output{{Name: "out", Type: "string"}}},
+			"step3":  {Name: "step3", Adapter: "s3", Requires: []string{"phase2Done"}, Satisfies: []string{"phase3Done"}, Outputs: []Output{{Name: "out", Type: "string"}}},
+			"finish": {Name: "finish", Adapter: "f", Requires: []string{"phase3Done"}, Inputs: []Input{{Name: "x", Type: "string"}}},
+		},
+	}
+	g.BuildEdgeIndex()
+
+	result, err := BackwardChain(g, ChainOptions{Goals: []string{"finish"}})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"step1", "step2", "step3", "finish"}, result.Nodes)
+}
+
+func TestBackwardChain_RequiresSatisfies_MixedWithDataFlow(t *testing.T) {
+	// Some dependencies via data-flow edges, some via requires/satisfies.
+	g := &Graph{
+		Version: "1.0.0",
+		Nodes: map[string]*Node{
+			"search": {Name: "search", Adapter: "s", Satisfies: []string{"searched"},
+				Outputs: []Output{{Name: "results", Type: "string"}}},
+			"prepare": {Name: "prepare", Adapter: "p", Requires: []string{"searched"},
+				Satisfies: []string{"prepared"},
+				Inputs:    []Input{{Name: "data", Type: "string"}},
+				Outputs:   []Output{{Name: "out", Type: "string"}}},
+			"commit": {Name: "commit", Adapter: "c", Requires: []string{"prepared"},
+				Inputs:  []Input{{Name: "out", Type: "string"}},
+				Outputs: []Output{{Name: "result", Type: "string"}}},
+		},
+		Edges: []Edge{
+			// Data-flow: search.results → prepare.data
+			{From: "search.results", To: "prepare.data"},
+			// Data-flow: prepare.out → commit.out
+			{From: "prepare.out", To: "commit.out"},
+		},
+	}
+	g.BuildEdgeIndex()
+
+	result, err := BackwardChain(g, ChainOptions{Goals: []string{"commit"}})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"search", "prepare", "commit"}, result.Nodes)
+	// Should have both data-flow edges and requires edges.
+	assert.NotEmpty(t, result.Edges)
+	assert.NotEmpty(t, result.RequiresEdges)
+}
+
+func TestBackwardChain_RequiresSatisfies_CycleBreakerStopsRequires(t *testing.T) {
+	// CycleBreaker should stop requires traversal.
+	g := &Graph{
+		Version: "1.0.0",
+		Nodes: map[string]*Node{
+			"root":   {Name: "root", Adapter: "r", Satisfies: []string{"rootReady"}, Outputs: []Output{{Name: "out", Type: "string"}}},
+			"middle": {Name: "middle", Adapter: "m", CycleBreaker: true, Requires: []string{"rootReady"}, Satisfies: []string{"middleDone"}, Outputs: []Output{{Name: "out", Type: "string"}}},
+			"end":    {Name: "end", Adapter: "e", Requires: []string{"middleDone"}, Inputs: []Input{{Name: "x", Type: "string"}}},
+		},
+	}
+	g.BuildEdgeIndex()
+
+	result, err := BackwardChain(g, ChainOptions{Goals: []string{"end"}})
+	require.NoError(t, err)
+
+	// middle is a cycle-breaker, so root should NOT be included.
+	assert.Contains(t, result.Nodes, "middle")
+	assert.Contains(t, result.Nodes, "end")
+	assert.NotContains(t, result.Nodes, "root")
+}
+
+func TestBackwardChain_RequiresSatisfies_NodeAlsoViaDataFlow(t *testing.T) {
+	// Node included via both data-flow and requires — should appear once.
+	g := &Graph{
+		Version: "1.0.0",
+		Nodes: map[string]*Node{
+			"source": {Name: "source", Adapter: "s", Satisfies: []string{"sourceReady"},
+				Outputs: []Output{{Name: "data", Type: "string"}}},
+			"target": {Name: "target", Adapter: "t", Requires: []string{"sourceReady"},
+				Inputs:  []Input{{Name: "data", Type: "string"}},
+				Outputs: []Output{{Name: "out", Type: "string"}}},
+		},
+		Edges: []Edge{
+			{From: "source.data", To: "target.data"},
+		},
+	}
+	g.BuildEdgeIndex()
+
+	result, err := BackwardChain(g, ChainOptions{Goals: []string{"target"}})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"source", "target"}, result.Nodes)
+	// Should have both data-flow edge and requires edge.
+	assert.Len(t, result.Edges, 1)
+	assert.Len(t, result.RequiresEdges, 1)
+}
+
+func TestBackwardChain_RequiresSatisfies_EmptyRequiresSatisfies(t *testing.T) {
+	// Graph with no requires/satisfies — should work exactly as before.
+	g := buildLinearGraph("a", "b", "c")
+	g.BuildEdgeIndex()
+
+	result, err := BackwardChain(g, ChainOptions{Goals: []string{"c"}})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"a", "b", "c"}, result.Nodes)
+	assert.Empty(t, result.RequiresEdges)
+}
+
+// --- Full Airline Graph Tests ---
+
+func TestBackwardChain_AirlineFullGraph_ConfirmItinerary(t *testing.T) {
+	g, err := ParseFile("../airline/graph.yaml")
+	require.NoError(t, err)
+
+	result, err := BackwardChain(g, ChainOptions{Goals: []string{"confirmItinerary"}})
+	require.NoError(t, err)
+
+	// Expected 8-node booking chain:
+	// searchFlights → priceOfferByRef → createItinerary → addOfferByRef →
+	// addTraveler → addPaymentMethodCash → addPayment → confirmItinerary
+	expectedNodes := []string{
+		"searchFlights",
+		"priceOfferByRef",
+		"createItinerary",
+		"addOfferByRef",
+		"addTraveler",
+		"addPaymentMethodCash",
+		"addPayment",
+		"confirmItinerary",
+	}
+	assert.Len(t, result.Nodes, len(expectedNodes), "expected %d nodes, got %d: %v", len(expectedNodes), len(result.Nodes), result.Nodes)
+	for _, n := range expectedNodes {
+		assert.Contains(t, result.Nodes, n, "expected node %q in chain", n)
+	}
+
+	// confirmItinerary should be last.
+	assert.Equal(t, "confirmItinerary", result.Nodes[len(result.Nodes)-1])
+
+	// Verify ordering constraints.
+	indexOf := map[string]int{}
+	for i, n := range result.Nodes {
+		indexOf[n] = i
+	}
+	// searchFlights before priceOfferByRef (flightsSearched)
+	assert.Less(t, indexOf["searchFlights"], indexOf["priceOfferByRef"])
+	// priceOfferByRef before addOfferByRef (offerPriced)
+	assert.Less(t, indexOf["priceOfferByRef"], indexOf["addOfferByRef"])
+	// createItinerary before addOfferByRef (itineraryCreated)
+	assert.Less(t, indexOf["createItinerary"], indexOf["addOfferByRef"])
+	// createItinerary before addTraveler (itineraryCreated)
+	assert.Less(t, indexOf["createItinerary"], indexOf["addTraveler"])
+	// createItinerary before addPaymentMethodCash (itineraryCreated)
+	assert.Less(t, indexOf["createItinerary"], indexOf["addPaymentMethodCash"])
+	// addPaymentMethodCash before addPayment (paymentMethodAdded)
+	assert.Less(t, indexOf["addPaymentMethodCash"], indexOf["addPayment"])
+	// addOfferByRef before addPayment (data edge: offerRef)
+	assert.Less(t, indexOf["addOfferByRef"], indexOf["addPayment"])
+	// addPayment before confirmItinerary (paymentApplied)
+	assert.Less(t, indexOf["addPayment"], indexOf["confirmItinerary"])
+	// addOfferByRef before confirmItinerary (offerAdded)
+	assert.Less(t, indexOf["addOfferByRef"], indexOf["confirmItinerary"])
+	// addTraveler before confirmItinerary (travelerAdded)
+	assert.Less(t, indexOf["addTraveler"], indexOf["confirmItinerary"])
+
+	// Preferred nodes should have been chosen over alternatives.
+	assert.NotContains(t, result.Nodes, "priceOfferFull")
+	assert.NotContains(t, result.Nodes, "addOfferFull")
+	assert.NotContains(t, result.Nodes, "addPaymentMethodCard")
+	assert.NotContains(t, result.Nodes, "createItineraryFromLocator")
+	assert.NotContains(t, result.Nodes, "createItineraryFromIdentifier")
+
+	// RequiresEdges should be present.
+	assert.NotEmpty(t, result.RequiresEdges)
+
+	// searchFlights and createItinerary should be entry nodes.
+	assert.Contains(t, result.EntryNodes, "searchFlights")
+	assert.Contains(t, result.EntryNodes, "createItinerary")
+}
+
+func TestBackwardChain_AirlineFullGraph_CommitExchangeTicket(t *testing.T) {
+	g, err := ParseFile("../airline/graph.yaml")
+	require.NoError(t, err)
+
+	result, err := BackwardChain(g, ChainOptions{Goals: []string{"commitExchangeTicket"}})
+	require.NoError(t, err)
+
+	// Exchange chain must include exchange-specific nodes.
+	assert.Contains(t, result.Nodes, "commitExchangeTicket")
+	assert.Contains(t, result.Nodes, "addExchangeOffer")
+	assert.Contains(t, result.Nodes, "addPayment")
+	assert.Contains(t, result.Nodes, "searchExchange")
+
+	// Should include a itinerary creator (createItineraryFromLocator via data edges).
+	hasItineraryCreator := false
+	for _, n := range result.Nodes {
+		if n == "createItineraryFromLocator" || n == "createItineraryFromIdentifier" {
+			hasItineraryCreator = true
+			break
+		}
+	}
+	assert.True(t, hasItineraryCreator, "expected a itinerary creator node in exchange chain")
+
+	// Should include a payment-method node.
+	hasFOP := false
+	for _, n := range result.Nodes {
+		if n == "addPaymentMethodCash" || n == "addPaymentMethodForfeit" || n == "addPaymentMethodWaiver" || n == "addPaymentMethodInvoice" || n == "addPaymentMethodCard" {
+			hasFOP = true
+			break
+		}
+	}
+	assert.True(t, hasFOP, "expected a payment-method node in exchange chain")
+
+	// commitExchangeTicket should be last.
+	assert.Equal(t, "commitExchangeTicket", result.Nodes[len(result.Nodes)-1])
+
+	// Verify ordering: exchange-specific ordering constraints.
+	indexOf := map[string]int{}
+	for i, n := range result.Nodes {
+		indexOf[n] = i
+	}
+	// searchExchange before addExchangeOffer (data edge)
+	assert.Less(t, indexOf["searchExchange"], indexOf["addExchangeOffer"])
+	// addExchangeOffer before commitExchangeTicket (exchangeOfferAdded)
+	assert.Less(t, indexOf["addExchangeOffer"], indexOf["commitExchangeTicket"])
+	// addPayment before commitExchangeTicket (paymentApplied)
+	assert.Less(t, indexOf["addPayment"], indexOf["commitExchangeTicket"])
+
+	// Note: addPayment has shared data-flow dependencies that may pull in
+	// booking-chain nodes (addOfferByRef, etc.) because addPayment's
+	// inputs like offerId/amount have preferred edges to addOfferByRef.
+	// This is expected — backward chaining finds ALL dependencies.
+}
+
+func TestBackwardChain_AirlineFullGraph_CommitTicket(t *testing.T) {
+	g, err := ParseFile("../airline/graph.yaml")
+	require.NoError(t, err)
+
+	result, err := BackwardChain(g, ChainOptions{Goals: []string{"commitTicket"}})
+	require.NoError(t, err)
+
+	// Ticketing chain must include ticketing-specific nodes.
+	assert.Contains(t, result.Nodes, "commitTicket")
+	assert.Contains(t, result.Nodes, "addPayment")
+
+	// Should include a itinerary creator.
+	hasItineraryCreator := false
+	for _, n := range result.Nodes {
+		if n == "createItineraryFromLocator" || n == "createItineraryFromIdentifier" {
+			hasItineraryCreator = true
+			break
+		}
+	}
+	assert.True(t, hasItineraryCreator, "expected a itinerary creator node in ticketing chain")
+
+	// Should include a payment-method node.
+	hasFOP := false
+	for _, n := range result.Nodes {
+		if n == "addPaymentMethodCash" || n == "addPaymentMethodForfeit" || n == "addPaymentMethodWaiver" || n == "addPaymentMethodInvoice" || n == "addPaymentMethodCard" {
+			hasFOP = true
+			break
+		}
+	}
+	assert.True(t, hasFOP, "expected a payment-method node in ticketing chain")
+
+	// commitTicket should be last.
+	assert.Equal(t, "commitTicket", result.Nodes[len(result.Nodes)-1])
+
+	// Verify ordering: ticketing-specific ordering constraints.
+	indexOf := map[string]int{}
+	for i, n := range result.Nodes {
+		indexOf[n] = i
+	}
+	// addPayment before commitTicket (paymentApplied)
+	assert.Less(t, indexOf["addPayment"], indexOf["commitTicket"])
+
+	// Note: addPayment has shared data-flow dependencies that pull in
+	// booking-chain nodes via preferred edges. This is expected behavior —
+	// backward chaining finds ALL transitive dependencies. The intent
+	// package narrows the chain to context-specific nodes during plan generation.
+}
