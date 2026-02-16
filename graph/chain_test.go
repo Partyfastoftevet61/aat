@@ -363,7 +363,7 @@ func TestBackwardChain_ShortestPathChosen(t *testing.T) {
 	g := &Graph{
 		Version: "1.0.0",
 		Nodes: map[string]*Node{
-			"source":   {Name: "source", Adapter: "source", Inputs: nil, Outputs: []Output{{Name: "data", Type: "string"}}},
+			"source":    {Name: "source", Adapter: "source", Inputs: nil, Outputs: []Output{{Name: "data", Type: "string"}}},
 			"transform": {Name: "transform", Adapter: "transform", Inputs: []Input{{Name: "data", Type: "string"}}, Outputs: []Output{{Name: "result", Type: "string"}}},
 			"shortcut":  {Name: "shortcut", Adapter: "shortcut", Inputs: nil, Outputs: []Output{{Name: "result", Type: "string"}}},
 			"consumer":  {Name: "consumer", Adapter: "consumer", Inputs: []Input{{Name: "result", Type: "string"}}, Outputs: []Output{{Name: "output", Type: "string"}}},
@@ -1026,14 +1026,14 @@ func TestBackwardChain_AirlineFullGraph_ConfirmItinerary(t *testing.T) {
 	result, err := BackwardChain(g, ChainOptions{Goals: []string{"confirmItinerary"}})
 	require.NoError(t, err)
 
-	// Expected 8-node booking chain:
-	// searchFlights → priceOfferByRef → createItinerary → addOfferByRef →
+	// Expected 8-node booking chain (full is preferred):
+	// searchFlights → priceOfferFull → createItinerary → addOfferFull →
 	// addTraveler → addPaymentMethodCash → addPayment → confirmItinerary
 	expectedNodes := []string{
 		"searchFlights",
-		"priceOfferByRef",
+		"priceOfferFull",
 		"createItinerary",
-		"addOfferByRef",
+		"addOfferFull",
 		"addTraveler",
 		"addPaymentMethodCash",
 		"addPayment",
@@ -1052,30 +1052,30 @@ func TestBackwardChain_AirlineFullGraph_ConfirmItinerary(t *testing.T) {
 	for i, n := range result.Nodes {
 		indexOf[n] = i
 	}
-	// searchFlights before priceOfferByRef (flightsSearched)
-	assert.Less(t, indexOf["searchFlights"], indexOf["priceOfferByRef"])
-	// priceOfferByRef before addOfferByRef (offerPriced)
-	assert.Less(t, indexOf["priceOfferByRef"], indexOf["addOfferByRef"])
-	// createItinerary before addOfferByRef (itineraryCreated)
-	assert.Less(t, indexOf["createItinerary"], indexOf["addOfferByRef"])
+	// searchFlights before priceOfferFull (flightsSearched)
+	assert.Less(t, indexOf["searchFlights"], indexOf["priceOfferFull"])
+	// priceOfferFull before addOfferFull (offerPriced)
+	assert.Less(t, indexOf["priceOfferFull"], indexOf["addOfferFull"])
+	// createItinerary before addOfferFull (itineraryCreated)
+	assert.Less(t, indexOf["createItinerary"], indexOf["addOfferFull"])
 	// createItinerary before addTraveler (itineraryCreated)
 	assert.Less(t, indexOf["createItinerary"], indexOf["addTraveler"])
 	// createItinerary before addPaymentMethodCash (itineraryCreated)
 	assert.Less(t, indexOf["createItinerary"], indexOf["addPaymentMethodCash"])
 	// addPaymentMethodCash before addPayment (paymentMethodAdded)
 	assert.Less(t, indexOf["addPaymentMethodCash"], indexOf["addPayment"])
-	// addOfferByRef before addPayment (data edge: offerRef)
-	assert.Less(t, indexOf["addOfferByRef"], indexOf["addPayment"])
+	// addOfferFull before addPayment (data edge: offerRef)
+	assert.Less(t, indexOf["addOfferFull"], indexOf["addPayment"])
 	// addPayment before confirmItinerary (paymentApplied)
 	assert.Less(t, indexOf["addPayment"], indexOf["confirmItinerary"])
-	// addOfferByRef before confirmItinerary (offerAdded)
-	assert.Less(t, indexOf["addOfferByRef"], indexOf["confirmItinerary"])
+	// addOfferFull before confirmItinerary (offerAdded)
+	assert.Less(t, indexOf["addOfferFull"], indexOf["confirmItinerary"])
 	// addTraveler before confirmItinerary (travelerAdded)
 	assert.Less(t, indexOf["addTraveler"], indexOf["confirmItinerary"])
 
 	// Preferred nodes should have been chosen over alternatives.
-	assert.NotContains(t, result.Nodes, "priceOfferFull")
-	assert.NotContains(t, result.Nodes, "addOfferFull")
+	assert.NotContains(t, result.Nodes, "priceOfferByRef")
+	assert.NotContains(t, result.Nodes, "addOfferByRef")
 	assert.NotContains(t, result.Nodes, "addPaymentMethodCard")
 	assert.NotContains(t, result.Nodes, "createItineraryFromLocator")
 	assert.NotContains(t, result.Nodes, "createItineraryFromIdentifier")
