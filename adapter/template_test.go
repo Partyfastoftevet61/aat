@@ -447,7 +447,9 @@ func TestIterationIntegration_PriceOfferByRef(t *testing.T) {
   "FlightOfferSelection": [
     {
       "FlightOfferIdentifier": {
-        "id": "{{offeringId}}"
+        "Identifier": {
+          "value": "{{offeringId}}"
+        }
       },
       "ProductIdentifier": [
         {{#productIds}}
