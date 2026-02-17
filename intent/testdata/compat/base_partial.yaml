@@ -1,0 +1,9 @@
+metadata:
+  prompt: "base workflow - partial outputs (no itineraryId producer)"
+
+execution:
+  steps:
+    - node: search
+      description: Search only
+
+  cleanup: []

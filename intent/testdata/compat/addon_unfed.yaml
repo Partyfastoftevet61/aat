@@ -1,0 +1,10 @@
+metadata:
+  prompt: "addon with an unfed AUTOWIRE input"
+
+execution:
+  steps:
+    - node: addonNode
+      description: "Addon that needs itineraryId and specialInput"
+      values:
+        itineraryId: AUTOWIRE
+        specialInput: AUTOWIRE
