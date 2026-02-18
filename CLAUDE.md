@@ -102,6 +102,53 @@ When making design decisions or completing stage milestones, add entries to `doc
 **Open questions:** Anything deferred
 ```
 
+## Running AAT (Airline Example)
+
+Build the binary and use the airline config files in `airline/`:
+
+```bash
+# Build
+go build -o aat ./cmd/aat/
+
+# LLM-generated plan from natural language prompt
+./aat prompt \
+  --env airline/env.yaml \
+  --graph airline/graph.yaml \
+  --templates airline/templates/ \
+  --domain airline/domain.yaml \
+  "book a flight from rome to new york"
+
+# Optional prompt flags:
+#   --yes              skip interactive confirmation (auto-execute)
+#   --save FILE        save generated plan to a YAML file
+#   --trace            capture planning pipeline trace for debugging
+#   --trace-dir DIR    trace output directory (default: traces/)
+#   --output DIR       archive output directory (default: runs/)
+
+# Execute a pre-written plan
+./aat run \
+  --plan airline/plans/roundtrip-booking.yaml \
+  --env airline/env.yaml \
+  --graph airline/graph.yaml \
+  --templates airline/templates/ \
+  --domain airline/domain.yaml
+
+# Optional run flags:
+#   --mode MODE        strict (no LLM), lean (LLM fallback), adaptive (lean + relaxation)
+#   --output DIR       archive output directory (default: runs/)
+#   --json             machine-readable JSON summary to stdout
+#   --quiet            suppress progress, show final line only
+```
+
+**Airline config files:**
+- `airline/env.yaml` — environment config (auth, LLM endpoint)
+- `airline/graph.yaml` — API graph (59 nodes)
+- `airline/templates/` — 56 request templates
+- `airline/domain.yaml` — domain knowledge (concepts, types, value pools)
+- `airline/plans/` — 27 pre-written plan files for various scenarios
+
+LLM config (endpoint, API key, model) comes from the `llm:` section in the env YAML. The API key resolves from an OS environment variable via `SecretRef`.
+
 ## Observability & Debugging
 
 AAT has two layers of observability: **run archives** capture execution, **plan traces** capture planning.
