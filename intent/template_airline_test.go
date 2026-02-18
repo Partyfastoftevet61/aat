@@ -40,8 +40,8 @@ func TestAirlineTemplates_AllValidate(t *testing.T) {
 		})
 	}
 
-	// Ensure we found all 29 templated workflows (10 standalone + 6 post-commit + 6 pre-commit addons + 7 post-commit addons).
-	assert.Equal(t, 29, templatedWorkflows, "expected 29 workflows with templates")
+	// Ensure we found all 31 templated workflows (10 standalone + 2 multi-city + 6 post-commit + 6 pre-commit addons + 7 post-commit addons).
+	assert.Equal(t, 31, templatedWorkflows, "expected 31 workflows with templates")
 }
 
 // TestAirlineTemplates_UnfedInputs verifies the unfed inputs for each
@@ -94,6 +94,16 @@ func TestAirlineTemplates_UnfedInputs(t *testing.T) {
 			workflow:  "Traveler Modification",
 			contains:  []string{"updateTraveler.updateValue"},
 			exact:     -1,
+		},
+		{
+			workflow:  "3-City Multi-City Booking",
+			contains:  []string{"searchFlights2Leg.origin", "searchFlights2Leg.destination", "searchFlights2Leg.departureDate", "searchFlights2Leg.leg2Origin", "searchFlights2Leg.leg2Destination", "searchFlights2Leg.leg2DepartureDate", "addTraveler.givenName", "addTraveler.surname"},
+			exact:     8,
+		},
+		{
+			workflow:  "4-City Multi-City Booking",
+			contains:  []string{"searchFlights3Leg.origin", "searchFlights3Leg.destination", "searchFlights3Leg.departureDate", "searchFlights3Leg.leg2Origin", "searchFlights3Leg.leg2Destination", "searchFlights3Leg.leg2DepartureDate", "searchFlights3Leg.leg3Origin", "searchFlights3Leg.leg3Destination", "searchFlights3Leg.leg3DepartureDate", "addTraveler.givenName", "addTraveler.surname"},
+			exact:     11,
 		},
 		{
 			workflow:  "Round-Trip Full Booking",
@@ -206,6 +216,8 @@ func TestAirlineTemplates_GoalConsistency(t *testing.T) {
 		"Post-Commit Ticketing":          "commitTicket",
 		"Exchange":                        "commitExchangeTicket",
 		"Round-Trip Full Booking": "confirmItinerary",
+		"3-City Multi-City Booking":       "confirmItinerary",
+		"4-City Multi-City Booking":       "confirmItinerary",
 		"Round-Trip Leg-Based Booking":    "confirmItinerary",
 		"Post-Commit Seat Selection":      "confirmItinerary",
 		"Post-Commit Ancillary":           "confirmItinerary",
@@ -290,6 +302,8 @@ func TestAirlineTemplates_CleanupPresent(t *testing.T) {
 		"Post-Commit Ticketing",
 		"Exchange",
 		"Round-Trip Full Booking",
+		"3-City Multi-City Booking",
+		"4-City Multi-City Booking",
 		"Round-Trip Leg-Based Booking",
 		"Post-Commit Seat Selection",
 		"Post-Commit Ancillary",
