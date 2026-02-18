@@ -4,6 +4,7 @@ nodes:
   searchFlights:
     description: "Search for available flights via Airline catalog"
     adapter: airline.searchFlights
+    satisfies: [flightsSearched]
     inputs:
       - name: origin
         type: string
@@ -60,6 +61,7 @@ nodes:
   priceOffer:
     description: "Confirm pricing on a selected catalog offering"
     adapter: airline.priceOffer
+    requires: [flightsSearched]
     inputs:
       - name: catalogOfferingsId
         type: string
@@ -87,6 +89,7 @@ nodes:
   createItinerary:
     description: "Create a reservation itinerary (booking session)"
     adapter: airline.createItinerary
+    satisfies: [itineraryCreated]
     inputs: []
     outputs:
       - name: itineraryId
@@ -97,6 +100,8 @@ nodes:
   addOffer:
     description: "Add an offer to the reservation itinerary via FromFlightOffers"
     adapter: airline.addOffer
+    requires: [flightsSearched, itineraryCreated]
+    satisfies: [offerAdded]
     inputs:
       - name: itineraryId
         type: string
@@ -118,6 +123,8 @@ nodes:
   addTraveler:
     description: "Add passenger details to the reservation itinerary"
     adapter: airline.addTraveler
+    requires: [itineraryCreated]
+    satisfies: [travelerAdded]
     inputs:
       - name: itineraryId
         type: string
@@ -147,6 +154,7 @@ nodes:
   commitBooking:
     description: "Finalize the reservation to create a PNR"
     adapter: airline.commitBooking
+    requires: [offerAdded, travelerAdded]
     inputs:
       - name: itineraryId
         type: string
@@ -176,39 +184,3 @@ nodes:
       - name: acknowledged
         type: boolean
         description: "Whether the itinerary was successfully discarded"
-
-edges:
-  # searchFlights → priceOffer
-  - from: searchFlights.catalogOfferingsId
-    to: priceOffer.catalogOfferingsId
-  - from: searchFlights.catalogOfferings
-    to: priceOffer.offeringId
-    select: true
-
-  # searchFlights → addOffer (catalog offering references from search)
-  - from: searchFlights.catalogOfferingsId
-    to: addOffer.catalogOfferingsId
-  - from: searchFlights.catalogOfferings
-    to: addOffer.offeringId
-    select: true
-  - from: searchFlights.catalogOfferings
-    to: addOffer.productRef
-    select: true
-
-  # createItinerary → addOffer, addTraveler, commitBooking, ignoreItinerary
-  - from: createItinerary.itineraryId
-    to: addOffer.itineraryId
-  - from: createItinerary.itineraryId
-    to: addTraveler.itineraryId
-  - from: createItinerary.itineraryId
-    to: commitBooking.itineraryId
-
-  # addOffer, addTraveler → commitBooking (ordering via data edges)
-  - from: addOffer.offerStatus
-    to: commitBooking.offerStatus
-  - from: addTraveler.travelerId
-    to: commitBooking.travelerId
-
-  # createItinerary → ignoreItinerary (cleanup edge)
-  - from: createItinerary.itineraryId
-    to: ignoreItinerary.itineraryId

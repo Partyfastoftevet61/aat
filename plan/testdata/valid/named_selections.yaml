@@ -24,6 +24,8 @@ execution:
           from: searchFlights.catalogOfferings
           strategy: first
       values:
+        catalogOfferingsId:
+          from: searchFlights.catalogOfferingsId
         offeringId:
           fromSelection: offering.offeringId
         productRef:
@@ -38,6 +40,10 @@ execution:
           from: searchFlights.catalogOfferings
           strategy: first
       values:
+        itineraryId:
+          from: createItinerary.itineraryId
+        catalogOfferingsId:
+          from: searchFlights.catalogOfferingsId
         offeringId:
           fromSelection: offering.offeringId
         productRef:
@@ -46,11 +52,20 @@ execution:
     - node: addTraveler
       dependsOn: [createItinerary]
       values:
+        itineraryId:
+          from: createItinerary.itineraryId
         surname: "Smith"
         givenName: "Jane"
         birthDate: "1990-01-15"
         gender: "Male"
 
     - node: commitBooking
-      dependsOn: [addOffer, addTraveler]
+      dependsOn: [addOffer, addTraveler, createItinerary]
       isGoal: true
+      values:
+        itineraryId:
+          from: createItinerary.itineraryId
+        offerStatus:
+          from: addOffer.offerStatus
+        travelerId:
+          from: addTraveler.travelerId
