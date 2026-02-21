@@ -387,7 +387,7 @@ func TestPostProcess_FullPipeline(t *testing.T) {
 	g := loadAirlineGraph(t)
 
 	ws := &WorkflowSelection{
-		Workflow:    "Full Booking",
+		Workflow:    "Post-Commit Ticketing",
 		Description: "Book a flight",
 	}
 

@@ -68,11 +68,11 @@ func TestFindWorkflowTemplate_NoMatch(t *testing.T) {
 // --- LoadWorkflowTemplate ---
 
 func TestLoadWorkflowTemplate_Success(t *testing.T) {
-	// Use the existing airline roundtrip-journey.yaml as a real template.
+	// Use the existing airline exchange.yaml as a real template.
 	g, err := graph.ParseFile("../airline/graph.yaml")
 	require.NoError(t, err)
 
-	p, err := LoadWorkflowTemplate("workflows/roundtrip-journey.yaml", "../airline", g)
+	p, err := LoadWorkflowTemplate("workflows/exchange.yaml", "../airline", g)
 	require.NoError(t, err)
 	require.NotNil(t, p)
 
@@ -86,7 +86,7 @@ func TestLoadWorkflowTemplate_AbsolutePath(t *testing.T) {
 	g, err := graph.ParseFile("../airline/graph.yaml")
 	require.NoError(t, err)
 
-	absPath, err := filepath.Abs("../airline/workflows/roundtrip-journey.yaml")
+	absPath, err := filepath.Abs("../airline/workflows/exchange.yaml")
 	require.NoError(t, err)
 
 	p, err := LoadWorkflowTemplate(absPath, "/nonexistent", g)
