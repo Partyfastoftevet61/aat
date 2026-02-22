@@ -70,7 +70,7 @@ func TestAirlineTemplates_UnfedInputs(t *testing.T) {
 	}{
 		{
 			workflow:  "Post-Commit Ticketing",
-			contains:  []string{"addPayment.amount", "addPayment.currencyCode"},
+			contains:  []string{"addPayment.totalPrice", "addPayment.currencyCode"},
 			exact:     2, // locator now has graph default
 		},
 		{
