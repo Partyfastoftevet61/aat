@@ -25,9 +25,9 @@ func TestFixDependsOn_AddsMissingFromRefs(t *testing.T) {
 					"itineraryId": {From: "createItinerary.itineraryId"},
 				}},
 				{Node: "commitBooking", Values: map[string]plan.StepValue{
-					"itineraryId":  {From: "createItinerary.itineraryId"},
-					"offerStatus":  {From: "addOffer.offerStatus"},
-					"travelerId":   {From: "addTraveler.travelerId"},
+					"itineraryId": {From: "createItinerary.itineraryId"},
+					"offerStatus": {From: "addOffer.offerStatus"},
+					"travelerId":  {From: "addTraveler.travelerId"},
 				}},
 			},
 		},
@@ -534,7 +534,7 @@ func TestMergeLLMValues_IgnoresStructural(t *testing.T) {
 				{
 					Node:      "addOffer",
 					DependsOn: []string{"searchFlights"}, // tries to drop createItinerary
-					IsGoal:    true,                       // tries to set goal
+					IsGoal:    true,                      // tries to set goal
 					Values: map[string]plan.StepValue{
 						"itineraryId": {
 							From: "otherNode.output", // tries to change from ref

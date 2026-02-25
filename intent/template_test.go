@@ -300,7 +300,7 @@ func TestExpandMultiplicity_PreservesWiring(t *testing.T) {
 					Node: "addTraveler",
 					Values: map[string]plan.StepValue{
 						"itineraryId": {From: "wb.itineraryId"},
-						"id":         {FromSelection: "sel.id"},
+						"id":          {FromSelection: "sel.id"},
 					},
 					Selections: map[string]plan.StepSelection{
 						"sel": {From: "search.items", Strategy: "first"},

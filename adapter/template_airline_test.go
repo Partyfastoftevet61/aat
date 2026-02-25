@@ -129,10 +129,10 @@ func TestAirlineTemplates_BuildRequest(t *testing.T) {
 			adapterName: "airline.addTraveler",
 			inputs: map[string]any{
 				"itineraryId":       "wb-789",
-				"surname":          "Smith",
-				"givenName":        "John",
-				"birthDate":        "1990-01-15",
-				"gender":           "Male",
+				"surname":           "Smith",
+				"givenName":         "John",
+				"birthDate":         "1990-01-15",
+				"gender":            "Male",
 				"passengerTypeCode": "ADT",
 			},
 			wantMethod: "POST",
@@ -205,10 +205,10 @@ func TestAirlineTemplates_ExtractOutputs(t *testing.T) {
 	registry := loadAirlineRegistry(t)
 
 	tests := []struct {
-		name        string
-		adapterName string
+		name         string
+		adapterName  string
 		responseJSON string
-		wantOutputs map[string]any
+		wantOutputs  map[string]any
 	}{
 		{
 			name:        "searchFlights extracts offerings and ID",
@@ -325,10 +325,10 @@ func TestAirlineTemplates_ExtractOutputs(t *testing.T) {
 			},
 		},
 		{
-			name:        "ignoreItinerary extracts nothing",
-			adapterName: "airline.ignoreItinerary",
+			name:         "ignoreItinerary extracts nothing",
+			adapterName:  "airline.ignoreItinerary",
 			responseJSON: `{}`,
-			wantOutputs: map[string]any{},
+			wantOutputs:  map[string]any{},
 		},
 	}
 
