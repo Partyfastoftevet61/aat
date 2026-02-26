@@ -382,6 +382,69 @@ func TestValidateAdapterOutputs(t *testing.T) {
 			},
 		},
 		{
+			name: "optional output without extract rule passes",
+			graph: &graph.Graph{
+				Nodes: map[string]*graph.Node{
+					"itinerary": {
+						Name:    "itinerary",
+						Adapter: "itinerary",
+						Outputs: []graph.Output{
+							{Name: "id", Type: "string"},
+							{Name: "maybeFop", Type: "string", Optional: true},
+						},
+					},
+				},
+			},
+			setup: func(r *adapter.Registry) {
+				tmpl := adapter.Template{
+					Adapter:  "itinerary",
+					Protocol: "http",
+					Request:  adapter.TemplateRequest{Method: "POST", Path: "/itinerary"},
+					Response: adapter.TemplateResponse{
+						Extract: map[string]adapter.ExtractRule{
+							"id": {Path: "id"},
+							// No extract rule for maybeFop — optional, so OK
+						},
+					},
+				}
+				_ = r.Register("itinerary", adapter.NewTemplateAdapter(tmpl))
+			},
+			wantErr: false,
+		},
+		{
+			name: "non-optional output without extract rule still fails",
+			graph: &graph.Graph{
+				Nodes: map[string]*graph.Node{
+					"itinerary": {
+						Name:    "itinerary",
+						Adapter: "itinerary",
+						Outputs: []graph.Output{
+							{Name: "id", Type: "string"},
+							{Name: "requiredFop", Type: "string"},
+						},
+					},
+				},
+			},
+			setup: func(r *adapter.Registry) {
+				tmpl := adapter.Template{
+					Adapter:  "itinerary",
+					Protocol: "http",
+					Request:  adapter.TemplateRequest{Method: "POST", Path: "/itinerary"},
+					Response: adapter.TemplateResponse{
+						Extract: map[string]adapter.ExtractRule{
+							"id": {Path: "id"},
+						},
+					},
+				}
+				_ = r.Register("itinerary", adapter.NewTemplateAdapter(tmpl))
+			},
+			wantErr:     true,
+			wantErrType: true,
+			wantErrors: []string{
+				`node "itinerary": graph declares output "requiredFop" but template does not extract it`,
+			},
+		},
+		{
 			name: "adapter not in registry skipped",
 			graph: &graph.Graph{
 				Nodes: map[string]*graph.Node{
