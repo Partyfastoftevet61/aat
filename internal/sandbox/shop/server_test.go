@@ -455,6 +455,7 @@ func TestAddItem_ErrorOrdering(t *testing.T) {
 		{"checked-out cart", closed, map[string]any{"sku": "SKU-1001", "quantity": 1}, 409, CodeCartNotOpen},
 		{"unknown sku", open, map[string]any{"sku": "SKU-9999", "quantity": 1}, 404, CodeNotFound},
 		{"out of stock", open, map[string]any{"sku": "SKU-1005", "quantity": 1}, 409, CodeOutOfStock},
+		{"more than in stock", open, map[string]any{"sku": "SKU-1004", "quantity": 10}, 409, CodeOutOfStock},
 		{"happy path", open, map[string]any{"sku": "SKU-1001", "quantity": 2}, 201, ""},
 	}
 	for _, tc := range cases {
@@ -472,6 +473,12 @@ func TestAddItem_ErrorOrdering(t *testing.T) {
 	r := e.must(e.addItem("us", open, "SKU-1001", 1), 201)
 	assert.EqualValues(t, 1, r.num("lineCount"))
 	assert.EqualValues(t, 3*8999, r.num("subtotal"))
+
+	// The stock limit counts what the cart already holds (SKU-1001 has 42).
+	r = e.addItem("us", open, "SKU-1001", 40)
+	assert.Equal(t, 409, r.Status)
+	assert.Equal(t, CodeOutOfStock, r.errCode())
+	e.must(e.addItem("us", open, "SKU-1001", 39), 201)
 }
 
 func TestGetCart_LinesAndProducts(t *testing.T) {
@@ -793,9 +800,24 @@ func TestPayments(t *testing.T) {
 		assert.Equal(t, 422, r.Status)
 		assert.Equal(t, CodeAmountMismatch, r.errCode())
 
+		for _, bad := range []int64{0, -5} {
+			r = e.payments("POST", "/us/v1/payments/refunds", map[string]any{"orderId": id, "amount": bad})
+			assert.Equal(t, 400, r.Status, "amount %d", bad)
+			assert.Equal(t, CodeValidation, r.errCode())
+		}
+
 		rf := e.must(e.payments("POST", "/us/v1/payments/refunds", map[string]any{"orderId": id, "amount": 500}), 201)
 		assert.Equal(t, p.str("paymentId"), rf.str("paymentId"))
 		assert.EqualValues(t, 500, rf.num("amount"))
+		assert.Equal(t, "partially_refunded", e.getOrder("us", id).str("paymentStatus"))
+
+		r = e.payments("POST", "/us/v1/payments/refunds", map[string]any{"orderId": id, "amount": o.num("total")})
+		assert.Equal(t, 422, r.Status, "more than the remaining balance")
+		assert.Equal(t, CodeAmountMismatch, r.errCode())
+
+		// Omitting the amount refunds the remaining balance.
+		rf = e.must(e.payments("POST", "/us/v1/payments/refunds", map[string]any{"orderId": id}), 201)
+		assert.EqualValues(t, o.num("total")-500, rf.num("amount"))
 		assert.Equal(t, "refunded", e.getOrder("us", id).str("paymentStatus"))
 
 		r = e.payments("POST", "/us/v1/payments/refunds", map[string]any{"orderId": id})

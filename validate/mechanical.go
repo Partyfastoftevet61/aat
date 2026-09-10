@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/tidwall/gjson"
 )
@@ -93,13 +94,24 @@ func RunMechanical(statusCode int, body []byte, assertions []MechanicalAssertion
 	return result
 }
 
-// checkStatus compares the response status code against the expected value.
+// checkStatus compares the response status code against the expected value:
+// an exact code such as 201, or a class such as "2xx".
 func checkStatus(statusCode int, a MechanicalAssertion) AssertionResult {
 	ar := AssertionResult{Type: AssertStatus}
 
 	if a.Expect == nil {
 		ar.Passed = false
 		ar.Message = "status assertion missing 'expect' value"
+		return ar
+	}
+
+	if class, ok := StatusClass(a.Expect); ok {
+		ar.Passed = statusCode/100 == class
+		if ar.Passed {
+			ar.Message = fmt.Sprintf("status code %d is %dxx", statusCode, class)
+		} else {
+			ar.Message = fmt.Sprintf("expected status %dxx, got %d", class, statusCode)
+		}
 		return ar
 	}
 
@@ -225,6 +237,16 @@ func checkPredicate(body []byte, a MechanicalAssertion, predicateEval PredicateE
 		ar.Message = fmt.Sprintf("predicate %q is false", a.Expr)
 	}
 	return ar
+}
+
+// StatusClass reports whether v is a status class such as "2xx" (any case)
+// and returns its leading digit.
+func StatusClass(v any) (int, bool) {
+	s, ok := v.(string)
+	if !ok || len(s) != 3 || s[0] < '1' || s[0] > '5' || !strings.EqualFold(s[1:], "xx") {
+		return 0, false
+	}
+	return int(s[0] - '0'), true
 }
 
 // toInt converts numeric values to int. Handles int, float64, and json.Number.

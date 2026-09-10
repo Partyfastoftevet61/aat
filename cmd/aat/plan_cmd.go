@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 
 	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/plan"
@@ -62,17 +64,50 @@ func planListCommand(planDirs []string, out io.Writer) error {
 
 	_, _ = fmt.Fprintf(out, "Found %d plan(s):\n\n", len(entries))
 	for _, entry := range entries {
-		p, err := plan.ParseFile(entry.FullPath)
+		parsed, err := plan.ParseAnyFile(entry.FullPath)
 		if err != nil {
 			_, _ = fmt.Fprintf(out, "  %-40s (parse error)\n", entry.Name)
 			continue
 		}
-		goal := p.Intent.Goal
-		if len(goal) > 60 {
-			goal = goal[:57] + "..."
+		switch p := parsed.(type) {
+		case *plan.Recipe:
+			_, _ = fmt.Fprintf(out, "  %-40s recipe    %s\n", entry.Name, recipeSummary(p))
+		case *plan.Plan:
+			goal := p.Intent.Goal
+			if len(goal) > 60 {
+				goal = goal[:57] + "..."
+			}
+			_, _ = fmt.Fprintf(out, "  %-40s %d steps  %s\n", entry.Name, len(p.Execution.Steps), goal)
 		}
-		_, _ = fmt.Fprintf(out, "  %-40s %d steps  %s\n", entry.Name, len(p.Execution.Steps), goal)
 	}
 
 	return nil
+}
+
+// recipeSummary renders a recipe's selection on one line, for example
+// "Checkout (customer=Registered, payment=PayPal; +Apply Coupon; layers: shipping-express)".
+func recipeSummary(r *plan.Recipe) string {
+	var parts []string
+	if len(r.Selection.Choices) > 0 {
+		slots := make([]string, 0, len(r.Selection.Choices))
+		for slot := range r.Selection.Choices {
+			slots = append(slots, slot)
+		}
+		sort.Strings(slots)
+		choices := make([]string, 0, len(slots))
+		for _, slot := range slots {
+			choices = append(choices, slot+"="+r.Selection.Choices[slot])
+		}
+		parts = append(parts, strings.Join(choices, ", "))
+	}
+	if len(r.Selection.Addons) > 0 {
+		parts = append(parts, "+"+strings.Join(r.Selection.Addons, ", +"))
+	}
+	if len(r.Selection.Layers) > 0 {
+		parts = append(parts, "layers: "+strings.Join(r.Selection.Layers, ", "))
+	}
+	if len(parts) == 0 {
+		return r.Selection.Workflow
+	}
+	return r.Selection.Workflow + " (" + strings.Join(parts, "; ") + ")"
 }

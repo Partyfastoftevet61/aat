@@ -1968,6 +1968,34 @@ func TestValidate_ExpectFailure(t *testing.T) {
 		assert.Contains(t, err.Error(), "status 200 must be >= 400")
 	})
 
+	t.Run("contradicting status class assertion", func(t *testing.T) {
+		p := &Plan{
+			Execution: Execution{
+				Steps: []Step{
+					{
+						Node: "searchFlights",
+						Values: map[string]StepValue{
+							"origin":        {Default: "DEN"},
+							"destination":   {Default: "SFO"},
+							"departureDate": {Default: "2026-03-15"},
+						},
+						ExpectFailure: &ExpectFailure{
+							Status: []int{402},
+						},
+						Assertions: &Assertions{
+							Mechanical: []MechanicalAssertion{
+								{Type: "status", Expect: "2xx"},
+							},
+						},
+					},
+				},
+			},
+		}
+		err := Validate(p, g)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "expecting 2xx contradicts expectFailure")
+	})
+
 	t.Run("contradicting status assertion", func(t *testing.T) {
 		p := &Plan{
 			Execution: Execution{

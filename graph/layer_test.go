@@ -9,6 +9,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestLayer_UnknownInputs(t *testing.T) {
+	g := &Graph{Nodes: map[string]*Node{
+		"checkoutCart": {Name: "checkoutCart", Inputs: []Input{{Name: "shippingTier"}, {Name: "deliveryDate"}}},
+		"listProducts": {Name: "listProducts", Inputs: []Input{{Name: "category"}}},
+	}}
+	layer := &Layer{Name: "mixed", Inputs: map[string]*InputDefault{
+		"shippingTier":              {Value: "express"},
+		"listProducts.category":     {Value: "gear"},
+		"shippingTeir":              {Value: "express"},
+		"checkoutCart.deliverydate": {Value: "2026-01-01"},
+		"missingNode.category":      {Value: "gear"},
+	}}
+
+	assert.Equal(t, []string{"checkoutCart.deliverydate", "missingNode.category", "shippingTeir"}, layer.UnknownInputs(g))
+}
+
 func TestParseLayer_ScalarValue(t *testing.T) {
 	yaml := `
 name: amex

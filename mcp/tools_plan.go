@@ -176,17 +176,17 @@ func (s *Server) handleValidatePlan(_ context.Context, req mcp.CallToolRequest) 
 	var p *plan.Plan
 	switch v := parsed.(type) {
 	case *plan.Plan:
+		if _, err := plan.InstantiateAndValidate(v, s.ctx.Graph); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Validation failed:\n%v", err)), nil
+		}
 		p = v
 	case *plan.Recipe:
-		reconstituted, reconErr := intent.Reconstitute(v, s.ctx.Graph, s.ctx.GraphDir)
+		// Reconstitution validates the composed plan with the recipe's layers.
+		reconstituted, reconErr := s.ctx.reconstitute(v)
 		if reconErr != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("reconstituting recipe: %v", reconErr)), nil
 		}
 		p = reconstituted
-	}
-
-	if _, err := plan.InstantiateAndValidate(p, s.ctx.Graph); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Validation failed:\n%v", err)), nil
 	}
 
 	summary := fmt.Sprintf("Plan is valid: %d steps, goal: %s", len(p.Execution.Steps), p.Intent.Goal)
@@ -283,7 +283,7 @@ func (s *Server) handleLoadPlan(_ context.Context, req mcp.CallToolRequest) (*mc
 	case *plan.Plan:
 		p = v
 	case *plan.Recipe:
-		reconstituted, reconErr := intent.Reconstitute(v, s.ctx.Graph, s.ctx.GraphDir)
+		reconstituted, reconErr := s.ctx.reconstitute(v)
 		if reconErr != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("reconstituting recipe: %v", reconErr)), nil
 		}
@@ -343,7 +343,7 @@ func (s *Server) handleSavePlan(_ context.Context, req mcp.CallToolRequest) (*mc
 		summary = fmt.Sprintf("Plan saved to %s (%d steps, goal: %s)", filepath.Base(savePath), len(v.Execution.Steps), v.Intent.Goal)
 	case *plan.Recipe:
 		// Validate by reconstituting.
-		if _, reconErr := intent.Reconstitute(v, s.ctx.Graph, s.ctx.GraphDir); reconErr != nil {
+		if _, reconErr := s.ctx.reconstitute(v); reconErr != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Recipe validation failed:\n%v", reconErr)), nil
 		}
 		if err := plan.WriteRecipe(v, savePath); err != nil {

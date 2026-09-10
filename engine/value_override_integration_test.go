@@ -95,6 +95,61 @@ func TestOverlayValueOverride_InjectsMalformedValue(t *testing.T) {
 
 // TestOverlayValueOverride_StepExpectFailureWins verifies that a plan-declared
 // expectFailure is not overwritten by an overlay expectFailure.
+// TestOverlayExpectFailure_SkipsStatusAssertion verifies that a step whose
+// status assertion expects success (the recipe default "2xx") still passes when
+// an overlay turns it into a negative test: expectFailure owns the status check,
+// so the status assertion is reported as skipped while other assertions run.
+func TestOverlayExpectFailure_SkipsStatusAssertion(t *testing.T) {
+	g := &graph.Graph{
+		Version: "1.0.0",
+		Nodes: map[string]*graph.Node{
+			"charge": {
+				Name:    "charge",
+				Adapter: "test.charge",
+				Inputs:  []graph.Input{{Name: "card", Type: "string"}},
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusPaymentRequired)
+		_, _ = w.Write([]byte(`{"error":{"code":"CARD_DECLINED"}}`))
+	}))
+	defer server.Close()
+
+	registry := adapter.NewRegistry()
+	require.NoError(t, registry.Register("test.charge", &stubAdapter{method: "POST", path: "/charges"}))
+	router := NewExecutorRouter(adapter.NewHTTPExecutor(server.URL), &adapter.EnvironmentConfig{})
+	router.AddValueOverride("charge", map[string]any{"card": "4000000000000002"}, &plan.ExpectFailure{Status: []int{402}})
+
+	p := &plan.Plan{
+		Metadata: plan.Metadata{GraphVersion: "1.0.0"},
+		Execution: plan.Execution{
+			Steps: []plan.Step{{
+				Node:   "charge",
+				Values: map[string]plan.StepValue{"card": {Default: "4242424242424242"}},
+				Assertions: &plan.Assertions{Mechanical: []plan.MechanicalAssertion{
+					{Type: "status", Expect: "2xx"},
+					{Type: "fieldExists", Path: "error.code", Raw: true},
+				}},
+			}},
+		},
+	}
+
+	result := NewEngine(g, registry, router).Run(context.Background(), p)
+
+	assert.Equal(t, OutcomePassed, result.Outcome, "error: %v", result.Error)
+	require.Len(t, result.Steps, 1)
+	require.NotNil(t, result.Steps[0].Validation)
+	results := result.Steps[0].Validation.Results
+	require.Len(t, results, 2)
+	assert.True(t, results[0].Skipped, "the status assertion is skipped under expectFailure")
+	assert.Contains(t, results[0].Message, "expectFailure")
+	assert.True(t, results[1].Passed, "other assertions still run")
+	assert.False(t, results[1].Skipped)
+}
+
 func TestOverlayValueOverride_StepExpectFailureWins(t *testing.T) {
 	g := &graph.Graph{
 		Version: "1.0.0",

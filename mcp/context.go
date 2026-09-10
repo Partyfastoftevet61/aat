@@ -10,6 +10,8 @@ import (
 	"github.com/gburgyan/aat/domain"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/graph/oas"
+	"github.com/gburgyan/aat/intent"
+	"github.com/gburgyan/aat/plan"
 	v3high "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
@@ -28,6 +30,7 @@ type ServerContext struct {
 	// Testing lifecycle (60c, may be nil)
 	WorkflowsDir string
 	PlanDirs     []string
+	LayersDir    string // resolves recipe layers; empty when the manifest sets none
 	ArchiveDir   string
 	Environment  *config.Environment
 	AuthProvider *config.AuthProvider // cached default auth (nil if no environment)
@@ -98,6 +101,7 @@ func BuildServerContext(manifest *ProjectManifest) (*ServerContext, error) {
 	ctx.DocsDir = manifest.DocsDir
 	ctx.WorkflowsDir = manifest.WorkflowsDir
 	ctx.PlanDirs = []string(manifest.PlanDirs)
+	ctx.LayersDir = manifest.LayersDir
 	ctx.ArchiveDir = manifest.ArchiveDir
 
 	// Load node documentation (optional)
@@ -116,6 +120,35 @@ func BuildServerContext(manifest *ProjectManifest) (*ServerContext, error) {
 	}
 
 	return ctx, nil
+}
+
+// reconstitute rebuilds a recipe into a full plan, loading its layers from the
+// manifest's layers directory. A recipe that names layers when no directory is
+// configured is an error rather than a silently different plan.
+func (ctx *ServerContext) reconstitute(r *plan.Recipe) (*plan.Plan, error) {
+	if len(r.Selection.Layers) > 0 && ctx.LayersDir == "" {
+		return nil, fmt.Errorf("recipe uses layers %v but no layers directory is configured (set `layers:` in aat-project.yaml)", r.Selection.Layers)
+	}
+	var opts []intent.ReconstituteOption
+	if ctx.LayersDir != "" {
+		opts = append(opts, intent.WithLayersDir(ctx.LayersDir))
+	}
+	return intent.Reconstitute(r, ctx.Graph, ctx.GraphDir, opts...)
+}
+
+// layeredDefaults stacks the named layers on the graph defaults for execution.
+func (ctx *ServerContext) layeredDefaults(layers []string) (map[string]*graph.InputDefault, error) {
+	if len(layers) == 0 {
+		return nil, nil
+	}
+	if ctx.LayersDir == "" {
+		return nil, fmt.Errorf("layers %v requested but no layers directory is configured", layers)
+	}
+	available, err := graph.ResolveLayerNames(layers, ctx.LayersDir)
+	if err != nil {
+		return nil, fmt.Errorf("loading layers: %w", err)
+	}
+	return graph.ApplyLayers(ctx.Graph, layers, available)
 }
 
 // loadOASSpecs discovers and loads OAS spec files referenced in the manifest and graph.

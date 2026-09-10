@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 
 	"github.com/gburgyan/aat/adapter"
+	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/plan"
 )
 
@@ -79,6 +80,38 @@ func (r *ExecutorRouter) Resolve(nodeName string) (*adapter.HTTPExecutor, *adapt
 	}
 
 	return r.defaultExec, r.defaultConfig, nil
+}
+
+// AddResolvedOverride registers an environment or overlay override: a route
+// when the override sets baseUrl, auth, headers, or pathRewrite, and its
+// values and expectFailure in every case. A value-only override therefore
+// leaves the node on whatever route a broader match (or the default) gives it.
+func (r *ExecutorRouter) AddResolvedOverride(ov config.ResolvedOverride) {
+	if ov.Routes {
+		exec := adapter.NewHTTPExecutor(ov.APIConfig.BaseURL)
+		cfg := &adapter.EnvironmentConfig{
+			BaseURL: ov.APIConfig.BaseURL,
+			Headers: ov.APIConfig.Headers,
+			Values:  ov.APIConfig.Values,
+		}
+		var rewrite *adapter.PathRewrite
+		if ov.PathRewrite != nil {
+			rewrite = &adapter.PathRewrite{
+				Strip:  ov.PathRewrite.Strip,
+				Prefix: ov.PathRewrite.Prefix,
+			}
+		}
+		r.AddOverride(ov.Pattern, exec, cfg, rewrite)
+	}
+
+	var ef *plan.ExpectFailure
+	if ov.ExpectFailure != nil {
+		ef = &plan.ExpectFailure{
+			Status:      ov.ExpectFailure.Status,
+			Description: ov.ExpectFailure.Description,
+		}
+	}
+	r.AddValueOverride(ov.Pattern, ov.Values, ef)
 }
 
 // AddValueOverride registers per-node input-value and expected-failure

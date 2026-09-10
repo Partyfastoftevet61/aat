@@ -138,10 +138,12 @@ func (s *Server) handleCharge(w http.ResponseWriter, r *http.Request) {
 
 // handleRefund implements paymentRefund (POST /payments/refunds). Refunds are
 // keyed by order so callers need not track payment IDs across a slot boundary.
+// Omitting amount refunds the remaining balance; a partial refund leaves the
+// payment partially_refunded until the captured amount is used up.
 func (s *Server) handleRefund(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		OrderID string `json:"orderId"`
-		Amount  Money  `json:"amount"`
+		Amount  *Money `json:"amount"`
 	}
 	if e := decodeJSON(r, &req, false); e != nil {
 		writeError(w, e)
@@ -149,6 +151,10 @@ func (s *Server) handleRefund(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.OrderID == "" {
 		writeError(w, validation("orderId is required"))
+		return
+	}
+	if req.Amount != nil && *req.Amount <= 0 {
+		writeError(w, validation("amount must be a positive integer in minor units; omit it to refund the remaining balance"))
 		return
 	}
 	st := s.store(r)
@@ -164,17 +170,18 @@ func (s *Server) handleRefund(w http.ResponseWriter, r *http.Request) {
 		writeError(w, newError(http.StatusConflict, CodePaymentNotRefundable, "order %s has no captured payment", o.ID))
 		return
 	}
-	if p.Status != paymentCaptured {
-		writeError(w, newError(http.StatusConflict, CodePaymentNotRefundable, "payment %s is already %s", p.ID, p.Status))
+	remaining := p.Amount - p.refunded
+	if remaining == 0 {
+		writeError(w, newError(http.StatusConflict, CodePaymentNotRefundable, "payment %s is already fully refunded", p.ID))
 		return
 	}
-	amount := req.Amount
-	if amount == 0 {
-		amount = p.Amount
+	amount := remaining
+	if req.Amount != nil {
+		amount = *req.Amount
 	}
-	if amount < 0 || amount > p.Amount {
+	if amount > remaining {
 		writeError(w, newError(http.StatusUnprocessableEntity, CodeAmountMismatch,
-			"refund amount %d must be between 1 and the captured amount %d", amount, p.Amount))
+			"refund amount %d exceeds the refundable balance %d", amount, remaining))
 		return
 	}
 	rf := &refund{
@@ -188,8 +195,12 @@ func (s *Server) handleRefund(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:     rfc3339(s.now()),
 	}
 	st.refunds[rf.ID] = rf
-	p.Status = paymentRefunded
-	o.PaymentStatus = paymentRefunded
+	p.refunded += amount
+	p.Status = paymentPartiallyRefunded
+	if p.refunded == p.Amount {
+		p.Status = paymentRefunded
+	}
+	o.PaymentStatus = p.Status
 	writeJSON(w, http.StatusCreated, rf)
 }
 

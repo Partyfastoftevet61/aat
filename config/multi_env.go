@@ -281,7 +281,7 @@ func mergePartials(base, overlay EnvironmentPartial) EnvironmentPartial {
 		result.Notes = overlay.Notes
 	}
 
-	// overrides: child prepended before parent (child has higher match priority)
+	// overrides: child appended after parent (the router lets the last match win)
 	result.Overrides = mergeOverrideSlices(base.Overrides, overlay.Overrides)
 
 	// values: map merge
@@ -341,14 +341,16 @@ func mergeSettings(base, overlay *RuntimeSettings) *RuntimeSettings {
 	return &result
 }
 
-// mergeOverrideSlices prepends child overrides before parent overrides.
+// mergeOverrideSlices appends child overrides after parent overrides. The
+// executor router picks the last registered match of each kind, so the child's
+// entries take precedence over the ones it inherits.
 func mergeOverrideSlices(parent, child []HostOverride) []HostOverride {
 	if len(parent) == 0 && len(child) == 0 {
 		return nil
 	}
-	result := make([]HostOverride, 0, len(child)+len(parent))
-	result = append(result, child...)
+	result := make([]HostOverride, 0, len(parent)+len(child))
 	result = append(result, parent...)
+	result = append(result, child...)
 	return result
 }
 

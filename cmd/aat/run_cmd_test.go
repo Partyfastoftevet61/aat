@@ -834,6 +834,86 @@ execution:
 	assert.Contains(t, res.err.Error(), "plan auth")
 }
 
+// --- Override routing ---
+
+// TestRunCommand_ValueOnlyOverlayKeepsGlobRoute: env.yaml routes test* to a
+// second host with its own API key. An overlay entry that only sets values for
+// the exact node must keep that route, and the main bearer token must not
+// reach the second host.
+func TestRunCommand_ValueOnlyOverlayKeepsGlobRoute(t *testing.T) {
+	mainServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("request reached the main host: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mainServer.Close()
+
+	var gotPath, gotAuth, gotKey string
+	altServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotAuth, gotKey = r.URL.Path, r.Header.Get("Authorization"), r.Header.Get("X-API-Key")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"result": "ok"})
+	}))
+	defer altServer.Close()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, "env.yaml")
+	require.NoError(t, os.WriteFile(envFile, []byte(`environment: test
+apiBaseUrl: `+mainServer.URL+`
+auth:
+  type: bearer
+  credentials:
+    token:
+      source: literal
+      value: main-token
+overrides:
+  - match: "test*"
+    baseUrl: `+altServer.URL+`
+    auth:
+      type: apikey
+      headerName: X-API-Key
+      credentials:
+        key:
+          source: literal
+          value: alt-key
+`), 0o644))
+	overlayFile := filepath.Join(dir, "overlay.yaml")
+	require.NoError(t, os.WriteFile(overlayFile, []byte(`overrides:
+  - match: testNode
+    values:
+      input1: from-overlay
+`), 0o644))
+
+	res := runCommand(context.Background(), &runArgs{
+		PlanPath:        "testdata/test_plan.yaml",
+		EnvPath:         envFile,
+		GraphPath:       "testdata/test_graph.yaml",
+		TemplatesPath:   "testdata/templates",
+		OutputDir:       filepath.Join(dir, "runs"),
+		EnvOverlay:      overlayFile,
+		NoAutoOverrides: true,
+	}, io.Discard, TerminalInfo{})
+
+	require.NoError(t, res.err)
+	assert.Equal(t, "/test/from-overlay", gotPath, "overlay values apply")
+	assert.Equal(t, "alt-key", gotKey, "the glob route's auth applies")
+	assert.Empty(t, gotAuth, "the main bearer token must not reach the override host")
+}
+
+func TestRunCommand_LayersWithoutLayersDirFails(t *testing.T) {
+	res := runCommand(context.Background(), &runArgs{
+		PlanPath:        "testdata/test_plan.yaml",
+		EnvPath:         writeTestEnv(t, "none", ""),
+		GraphPath:       "testdata/test_graph.yaml",
+		TemplatesPath:   "testdata/templates",
+		OutputDir:       filepath.Join(t.TempDir(), "runs"),
+		Layers:          []string{"express"},
+		NoAutoOverrides: true,
+	}, io.Discard, TerminalInfo{})
+
+	require.Error(t, res.err)
+	assert.Contains(t, res.err.Error(), "no layers directory is configured")
+}
+
 // --- Helpers ---
 
 func writeTestEnv(t *testing.T, authType, baseURL string) string {

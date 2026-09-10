@@ -116,7 +116,11 @@ type OverrideExpectFailure struct {
 
 // ResolvedOverride is a HostOverride after authentication and header merging.
 type ResolvedOverride struct {
-	Pattern       string
+	Pattern string
+	// Routes is true when the override sets baseUrl, auth, headers, or
+	// pathRewrite. Value-only overrides (values/expectFailure) must not
+	// register a route, or they would shadow a broader routing match.
+	Routes        bool
 	APIConfig     APIConfig
 	PathRewrite   *PathRewrite
 	Values        map[string]any
@@ -165,47 +169,67 @@ func (env *Environment) BuildOverrideConfigsWithAuth(ctx context.Context, baseHe
 			return nil, fmt.Errorf("authenticating override %d (%s): %w", i, ov.Match, err)
 		}
 
-		// Merge headers: start with base, overlay override-specific, then auth
-		headers := make(map[string]string)
-		for k, v := range baseHeaders {
-			headers[k] = v
-		}
-		for k, v := range ov.Headers {
-			headers[k] = v
-		}
-		if token != nil {
-			switch auth.Type {
-			case "apikey":
-				headers[auth.HeaderName] = token.AccessToken
-			default:
-				headers["Authorization"] = "Bearer " + token.AccessToken
-			}
-		} else {
-			// auth type "none" — remove any inherited auth header
-			if ov.Auth != nil && (ov.Auth.Type == "none" || ov.Auth.Type == "") {
-				delete(headers, "Authorization")
-			}
-		}
-
-		baseURL := ov.BaseURL
-		if baseURL == "" {
-			baseURL = env.APIBaseURL
-		}
-
-		resolved = append(resolved, ResolvedOverride{
-			Pattern: ov.Match,
-			APIConfig: APIConfig{
-				BaseURL: baseURL,
-				Headers: headers,
-				Values:  make(map[string]string),
-			},
-			PathRewrite:   ov.PathRewrite,
-			Values:        ov.Values,
-			ExpectFailure: ov.ExpectFailure,
-		})
+		resolved = append(resolved, env.resolveOverride(ov, overrideHeaders(baseHeaders, ov, defaultAuth, auth, token)))
 	}
 
 	return resolved, nil
+}
+
+// routes reports whether an override changes where or how a request is sent.
+// Entries that carry only values or expectFailure leave routing to broader
+// matches (or the default executor).
+func (ov HostOverride) routes() bool {
+	return ov.BaseURL != "" || ov.Auth != nil || len(ov.Headers) > 0 || ov.PathRewrite != nil
+}
+
+// resolveOverride assembles a ResolvedOverride from an override and its merged
+// headers. An empty BaseURL inherits the environment's apiBaseUrl.
+func (env *Environment) resolveOverride(ov HostOverride, headers map[string]string) ResolvedOverride {
+	baseURL := ov.BaseURL
+	if baseURL == "" {
+		baseURL = env.APIBaseURL
+	}
+	return ResolvedOverride{
+		Pattern: ov.Match,
+		Routes:  ov.routes(),
+		APIConfig: APIConfig{
+			BaseURL: baseURL,
+			Headers: headers,
+			Values:  make(map[string]string),
+		},
+		PathRewrite:   ov.PathRewrite,
+		Values:        ov.Values,
+		ExpectFailure: ov.ExpectFailure,
+	}
+}
+
+// overrideHeaders merges the request headers for an override: the base headers,
+// then the override's own headers, then the credential of the effective auth.
+// When the override declares its own auth, the credential inherited from the
+// base headers is removed first so it never reaches the override's host.
+func overrideHeaders(baseHeaders map[string]string, ov HostOverride, inherited, auth AuthConfig, token *OAuthToken) map[string]string {
+	headers := make(map[string]string, len(baseHeaders)+len(ov.Headers)+1)
+	for k, v := range baseHeaders {
+		headers[k] = v
+	}
+	if ov.Auth != nil {
+		delete(headers, "Authorization")
+		if inherited.Type == "apikey" && inherited.HeaderName != "" {
+			delete(headers, inherited.HeaderName)
+		}
+	}
+	for k, v := range ov.Headers {
+		headers[k] = v
+	}
+	if token != nil {
+		switch auth.Type {
+		case "apikey":
+			headers[auth.HeaderName] = token.AccessToken
+		default:
+			headers["Authorization"] = "Bearer " + token.AccessToken
+		}
+	}
+	return headers
 }
 
 // BuildOverrideConfigsWithProvider is like BuildOverrideConfigsWithAuth but uses
@@ -217,10 +241,11 @@ func (env *Environment) BuildOverrideConfigsWithProvider(ctx context.Context, ba
 		return nil, nil
 	}
 
+	inherited := provider.Config()
 	resolved := make([]ResolvedOverride, 0, len(env.Overrides))
 	for i, ov := range env.Overrides {
 		var token *OAuthToken
-		var auth AuthConfig
+		auth := inherited
 		var err error
 
 		if ov.Auth != nil {
@@ -229,51 +254,13 @@ func (env *Environment) BuildOverrideConfigsWithProvider(ctx context.Context, ba
 			token, err = Authenticate(ctx, auth)
 		} else {
 			// Inherit default auth via the cached provider.
-			auth = provider.Config()
 			token, err = provider.Authenticate(ctx)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("authenticating override %d (%s): %w", i, ov.Match, err)
 		}
 
-		// Merge headers: start with base, overlay override-specific, then auth
-		headers := make(map[string]string)
-		for k, v := range baseHeaders {
-			headers[k] = v
-		}
-		for k, v := range ov.Headers {
-			headers[k] = v
-		}
-		if token != nil {
-			switch auth.Type {
-			case "apikey":
-				headers[auth.HeaderName] = token.AccessToken
-			default:
-				headers["Authorization"] = "Bearer " + token.AccessToken
-			}
-		} else {
-			// auth type "none" — remove any inherited auth header
-			if ov.Auth != nil && (ov.Auth.Type == "none" || ov.Auth.Type == "") {
-				delete(headers, "Authorization")
-			}
-		}
-
-		baseURL := ov.BaseURL
-		if baseURL == "" {
-			baseURL = env.APIBaseURL
-		}
-
-		resolved = append(resolved, ResolvedOverride{
-			Pattern: ov.Match,
-			APIConfig: APIConfig{
-				BaseURL: baseURL,
-				Headers: headers,
-				Values:  make(map[string]string),
-			},
-			PathRewrite:   ov.PathRewrite,
-			Values:        ov.Values,
-			ExpectFailure: ov.ExpectFailure,
-		})
+		resolved = append(resolved, env.resolveOverride(ov, overrideHeaders(baseHeaders, ov, inherited, auth, token)))
 	}
 
 	return resolved, nil

@@ -110,7 +110,7 @@ The environment file supports two formats: **single-environment** (legacy, one `
 
 ## Plans vs Workflows
 
-- **Workflows** (`workflows/` dir) — pre-written reusable templates defined in the graph YAML. Composed at runtime via `ComposeWithAddons`. Referenced by name in `WorkflowSelection`.
+- **Workflows** (`workflows/` dir) — pre-written reusable templates defined in the graph YAML. Composed at runtime by `intent.Compose` (slots, then addons). Referenced by name in `WorkflowSelection`.
 - **Plans** (`plans/` dir) — user-generated execution instances, typically saved from `aat prompt --save`. These are concrete, ready-to-run YAML files.
 
 ## Testing Philosophy

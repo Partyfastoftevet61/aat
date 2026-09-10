@@ -318,7 +318,7 @@ environments:
 	assert.Empty(t, env.Auth.TokenURL) // fully replaced, not merged
 }
 
-func TestLoadNamedEnvironment_OverridesPrepend(t *testing.T) {
+func TestLoadNamedEnvironment_ChildOverridesRegisterLast(t *testing.T) {
 	yaml := `
 environments:
   _base:
@@ -326,13 +326,13 @@ environments:
     auth:
       type: none
     overrides:
-      - match: "base-pattern"
+      - match: "payment*"
         baseUrl: https://base.example.com
 
   child:
     extends: _base
     overrides:
-      - match: "child-pattern"
+      - match: "payment*"
         baseUrl: https://child.example.com
 `
 	path := writeTempYAML(t, yaml)
@@ -340,9 +340,10 @@ environments:
 	env, err := LoadNamedEnvironment(path, "child")
 	require.NoError(t, err)
 	require.Len(t, env.Overrides, 2)
-	// Child overrides come first (higher priority)
-	assert.Equal(t, "child-pattern", env.Overrides[0].Match)
-	assert.Equal(t, "base-pattern", env.Overrides[1].Match)
+	// The executor router lets the last registered match win, so inherited
+	// entries come first and the child's entries take precedence.
+	assert.Equal(t, "https://base.example.com", env.Overrides[0].BaseURL)
+	assert.Equal(t, "https://child.example.com", env.Overrides[1].BaseURL)
 }
 
 func TestLoadNamedEnvironment_SharedMerge(t *testing.T) {

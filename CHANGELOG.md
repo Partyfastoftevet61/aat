@@ -13,6 +13,10 @@ the graph and plan formats may still change before 1.0.
   two chaos hooks for retry demos) and extracts the `examples/shop` project (`aat-sandbox init`).
   The contract lives in `examples/shop/openapi.yaml`; the server tests validate every response
   against it. `make build` builds both binaries; `make sandbox` builds only the demo server.
+  The sandbox binds `127.0.0.1` unless `--host` says otherwise.
+- `status` assertions accept a status class such as `expect: 2xx` or `expect: 4xx`.
+- `aat validate` checks the layers directory: parse errors, duplicate layer names, and layer input keys
+  that match no node input (which layers silently ignored).
 - Plan-level `execution.cleanup` steps now execute after the main flow, in declaration order and
   honoring `runOn: always|success|failure`, before graph-level cleanup pairings.
 - Plan `execution.verification` steps now execute after the main flow and before cleanup, with their
@@ -32,6 +36,14 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- Steps composed from workflow templates (recipes, `aat prompt`) get a default `status: 2xx`
+  assertion instead of `status: 200`, and none when they declare `expectFailure`. On any step with
+  `expectFailure` (including one added by an overlay) status assertions are reported as skipped:
+  the expected-failure status list is the status check.
+- An override that declares its own `auth` no longer sends the inherited credential header
+  (`Authorization`, or the top-level API key header) to its host.
+- Requesting layers (`--layer`, `--layer-group`, or a recipe's `selection.layers`) without a
+  `layers:` directory in the manifest is an error; the layers were silently ignored before.
 - Override precedence: among glob (and among exact) overrides the last registered match now wins, so
   `.aat-overrides.yaml`, `--overlay`, and `--override` take precedence over `env.yaml` overrides as
   documented. Exact names still beat globs.
@@ -48,6 +60,17 @@ the graph and plan formats may still change before 1.0.
   strict/lean/adaptive modes were removed in 0.0.2).
 - Airline-era repository leftovers (`setup.sh`, a root-level plan, IDE run configurations, the
   empty Airline case-study stub).
+
+### Fixed
+- An override entry that sets only `values:` or `expectFailure:` no longer reroutes its node to the
+  top-level base URL and auth; it keeps the route a broader match gives it.
+- In multi-environment files, a child environment's overrides (`extends`, `include`) take precedence
+  over inherited ones again; the last-match-wins change had inverted them.
+- `aat validate`, `aat validate plan`, and the MCP plan tools resolve recipe layers, so a misspelled
+  layer is reported and layer-supplied inputs no longer fail validation.
+- MCP `execute_plan` applies override values, `expectFailure`, and recipe layers like `aat run plan`.
+- `aat plan list` summarizes recipes instead of reporting a parse error for each.
+- `--verbose-auth` no longer prints the full access token in the logged token response.
 
 ## [0.0.4] - 2026-03-04
 

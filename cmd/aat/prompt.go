@@ -407,7 +407,7 @@ func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *prompt
 			return fmt.Errorf("building overrides: %w", overrideErr)
 		}
 		for _, ov := range resolvedOverrides {
-			addResolvedOverride(router, ov)
+			router.AddResolvedOverride(ov)
 		}
 	}
 
@@ -423,7 +423,7 @@ func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *prompt
 			return fmt.Errorf("building auto-overrides: %w", autoErr)
 		}
 		for _, ov := range resolvedOverrides {
-			addResolvedOverride(router, ov)
+			router.AddResolvedOverride(ov)
 		}
 	}
 

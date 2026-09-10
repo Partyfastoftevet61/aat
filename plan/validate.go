@@ -495,6 +495,8 @@ func Validate(p *Plan, g *graph.Graph) error {
 					if ma.Type == "status" {
 						if expectInt, ok := toInt(ma.Expect); ok && expectInt < 400 {
 							errs = append(errs, fmt.Sprintf("step %d (%s): status assertion expecting %d contradicts expectFailure", i, sid, expectInt))
+						} else if class, ok := statusClass(ma.Expect); ok && class < 4 {
+							errs = append(errs, fmt.Sprintf("step %d (%s): status assertion expecting %dxx contradicts expectFailure", i, sid, class))
 						}
 					}
 				}
@@ -641,6 +643,16 @@ func toInt(v any) (int, bool) {
 		return int(n), true
 	}
 	return 0, false
+}
+
+// statusClass reports whether v is a status class such as "2xx" (any case)
+// and returns its leading digit.
+func statusClass(v any) (int, bool) {
+	s, ok := v.(string)
+	if !ok || len(s) != 3 || s[0] < '1' || s[0] > '5' || !strings.EqualFold(s[1:], "xx") {
+		return 0, false
+	}
+	return int(s[0] - '0'), true
 }
 
 // splitRef splits a "node.field" reference into its components.

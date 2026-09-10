@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -17,6 +18,43 @@ type Layer struct {
 	Description   string                   `yaml:"description,omitempty"`
 	SelectionHint string                   `yaml:"selectionHint,omitempty"` // guidance for LLM layer selection
 	Inputs        map[string]*InputDefault `yaml:"inputs"`
+}
+
+// UnknownInputs lists the layer's input keys that match nothing in the graph: a
+// qualified key (node.input) naming a missing node or input, or a bare key that
+// no node declares. ApplyLayers ignores such keys, so they are almost always
+// typos. The result is sorted.
+func (l *Layer) UnknownInputs(g *Graph) []string {
+	hasInput := func(n *Node, name string) bool {
+		for _, in := range n.Inputs {
+			if in.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	var unknown []string
+	for key := range l.Inputs {
+		if nodeName, inputName, qualified := strings.Cut(key, "."); qualified {
+			if n, ok := g.Nodes[nodeName]; !ok || n == nil || !hasInput(n, inputName) {
+				unknown = append(unknown, key)
+			}
+			continue
+		}
+		found := false
+		for _, n := range g.Nodes {
+			if n != nil && hasInput(n, key) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			unknown = append(unknown, key)
+		}
+	}
+	sort.Strings(unknown)
+	return unknown
 }
 
 // ParseLayer unmarshals YAML bytes into a Layer with basic validation.

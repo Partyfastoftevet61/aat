@@ -11,7 +11,6 @@ import (
 	"github.com/gburgyan/aat/archive"
 	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/engine"
-	"github.com/gburgyan/aat/intent"
 	"github.com/gburgyan/aat/internal/version"
 	"github.com/gburgyan/aat/plan"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -68,18 +67,24 @@ func (s *Server) handleExecutePlan(ctx context.Context, req mcp.CallToolRequest)
 	}
 
 	var p *plan.Plan
+	var layers []string
 	switch v := parsed.(type) {
 	case *plan.Plan:
 		p = v
 	case *plan.Recipe:
-		reconstituted, reconErr := intent.Reconstitute(v, s.ctx.Graph, s.ctx.GraphDir)
+		reconstituted, reconErr := s.ctx.reconstitute(v)
 		if reconErr != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("reconstituting recipe: %v", reconErr)), nil
 		}
 		p = reconstituted
+		layers = v.Selection.Layers
 	}
 
-	if _, err := plan.InstantiateAndValidate(p, s.ctx.Graph); err != nil {
+	layeredDefaults, err := s.ctx.layeredDefaults(layers)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if _, err := plan.InstantiateAndValidateWithLayers(p, s.ctx.Graph, layeredDefaults); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("plan validation failed:\n%v", err)), nil
 	}
 
@@ -125,27 +130,15 @@ func (s *Server) handleExecutePlan(ctx context.Context, req mcp.CallToolRequest)
 			return mcp.NewToolResultError(fmt.Sprintf("building overrides: %v", err)), nil
 		}
 		for _, ov := range resolvedOverrides {
-			ovExec := adapter.NewHTTPExecutor(ov.APIConfig.BaseURL)
-			ovCfg := &adapter.EnvironmentConfig{
-				BaseURL: ov.APIConfig.BaseURL,
-				Headers: ov.APIConfig.Headers,
-				Values:  ov.APIConfig.Values,
-			}
-			var rewrite *adapter.PathRewrite
-			if ov.PathRewrite != nil {
-				rewrite = &adapter.PathRewrite{
-					Strip:  ov.PathRewrite.Strip,
-					Prefix: ov.PathRewrite.Prefix,
-				}
-			}
-			router.AddOverride(ov.Pattern, ovExec, ovCfg, rewrite)
+			router.AddResolvedOverride(ov)
 		}
 	}
 
 	// Build and run engine
 	eng := engine.NewEngine(s.ctx.Graph, s.ctx.Registry, router).
 		WithDomain(s.ctx.KB).
-		WithEnvValues(s.ctx.Environment.Values)
+		WithEnvValues(s.ctx.Environment.Values).
+		WithLayers(layeredDefaults)
 
 	result := eng.Run(ctx, p)
 

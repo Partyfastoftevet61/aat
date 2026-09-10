@@ -125,6 +125,7 @@ type payment struct {
 	AmountDisplay string `json:"amountDisplay"`
 	Currency      string `json:"currency"`
 	CreatedAt     string `json:"createdAt"`
+	refunded      Money  // total refunded so far
 }
 
 type refund struct {

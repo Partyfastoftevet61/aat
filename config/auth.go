@@ -138,7 +138,7 @@ func authenticateOAuth2(ctx context.Context, auth AuthConfig) (*OAuthToken, erro
 
 	if vw != nil {
 		_, _ = fmt.Fprintf(vw, "[auth] response status: %d\n", resp.StatusCode)
-		_, _ = fmt.Fprintf(vw, "[auth] response body: %s\n", string(body))
+		_, _ = fmt.Fprintf(vw, "[auth] response body: %s\n", redactTokenResponse(body))
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -155,11 +155,42 @@ func authenticateOAuth2(ctx context.Context, auth AuthConfig) (*OAuthToken, erro
 	}
 
 	if vw != nil {
-		_, _ = fmt.Fprintf(vw, "[auth] token type=%s expires_in=%d access_token=%s...\n",
-			token.TokenType, token.ExpiresIn, token.AccessToken[:min(20, len(token.AccessToken))])
+		_, _ = fmt.Fprintf(vw, "[auth] token type=%s expires_in=%d access_token=%s\n",
+			token.TokenType, token.ExpiresIn, secretPreview(token.AccessToken))
 	}
 
 	return &token, nil
+}
+
+// redactTokenResponse renders a token endpoint response for verbose logging
+// with every credential field shortened to a preview. Bodies that are not a
+// JSON object (or carry no credential) are returned unchanged.
+func redactTokenResponse(body []byte) string {
+	var fields map[string]any
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return string(body)
+	}
+	redacted := false
+	for _, key := range []string{"access_token", "refresh_token", "id_token"} {
+		if s, ok := fields[key].(string); ok {
+			fields[key] = secretPreview(s)
+			redacted = true
+		}
+	}
+	if !redacted {
+		return string(body)
+	}
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return string(body)
+	}
+	return string(out)
+}
+
+// secretPreview shows at most the first 8 characters (and never more than half)
+// of a secret, so verbose logs identify a token without carrying a usable one.
+func secretPreview(s string) string {
+	return s[:min(8, len(s)/2)] + "..."
 }
 
 func authenticateAPIKey(ctx context.Context, auth AuthConfig) (*OAuthToken, error) {

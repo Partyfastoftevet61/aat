@@ -14,9 +14,10 @@ const (
 
 // Payment states carried on an order.
 const (
-	paymentUnpaid   = "unpaid"
-	paymentCaptured = "captured"
-	paymentRefunded = "refunded"
+	paymentUnpaid            = "unpaid"
+	paymentCaptured          = "captured"
+	paymentPartiallyRefunded = "partially_refunded"
+	paymentRefunded          = "refunded"
 )
 
 // Shipment states.

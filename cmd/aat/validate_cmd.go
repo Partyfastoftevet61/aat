@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/gburgyan/aat/adapter"
@@ -117,6 +118,11 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 	if m.WorkflowsDir != "" {
 		if _, err := os.Stat(m.WorkflowsDir); err != nil {
 			manifestErrors = append(manifestErrors, fmt.Sprintf("workflows dir not found: %s", m.WorkflowsDir))
+		}
+	}
+	if m.LayersDir != "" {
+		if _, err := os.Stat(m.LayersDir); err != nil {
+			manifestErrors = append(manifestErrors, fmt.Sprintf("layers dir not found: %s", m.LayersDir))
 		}
 	}
 	for _, pd := range m.PlanDirs {
@@ -305,10 +311,15 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 		}
 	}
 
-	// 8. Plans validation
+	// 8. Layers validation
+	if m.LayersDir != "" {
+		sections = append(sections, validateLayers(m.LayersDir, g))
+	}
+
+	// 9. Plans validation
 	if len(m.PlanDirs) > 0 {
 		graphDir := filepath.Dir(m.GraphPath)
-		pvr := validatePlans([]string(m.PlanDirs), g, graphDir)
+		pvr := validatePlans([]string(m.PlanDirs), g, graphDir, m.LayersDir)
 		if len(pvr.Errors) > 0 {
 			sections = append(sections, sectionResult{
 				Name:   "Plans",
@@ -386,7 +397,7 @@ func validateWorkflows(workflowsDir string, g *graph.Graph, workflowTemplates ma
 		}
 
 		// Skip graph validation for workflow templates — they are intentionally
-		// incomplete and get their missing inputs wired by ComposeWithAddons.
+		// incomplete and get their missing inputs wired by intent.Compose.
 		abs, err := filepath.Abs(planPath)
 		if err == nil && workflowTemplates[abs] {
 			result.Templates++
@@ -428,14 +439,20 @@ type planValidationResult struct {
 }
 
 // validatePlans walks all plan directories and validates each plan file.
-// Recipe-format files are reconstituted into full plans before validation.
-func validatePlans(planDirs []string, g *graph.Graph, graphDir string) planValidationResult {
+// Recipe-format files are reconstituted into full plans before validation,
+// with their layers loaded from layersDir.
+func validatePlans(planDirs []string, g *graph.Graph, graphDir, layersDir string) planValidationResult {
 	var result planValidationResult
 
 	entries, err := config.ListPlans(planDirs)
 	if err != nil {
 		result.Errors = []string{fmt.Sprintf("listing plans: %s", err)}
 		return result
+	}
+
+	var reconOpts []intent.ReconstituteOption
+	if layersDir != "" {
+		reconOpts = append(reconOpts, intent.WithLayersDir(layersDir))
 	}
 
 	for _, entry := range entries {
@@ -452,13 +469,44 @@ func validatePlans(planDirs []string, g *graph.Graph, graphDir string) planValid
 			}
 		case *plan.Recipe:
 			result.Recipes++
-			if _, err := intent.Reconstitute(v, g, graphDir); err != nil {
+			if len(v.Selection.Layers) > 0 && layersDir == "" {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: recipe uses layers %v but the manifest sets no `layers:` directory", entry.Name, v.Selection.Layers))
+				continue
+			}
+			if _, err := intent.Reconstitute(v, g, graphDir, reconOpts...); err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: reconstituting recipe: %s", entry.Name, err))
 			}
 		}
 	}
 
 	return result
+}
+
+// validateLayers loads every layer in dir and reports parse errors, duplicate
+// names, and input keys that match nothing in the graph. ApplyLayers ignores
+// such keys, so a typo would otherwise stop a layer from taking effect silently.
+func validateLayers(dir string, g *graph.Graph) sectionResult {
+	layers, err := graph.LoadLayersFromDir(dir)
+	if err != nil {
+		return sectionResult{Name: "Layers", Status: "FAILED", Errors: []string{err.Error()}}
+	}
+
+	names := make([]string, 0, len(layers))
+	for name := range layers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var errs []string
+	for _, name := range names {
+		for _, key := range layers[name].UnknownInputs(g) {
+			errs = append(errs, fmt.Sprintf("layer %q: input %q matches no node input in the graph", name, key))
+		}
+	}
+	if len(errs) > 0 {
+		return sectionResult{Name: "Layers", Status: "FAILED", Errors: errs}
+	}
+	return sectionResult{Name: "Layers", Status: "OK", Detail: fmt.Sprintf("(%d layers)", len(layers))}
 }
 
 // printSections prints the validation sections in aligned columns.

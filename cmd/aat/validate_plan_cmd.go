@@ -36,6 +36,7 @@ var validatePlanCmd = &cobra.Command{
 
 		pa := &planValidateArgs{
 			GraphPath: resolved.GraphPath,
+			LayersDir: resolved.LayersDir,
 			PlanPath:  planPath,
 			Unfed:     unfed,
 		}
@@ -59,6 +60,7 @@ func init() {
 // planValidateArgs holds parsed CLI flags for plan validate.
 type planValidateArgs struct {
 	GraphPath string
+	LayersDir string // resolves recipe layers; empty when no manifest declares one
 	PlanPath  string
 	Unfed     bool
 }
@@ -82,15 +84,17 @@ func planValidateCommand(args *planValidateArgs) int {
 
 	// Single plan mode.
 	if args.PlanPath != "" {
-		return validateSinglePlan(args.PlanPath, args.GraphPath, g, args.Unfed)
+		return validateSinglePlan(args.PlanPath, args.GraphPath, args.LayersDir, g, args.Unfed)
 	}
 
 	// All workflow templates mode.
 	return validateAllTemplates(args.GraphPath, g, args.Unfed)
 }
 
-// validateSinglePlan validates one plan file against the graph.
-func validateSinglePlan(planPath, graphPath string, g *graph.Graph, showUnfed bool) int {
+// validateSinglePlan validates one plan file against the graph. Recipes are
+// reconstituted with their layers from layersDir; reconstitution validates the
+// composed plan with those layers applied.
+func validateSinglePlan(planPath, graphPath, layersDir string, g *graph.Graph, showUnfed bool) int {
 	parsed, err := plan.ParseAnyFile(planPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "aat validate plan: %s\n", err)
@@ -100,10 +104,22 @@ func validateSinglePlan(planPath, graphPath string, g *graph.Graph, showUnfed bo
 	var p *plan.Plan
 	switch v := parsed.(type) {
 	case *plan.Plan:
+		if _, err := plan.InstantiateAndValidate(v, g); err != nil {
+			fmt.Fprintf(os.Stderr, "aat validate plan: %s\n", err)
+			return 1
+		}
 		p = v
 	case *plan.Recipe:
 		fmt.Printf("Reconstituting recipe %q...\n", v.Selection.Workflow)
-		reconstituted, reconErr := intent.Reconstitute(v, g, filepath.Dir(graphPath))
+		if len(v.Selection.Layers) > 0 && layersDir == "" {
+			fmt.Fprintf(os.Stderr, "aat validate plan: recipe uses layers %v but no layers directory is configured (set `layers:` in aat-project.yaml)\n", v.Selection.Layers)
+			return 1
+		}
+		var opts []intent.ReconstituteOption
+		if layersDir != "" {
+			opts = append(opts, intent.WithLayersDir(layersDir))
+		}
+		reconstituted, reconErr := intent.Reconstitute(v, g, filepath.Dir(graphPath), opts...)
 		if reconErr != nil {
 			fmt.Fprintf(os.Stderr, "aat validate plan: reconstituting recipe: %s\n", reconErr)
 			return 1
@@ -111,11 +127,6 @@ func validateSinglePlan(planPath, graphPath string, g *graph.Graph, showUnfed bo
 		p = reconstituted
 	default:
 		fmt.Fprintf(os.Stderr, "aat validate plan: unexpected parse result type %T\n", parsed)
-		return 1
-	}
-
-	if _, err := plan.InstantiateAndValidate(p, g); err != nil {
-		fmt.Fprintf(os.Stderr, "aat validate plan: %s\n", err)
 		return 1
 	}
 

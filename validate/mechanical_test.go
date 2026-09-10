@@ -22,6 +22,12 @@ func TestCheckStatus(t *testing.T) {
 		{name: "float64 coercion from YAML", statusCode: 200, expect: float64(200), passed: true, msgContain: "status code is 200"},
 		{name: "nil expect", statusCode: 200, expect: nil, passed: false, msgContain: "missing 'expect'"},
 		{name: "string expect fails", statusCode: 200, expect: "200", passed: false, msgContain: "cannot coerce"},
+		{name: "class 2xx matches 201", statusCode: 201, expect: "2xx", passed: true, msgContain: "status code 201 is 2xx"},
+		{name: "class 2xx matches 204", statusCode: 204, expect: "2xx", passed: true, msgContain: "status code 204 is 2xx"},
+		{name: "class is case-insensitive", statusCode: 200, expect: "2XX", passed: true, msgContain: "is 2xx"},
+		{name: "class mismatch", statusCode: 402, expect: "2xx", passed: false, msgContain: "expected status 2xx, got 402"},
+		{name: "class 4xx", statusCode: 409, expect: "4xx", passed: true, msgContain: "status code 409 is 4xx"},
+		{name: "unknown class fails", statusCode: 200, expect: "6xx", passed: false, msgContain: "cannot coerce"},
 	}
 
 	for _, tt := range tests {

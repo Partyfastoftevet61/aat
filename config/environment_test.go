@@ -1291,6 +1291,114 @@ func TestBuildOverrideConfigsWithProvider_Empty(t *testing.T) {
 	assert.Nil(t, resolved)
 }
 
+func TestBuildOverrideConfigs_ExplicitAPIKeyDropsInheritedBearer(t *testing.T) {
+	env := &Environment{
+		APIBaseURL: "https://api.example.com",
+		Auth: AuthConfig{
+			Type:        "bearer",
+			Credentials: map[string]SecretRef{"token": {Source: "literal", Value: "main-token"}},
+		},
+		Overrides: []HostOverride{{
+			Match:   "payment*",
+			BaseURL: "http://payments.example.com",
+			Auth: &AuthConfig{
+				Type:        "apikey",
+				HeaderName:  "X-API-Key",
+				Credentials: map[string]SecretRef{"key": {Source: "literal", Value: "pay-key"}},
+			},
+		}},
+	}
+	baseHeaders := map[string]string{"Accept": "application/json", "Authorization": "Bearer main-token"}
+	ctx := context.Background()
+
+	builders := map[string]func() ([]ResolvedOverride, error){
+		"WithAuth": func() ([]ResolvedOverride, error) {
+			return env.BuildOverrideConfigs(ctx, baseHeaders)
+		},
+		"WithProvider": func() ([]ResolvedOverride, error) {
+			return env.BuildOverrideConfigsWithProvider(ctx, baseHeaders, NewAuthProvider(env.Auth))
+		},
+	}
+	for name, build := range builders {
+		t.Run(name, func(t *testing.T) {
+			resolved, err := build()
+			require.NoError(t, err)
+			require.Len(t, resolved, 1)
+			headers := resolved[0].APIConfig.Headers
+			assert.Equal(t, "pay-key", headers["X-API-Key"])
+			assert.NotContains(t, headers, "Authorization", "the main bearer token must not reach the override host")
+			assert.Equal(t, "application/json", headers["Accept"])
+		})
+	}
+}
+
+func TestBuildOverrideConfigs_ExplicitAuthDropsInheritedAPIKey(t *testing.T) {
+	env := &Environment{
+		APIBaseURL: "https://api.example.com",
+		Auth: AuthConfig{
+			Type:        "apikey",
+			HeaderName:  "X-Main-Key",
+			Credentials: map[string]SecretRef{"key": {Source: "literal", Value: "main-key"}},
+		},
+		Overrides: []HostOverride{{Match: "node1", Auth: &AuthConfig{Type: "none"}}},
+	}
+
+	resolved, err := env.BuildOverrideConfigs(context.Background(), map[string]string{"X-Main-Key": "main-key"})
+	require.NoError(t, err)
+	require.Len(t, resolved, 1)
+	assert.NotContains(t, resolved[0].APIConfig.Headers, "X-Main-Key")
+}
+
+func TestBuildOverrideConfigs_ExplicitNoneKeepsOverrideHeaders(t *testing.T) {
+	env := &Environment{
+		APIBaseURL: "https://api.example.com",
+		Auth: AuthConfig{
+			Type:        "bearer",
+			Credentials: map[string]SecretRef{"token": {Source: "literal", Value: "main-token"}},
+		},
+		Overrides: []HostOverride{{
+			Match:   "node1",
+			Auth:    &AuthConfig{Type: "none"},
+			Headers: map[string]string{"Authorization": "Basic c3R1YjpzdHVi"},
+		}},
+	}
+
+	resolved, err := env.BuildOverrideConfigs(context.Background(), map[string]string{"Authorization": "Bearer main-token"})
+	require.NoError(t, err)
+	require.Len(t, resolved, 1)
+	assert.Equal(t, "Basic c3R1YjpzdHVi", resolved[0].APIConfig.Headers["Authorization"])
+}
+
+func TestBuildOverrideConfigs_RoutesOnlyWhenRoutingFieldsSet(t *testing.T) {
+	env := &Environment{
+		APIBaseURL: "https://api.example.com",
+		Auth:       AuthConfig{Type: "none"},
+		Overrides: []HostOverride{
+			{Match: "valuesOnly", Values: map[string]any{"quantity": 0}},
+			{Match: "expectOnly", ExpectFailure: &OverrideExpectFailure{Status: []int{402}}},
+			{Match: "baseUrl", BaseURL: "http://localhost:9000"},
+			{Match: "auth", Auth: &AuthConfig{Type: "none"}},
+			{Match: "headers", Headers: map[string]string{"X-Debug": "1"}},
+			{Match: "rewrite", PathRewrite: &PathRewrite{Strip: "/v1"}},
+		},
+	}
+
+	resolved, err := env.BuildOverrideConfigs(context.Background(), nil)
+	require.NoError(t, err)
+	routes := map[string]bool{}
+	for _, ov := range resolved {
+		routes[ov.Pattern] = ov.Routes
+	}
+	assert.Equal(t, map[string]bool{
+		"valuesOnly": false,
+		"expectOnly": false,
+		"baseUrl":    true,
+		"auth":       true,
+		"headers":    true,
+		"rewrite":    true,
+	}, routes)
+}
+
 // --- Values tests ---
 
 func TestLoadEnvironment_WithValues(t *testing.T) {

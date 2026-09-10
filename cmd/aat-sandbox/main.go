@@ -211,7 +211,7 @@ func initCommand(a initArgs, out io.Writer) error {
 
 func init() {
 	f := serveCmd.Flags()
-	f.String("host", "", "interface to bind (default: all interfaces)")
+	f.String("host", "127.0.0.1", "interface to bind; use 0.0.0.0 to accept connections from other machines or containers")
 	f.Int("api-port", 8765, "port for the shop API listener")
 	f.Int("pay-port", 8766, "port for the payments API listener")
 	f.Float64("latency", 1.0, "scale factor for simulated latency (0 disables; shipOrder 600 ms, paymentCharge 350 ms)")

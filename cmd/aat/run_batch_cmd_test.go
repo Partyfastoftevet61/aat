@@ -714,10 +714,14 @@ func testRunContext(t *testing.T) *runContext {
 	registry := adapter.NewRegistry()
 	_, err = adapter.LoadTemplates("testdata/templates", registry)
 	require.NoError(t, err)
+	// A "european" layer that sets input1; plans that pin input1 are unaffected.
+	layersDir := t.TempDir()
+	writeFile(t, filepath.Join(layersDir, "european.yaml"), "name: european\ninputs:\n  input1: bonjour\n")
 	return &runContext{
-		Graph:    g,
-		Registry: registry,
-		GraphDir: "testdata",
+		Graph:     g,
+		Registry:  registry,
+		GraphDir:  "testdata",
+		LayersDir: layersDir,
 	}
 }
 

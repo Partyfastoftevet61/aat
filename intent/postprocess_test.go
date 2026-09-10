@@ -763,7 +763,7 @@ func TestFixAssertions_AddsDefaultStatus(t *testing.T) {
 	assertions := p.Execution.Steps[0].Assertions.Mechanical
 	require.Len(t, assertions, 1)
 	assert.Equal(t, "status", assertions[0].Type)
-	assert.Equal(t, 200, assertions[0].Expect)
+	assert.Equal(t, "2xx", assertions[0].Expect, "any success passes, so 201 and 204 APIs work")
 }
 
 func TestFixAssertions_AddsStatusWhenAllInvalid(t *testing.T) {
@@ -788,7 +788,7 @@ func TestFixAssertions_AddsStatusWhenAllInvalid(t *testing.T) {
 	assertions := p.Execution.Steps[0].Assertions.Mechanical
 	require.Len(t, assertions, 1)
 	assert.Equal(t, "status", assertions[0].Type)
-	assert.Equal(t, 200, assertions[0].Expect)
+	assert.Equal(t, "2xx", assertions[0].Expect)
 }
 
 func TestFixAssertions_PreservesValidAssertions(t *testing.T) {
@@ -839,13 +839,13 @@ func TestFixAssertions_StatusPrependedWhenMissing(t *testing.T) {
 	assertions := p.Execution.Steps[0].Assertions.Mechanical
 	require.Len(t, assertions, 2)
 	assert.Equal(t, "status", assertions[0].Type)
-	assert.Equal(t, 200, assertions[0].Expect)
+	assert.Equal(t, "2xx", assertions[0].Expect)
 	assert.Equal(t, "fieldExists", assertions[1].Type)
 }
 
 // --- fixAssertions with expectFailure tests ---
 
-func TestFixAssertions_ExpectFailure_UsesExpectedStatus(t *testing.T) {
+func TestFixAssertions_ExpectFailure_NoDefaultStatus(t *testing.T) {
 	p := &plan.Plan{
 		Execution: plan.Execution{
 			Steps: []plan.Step{
@@ -855,7 +855,6 @@ func TestFixAssertions_ExpectFailure_UsesExpectedStatus(t *testing.T) {
 						Status:      []int{401, 403},
 						Description: "Should be rejected",
 					},
-					// No assertions — fixAssertions should add status: 401
 				},
 			},
 		},
@@ -863,10 +862,9 @@ func TestFixAssertions_ExpectFailure_UsesExpectedStatus(t *testing.T) {
 
 	fixAssertions(p)
 
-	assertions := p.Execution.Steps[0].Assertions.Mechanical
-	require.Len(t, assertions, 1)
-	assert.Equal(t, "status", assertions[0].Type)
-	assert.Equal(t, 401, assertions[0].Expect) // first expected failure code, not 200
+	// The engine checks the status against expectFailure.status (either 401 or
+	// 403 passes); a default status assertion could only contradict it.
+	assert.Empty(t, p.Execution.Steps[0].Assertions.Mechanical)
 }
 
 func TestFixAssertions_ExpectFailure_PreservesExistingStatus(t *testing.T) {
@@ -898,8 +896,8 @@ func TestFixAssertions_ExpectFailure_PreservesExistingStatus(t *testing.T) {
 	assert.Equal(t, "fieldExists", assertions[1].Type)
 }
 
-func TestFixAssertions_NormalStep_StillGets200(t *testing.T) {
-	// Verify that normal steps (no expectFailure) still get status: 200
+func TestFixAssertions_NormalStep_GetsAny2xx(t *testing.T) {
+	// Normal steps (no expectFailure) get a status assertion accepting any 2xx.
 	p := &plan.Plan{
 		Execution: plan.Execution{
 			Steps: []plan.Step{
@@ -916,7 +914,7 @@ func TestFixAssertions_NormalStep_StillGets200(t *testing.T) {
 	assertions := p.Execution.Steps[0].Assertions.Mechanical
 	require.Len(t, assertions, 1)
 	assert.Equal(t, "status", assertions[0].Type)
-	assert.Equal(t, 200, assertions[0].Expect)
+	assert.Equal(t, "2xx", assertions[0].Expect)
 }
 
 // --- lookupElementFieldPath tests ---

@@ -29,7 +29,8 @@ func (s *Server) handleCreateCart(w http.ResponseWriter, r *http.Request) {
 
 // handleAddItem implements addItem (POST /carts/{cartId}/items). Checks run
 // in the order validation (400) -> cart lookup (404) -> cart state (409) ->
-// product lookup (404) -> stock (409).
+// product lookup (404) -> stock (409, also when the cart would hold more than
+// is available). Stock is never decremented, so runs stay repeatable.
 func (s *Server) handleAddItem(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		SKU      string `json:"sku"`
@@ -66,6 +67,17 @@ func (s *Server) handleAddItem(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.Available == 0 {
 		writeError(w, newError(http.StatusConflict, CodeOutOfStock, "%s (%s) is out of stock", p.SKU, p.Name))
+		return
+	}
+	inCart := 0
+	for _, l := range c.Lines {
+		if l.SKU == req.SKU {
+			inCart = l.Quantity
+		}
+	}
+	if inCart+req.Quantity > p.Available {
+		writeError(w, newError(http.StatusConflict, CodeOutOfStock,
+			"%s (%s) has %d in stock; the cart would hold %d", p.SKU, p.Name, p.Available, inCart+req.Quantity))
 		return
 	}
 	merged := false

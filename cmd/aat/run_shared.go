@@ -375,31 +375,30 @@ func parseOverrideFlag(flag string) (string, string, error) {
 	return name, url, nil
 }
 
-// addResolvedOverride adds a config.ResolvedOverride to the executor router.
-func addResolvedOverride(router *engine.ExecutorRouter, ov config.ResolvedOverride) {
-	overrideExec := adapter.NewHTTPExecutor(ov.APIConfig.BaseURL)
-	overrideCfg := &adapter.EnvironmentConfig{
-		BaseURL: ov.APIConfig.BaseURL,
-		Headers: ov.APIConfig.Headers,
-		Values:  ov.APIConfig.Values,
+// layeredDefaultsFor loads the named layers and stacks them on the graph
+// defaults. Naming layers without a layers directory is an error: silently
+// dropping them would run a different test than the one requested.
+func layeredDefaultsFor(rctx *runContext, layers []string) (map[string]*graph.InputDefault, error) {
+	if len(layers) == 0 {
+		return nil, nil
 	}
-	var rewrite *adapter.PathRewrite
-	if ov.PathRewrite != nil {
-		rewrite = &adapter.PathRewrite{
-			Strip:  ov.PathRewrite.Strip,
-			Prefix: ov.PathRewrite.Prefix,
-		}
+	if rctx.LayersDir == "" {
+		return nil, errNoLayersDir(layers)
 	}
-	router.AddOverride(ov.Pattern, overrideExec, overrideCfg, rewrite)
+	available, err := graph.ResolveLayerNames(layers, rctx.LayersDir)
+	if err != nil {
+		return nil, fmt.Errorf("loading layers: %w", err)
+	}
+	defaults, err := graph.ApplyLayers(rctx.Graph, layers, available)
+	if err != nil {
+		return nil, fmt.Errorf("applying layers: %w", err)
+	}
+	return defaults, nil
+}
 
-	var ef *plan.ExpectFailure
-	if ov.ExpectFailure != nil {
-		ef = &plan.ExpectFailure{
-			Status:      ov.ExpectFailure.Status,
-			Description: ov.ExpectFailure.Description,
-		}
-	}
-	router.AddValueOverride(ov.Pattern, ov.Values, ef)
+// errNoLayersDir reports layers that were requested without a layers directory.
+func errNoLayersDir(layers []string) error {
+	return fmt.Errorf("layers %v requested but no layers directory is configured (set `layers:` in aat-project.yaml)", layers)
 }
 
 // writeRunArchive creates a run archive in the output directory and returns
@@ -763,18 +762,17 @@ func loadRunContext(ctx context.Context, args *runArgs, logf func(string, ...any
 		DumpStatePath:     args.DumpStatePath,
 	}
 
-	// Pre-load layers if directory is configured and any layers are referenced
-	// (from --layer flags and/or --layer-group flags).
-	if rctx.LayersDir != "" {
-		allNames := collectAllLayerNames(args.Layers, args.LayerGroups)
-		if len(allNames) > 0 {
-			layers, err := graph.ResolveLayerNames(allNames, rctx.LayersDir)
-			if err != nil {
-				return nil, fmt.Errorf("loading layers: %w", err)
-			}
-			rctx.AvailableLayers = layers
-			logf("aat: loaded %d layers\n", len(layers))
+	// Pre-load layers referenced by --layer and/or --layer-group flags.
+	if allNames := collectAllLayerNames(args.Layers, args.LayerGroups); len(allNames) > 0 {
+		if rctx.LayersDir == "" {
+			return nil, errNoLayersDir(allNames)
 		}
+		layers, err := graph.ResolveLayerNames(allNames, rctx.LayersDir)
+		if err != nil {
+			return nil, fmt.Errorf("loading layers: %w", err)
+		}
+		rctx.AvailableLayers = layers
+		logf("aat: loaded %d layers\n", len(layers))
 	}
 
 	// Resolve OAS validation mode: CLI flag > env setting > "auto"
@@ -870,17 +868,9 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 
 	// Compute layered defaults from the effective set of layers (CLI + recipe).
 	// This must happen after the switch so recipe-embedded layers are included.
-	var layeredDefaults map[string]*graph.InputDefault
-	if len(effectiveLayers) > 0 && rctx.LayersDir != "" {
-		available, loadErr := graph.ResolveLayerNames(effectiveLayers, rctx.LayersDir)
-		if loadErr != nil {
-			return &runResult{setupErr: true, err: fmt.Errorf("loading layers: %w", loadErr)}
-		}
-		var applyErr error
-		layeredDefaults, applyErr = graph.ApplyLayers(rctx.Graph, effectiveLayers, available)
-		if applyErr != nil {
-			return &runResult{setupErr: true, err: fmt.Errorf("applying layers: %w", applyErr)}
-		}
+	layeredDefaults, err := layeredDefaultsFor(rctx, effectiveLayers)
+	if err != nil {
+		return &runResult{setupErr: true, err: err}
 	}
 
 	// 2. Validate plan against graph (with layers)
@@ -968,7 +958,7 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 			return &runResult{setupErr: true, err: fmt.Errorf("building overrides: %w", err)}
 		}
 		for _, ov := range resolvedOverrides {
-			addResolvedOverride(router, ov)
+			router.AddResolvedOverride(ov)
 		}
 	}
 
@@ -984,7 +974,7 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 			return &runResult{setupErr: true, err: fmt.Errorf("building auto-overrides: %w", err)}
 		}
 		for _, ov := range resolvedOverrides {
-			addResolvedOverride(router, ov)
+			router.AddResolvedOverride(ov)
 		}
 	}
 
@@ -1000,7 +990,7 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 			return &runResult{setupErr: true, err: fmt.Errorf("building overlay overrides: %w", err)}
 		}
 		for _, ov := range resolvedOverrides {
-			addResolvedOverride(router, ov)
+			router.AddResolvedOverride(ov)
 		}
 	}
 

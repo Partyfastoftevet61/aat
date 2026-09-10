@@ -5,14 +5,73 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gburgyan/aat/adapter"
+	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/plan"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestExecutorRouter_AddResolvedOverride_ValueOnlyKeepsRoute(t *testing.T) {
+	router := NewExecutorRouter(adapter.NewHTTPExecutor("http://shop"), &adapter.EnvironmentConfig{BaseURL: "http://shop"})
+	router.AddResolvedOverride(config.ResolvedOverride{
+		Pattern:   "payment*",
+		Routes:    true,
+		APIConfig: config.APIConfig{BaseURL: "http://payments", Headers: map[string]string{"X-API-Key": "k"}},
+	})
+	router.AddResolvedOverride(config.ResolvedOverride{
+		Pattern:       "paymentCharge",
+		APIConfig:     config.APIConfig{BaseURL: "http://shop"},
+		Values:        map[string]any{"cardNumber": "4000000000000002"},
+		ExpectFailure: &config.OverrideExpectFailure{Status: []int{402}},
+	})
+
+	exec, cfg, _ := router.Resolve("paymentCharge")
+	assert.Equal(t, "http://payments", exec.BaseURL, "a value-only override must not replace the glob route")
+	assert.Equal(t, "k", cfg.Headers["X-API-Key"])
+
+	values, ef := router.ResolveValueOverride("paymentCharge")
+	assert.Equal(t, "4000000000000002", values["cardNumber"])
+	require.NotNil(t, ef)
+	assert.Equal(t, []int{402}, ef.Status)
+}
+
+func TestExecutorRouter_InheritedEnvOverride_ChildWins(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "env.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+environments:
+  _base:
+    apiBaseUrl: https://api.example.com
+    auth:
+      type: none
+    overrides:
+      - match: "payment*"
+        baseUrl: https://base.example.com
+  child:
+    extends: _base
+    overrides:
+      - match: "payment*"
+        baseUrl: https://child.example.com
+`), 0o644))
+
+	env, err := config.LoadNamedEnvironment(path, "child")
+	require.NoError(t, err)
+	resolved, err := env.BuildOverrideConfigs(context.Background(), nil)
+	require.NoError(t, err)
+
+	router := NewExecutorRouter(adapter.NewHTTPExecutor(env.APIBaseURL), &adapter.EnvironmentConfig{BaseURL: env.APIBaseURL})
+	for _, ov := range resolved {
+		router.AddResolvedOverride(ov)
+	}
+
+	exec, _, _ := router.Resolve("paymentCharge")
+	assert.Equal(t, "https://child.example.com", exec.BaseURL)
+}
 
 func TestExecutorRouter_DefaultRoute(t *testing.T) {
 	defaultExec := adapter.NewHTTPExecutor("https://default.example.com")

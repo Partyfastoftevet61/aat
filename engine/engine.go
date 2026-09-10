@@ -704,8 +704,21 @@ func (e *Engine) executeStep(ctx context.Context, step plan.Step, node *graph.No
 	// Normal assertions evaluate against serialized extracted outputs when
 	// available, falling back to the raw body (e.g., on 4xx responses).
 	if step.Assertions != nil && len(step.Assertions.Mechanical) > 0 {
+		merged := &validate.MechanicalResult{Passed: true}
 		var rawAssertions, normalAssertions []plan.MechanicalAssertion
 		for _, a := range step.Assertions.Mechanical {
+			// expectFailure owns the status check. A status assertion here (a
+			// composed "2xx" default, or one written before an overlay added
+			// expectFailure) would contradict it, so it is reported as skipped.
+			if step.ExpectFailure != nil && a.Type == string(validate.AssertStatus) {
+				merged.Results = append(merged.Results, validate.AssertionResult{
+					Type:    validate.AssertStatus,
+					Passed:  true,
+					Skipped: true,
+					Message: "status checked by expectFailure",
+				})
+				continue
+			}
 			if a.Raw {
 				rawAssertions = append(rawAssertions, a)
 			} else {
@@ -722,7 +735,6 @@ func (e *Engine) executeStep(ctx context.Context, step plan.Step, node *graph.No
 
 		schemaCheck := buildSchemaCheck(result.OASValidation)
 
-		merged := &validate.MechanicalResult{Passed: true}
 		if len(normalAssertions) > 0 {
 			nr := validate.RunMechanical(resp.StatusCode, normalBody,
 				convertAssertions(normalAssertions), plan.EvalPredicate, schemaCheck)

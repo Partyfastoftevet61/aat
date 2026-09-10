@@ -903,16 +903,9 @@ func instantiateForFingerprint(rctx *runContext, spec batchRunSpec) (*plan.Plan,
 	}
 
 	// Apply layers to get layered defaults, then instantiate
-	var layeredDefaults map[string]*graph.InputDefault
-	if len(effectiveLayers) > 0 && rctx.LayersDir != "" {
-		available, loadErr := graph.ResolveLayerNames(effectiveLayers, rctx.LayersDir)
-		if loadErr != nil {
-			return nil, nil, loadErr
-		}
-		layeredDefaults, err = graph.ApplyLayers(rctx.Graph, effectiveLayers, available)
-		if err != nil {
-			return nil, nil, err
-		}
+	layeredDefaults, err := layeredDefaultsFor(rctx, effectiveLayers)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	inst := plan.InstantiateWithLayers(p, rctx.Graph, layeredDefaults)

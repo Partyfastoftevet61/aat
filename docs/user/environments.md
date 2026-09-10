@@ -142,7 +142,7 @@ environments:
           var: STAGING_TOKEN
 ```
 
-When extending, the child environment's fields are merged on top of the resolved parent using the same rules as shared config. Child overrides are prepended before parent overrides (child has higher match priority).
+When extending, the child environment's fields are merged on top of the resolved parent using the same rules as shared config. Child overrides are appended after the parent's, so a child entry wins over an inherited entry of the same kind for the same node (the last registered match wins).
 
 Inheritance chains are supported (`a` extends `b` extends `c`). Circular inheritance is detected and rejected.
 
@@ -475,8 +475,10 @@ overrides:
 Each override matches node names using glob patterns. When a node matches:
 
 - **`baseUrl`** — replaces the top-level `apiBaseUrl`. If omitted, inherits the top-level base URL.
-- **`auth`** — replaces the top-level auth for that node. If omitted, inherits the top-level auth.
+- **`auth`** — replaces the top-level auth for that node. The top-level credential (the `Authorization` header, or the top-level API key header) is dropped first, so it is never sent to the override's host. If omitted, inherits the top-level auth.
 - **`headers`** — merged with the environment-level headers (override-specific headers win on conflict).
+
+An entry that sets none of `baseUrl`, `auth`, `headers`, or `pathRewrite` — only `values:` or `expectFailure:` — does not change routing: the node keeps the route that a broader glob or the top-level configuration gives it. An overlay can therefore turn `paymentCharge` into a negative test without pulling it off a `payment*` route.
 
 Overrides are matched against the node name with two rules: an exact name always beats a glob pattern, and within each kind (exact or glob) the **last registered** entry wins. Entries register in this order — `env.yaml` `overrides:`, then `.aat-overrides.yaml`, then the `--overlay` file, then `--override` flags — so a later source overrides an earlier one for the same node, whether both are globs or both are exact names. See [Local Development: Priority Chain](local-dev.md#priority-chain).
 

@@ -421,7 +421,7 @@ Assertions validate the step's response. Two kinds:
 
 | Type | Fields | Description |
 |------|--------|-------------|
-| `status` | `expect` (int) | HTTP status code equals expected value |
+| `status` | `expect` (int or class) | HTTP status equals the code (`201`) or falls in the class (`2xx`, `4xx`) |
 | `fieldExists` | `path` (string) | JSON path exists in response body |
 | `fieldEquals` | `path` (string), `value` (any) | JSON path value equals expected value |
 | `predicate` | `expr` (string) | Predicate expression evaluates to true against the response body |
@@ -463,6 +463,10 @@ assertions:
 ```
 
 `status` and `schema` are unaffected by `raw` — they always look at the HTTP status and the full response body respectively.
+
+**Default status assertion.** Steps composed from workflow templates (recipes, `aat prompt`) that declare no status assertion get `status: 2xx`, so APIs that answer `201 Created` or `204 No Content` pass. Steps with `expectFailure` get no default.
+
+**Status under `expectFailure`.** When a step has `expectFailure` — declared in the plan or added by an overlay — its `expectFailure.status` list is the status check, and any `status` assertion on the step is reported as skipped. Other assertions still run against the error response.
 
 **Semantic assertions** are prose descriptions for documentation and future automated evaluation:
 
