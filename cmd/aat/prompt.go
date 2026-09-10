@@ -459,7 +459,10 @@ func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *prompt
 		WithEnvValues(env.Values)
 
 	// OAS runtime validation
-	oasMode := resolveOASMode(args.OASValidateMode, env.Settings.OASValidation)
+	oasMode, err := resolveOASMode(args.OASValidateMode, env.Settings.OASValidation)
+	if err != nil {
+		return err
+	}
 	if oasMode != "off" {
 		specPaths := collectOASSpecPaths(g)
 		if len(specPaths) > 0 {

@@ -111,10 +111,6 @@ func validateSinglePlan(planPath, graphPath, layersDir string, g *graph.Graph, s
 		p = v
 	case *plan.Recipe:
 		fmt.Printf("Reconstituting recipe %q...\n", v.Selection.Workflow)
-		if len(v.Selection.Layers) > 0 && layersDir == "" {
-			fmt.Fprintf(os.Stderr, "aat validate plan: recipe uses layers %v but no layers directory is configured (set `layers:` in aat-project.yaml)\n", v.Selection.Layers)
-			return 1
-		}
 		var opts []intent.ReconstituteOption
 		if layersDir != "" {
 			opts = append(opts, intent.WithLayersDir(layersDir))

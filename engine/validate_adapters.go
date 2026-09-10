@@ -7,6 +7,7 @@ import (
 
 	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/graph"
+	"github.com/gburgyan/aat/graph/oas"
 	"github.com/gburgyan/aat/plan"
 )
 
@@ -43,6 +44,31 @@ func ValidateAdapterOutputsForPlan(g *graph.Graph, registry *adapter.Registry, p
 // elementField names for array outputs.
 func ValidateAdapterOutputs(g *graph.Graph, registry *adapter.Registry) error {
 	return validateAdapterOutputsForNodes(g, registry, nil)
+}
+
+// OutputExtractPaths maps each templated node's outputs to the GJSON paths its
+// template extracts them from, for the static OAS output check (see
+// oas.Validator.WithOutputPaths). An output the template does not extract but
+// a Lua transform may compute maps to "". Nodes without a template adapter are
+// left out, so the check falls back to output names for them.
+func OutputExtractPaths(g *graph.Graph, registry *adapter.Registry) oas.OutputPaths {
+	paths := make(oas.OutputPaths, len(g.Nodes))
+	for name, node := range g.Nodes {
+		tmpl, ok := registry.GetTemplate(node.Adapter)
+		if !ok {
+			continue
+		}
+		outputs := make(map[string]string, len(node.Outputs))
+		for _, out := range node.Outputs {
+			if rule, ok := tmpl.Response.Extract[out.Name]; ok {
+				outputs[out.Name] = rule.GJSONPath()
+			} else if tmpl.HasTransform() {
+				outputs[out.Name] = ""
+			}
+		}
+		paths[name] = outputs
+	}
+	return paths
 }
 
 // validateAdapterOutputsForNodes is the shared implementation. When nodeFilter

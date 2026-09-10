@@ -94,8 +94,25 @@ func graphValidateCommand(args *graphValidateArgs) int {
 		g.OAS = args.OASPath
 	}
 
-	// 3. Collect and load OAS specs via SpecValidator
+	// 3. Load templates when given: the OAS output check looks outputs up at
+	// their extract paths, and the adapter output check compares them.
+	var registry *adapter.Registry
+	templateCount := 0
+	if args.TemplatesPath != "" {
+		registry = adapter.NewRegistry()
+		n, err := adapter.LoadTemplates(args.TemplatesPath, registry)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "aat validate graph: loading templates: %s\n", err)
+			return 1
+		}
+		templateCount = n
+	}
+
+	// 4. Collect and load OAS specs via SpecValidator
 	validator := oas.NewValidator()
+	if registry != nil {
+		validator.WithOutputPaths(engine.OutputExtractPaths(g, registry))
+	}
 	specPaths := validator.CollectSpecPaths(g)
 	if len(specPaths) > 0 {
 		graphDir := filepath.Dir(args.GraphPath)
@@ -111,7 +128,7 @@ func graphValidateCommand(args *graphValidateArgs) int {
 			}
 		}
 
-		// 4. Run OAS validation
+		// Run OAS validation
 		result := validator.Validate(g)
 		if result.HasIssues() {
 			fmt.Println()
@@ -128,20 +145,13 @@ func graphValidateCommand(args *graphValidateArgs) int {
 	}
 
 	// 5. Adapter output validation (when --templates is provided)
-	if args.TemplatesPath != "" {
-		registry := adapter.NewRegistry()
-		n, err := adapter.LoadTemplates(args.TemplatesPath, registry)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "aat validate graph: loading templates: %s\n", err)
-			return 1
-		}
-
+	if registry != nil {
 		if err := engine.ValidateAdapterOutputs(g, registry); err != nil {
 			fmt.Println()
 			fmt.Println(err)
 			hasError = true
 		} else {
-			fmt.Printf("Adapter outputs: OK (%d templates)\n", n)
+			fmt.Printf("Adapter outputs: OK (%d templates)\n", templateCount)
 		}
 	}
 

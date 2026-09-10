@@ -17,6 +17,12 @@ type SpecEntry struct {
 	Document  libopenapi.Document // needed by libopenapi-validator
 	Model     *v3high.Document    // used by existing OAS functions (FindOperation, etc.)
 	Validator validator.Validator // created once per spec, reused for all steps
+
+	// validateMu serializes validations against this entry. Parallel batch runs
+	// share it, and libopenapi-validator writes into the schema model while it
+	// renders a response schema (on every validation for a schema behind a
+	// $ref), so unsynchronized validations race.
+	validateMu sync.Mutex
 }
 
 // SpecCache loads and caches OAS specs by reference path.

@@ -176,8 +176,16 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 		Detail: fmt.Sprintf("(%d nodes)", len(g.Nodes)),
 	})
 
+	// Templates feed the OAS output check (outputs are looked up at their
+	// extract paths) as well as the template sections after it.
+	registry := adapter.NewRegistry()
+	templateCount, templateErr := adapter.LoadTemplates(m.TemplatesPath, registry)
+
 	// 3. OAS validation
 	validator := oas.NewValidator()
+	if templateErr == nil {
+		validator.WithOutputPaths(engine.OutputExtractPaths(g, registry))
+	}
 	specPaths := validator.CollectSpecPaths(g)
 	if len(specPaths) > 0 {
 		graphDir := filepath.Dir(m.GraphPath)
@@ -223,13 +231,11 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 	}
 
 	// 4. Adapter outputs
-	registry := adapter.NewRegistry()
-	n, err := adapter.LoadTemplates(m.TemplatesPath, registry)
-	if err != nil {
+	if templateErr != nil {
 		sections = append(sections, sectionResult{
 			Name:   "Adapter outputs",
 			Status: "FAILED",
-			Errors: []string{err.Error()},
+			Errors: []string{templateErr.Error()},
 		})
 	} else if err := engine.ValidateAdapterOutputs(g, registry); err != nil {
 		sections = append(sections, sectionResult{
@@ -241,7 +247,7 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 		sections = append(sections, sectionResult{
 			Name:   "Adapter outputs",
 			Status: "OK",
-			Detail: fmt.Sprintf("(%d templates)", n),
+			Detail: fmt.Sprintf("(%d templates)", templateCount),
 		})
 	}
 
@@ -469,10 +475,6 @@ func validatePlans(planDirs []string, g *graph.Graph, graphDir, layersDir string
 			}
 		case *plan.Recipe:
 			result.Recipes++
-			if len(v.Selection.Layers) > 0 && layersDir == "" {
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: recipe uses layers %v but the manifest sets no `layers:` directory", entry.Name, v.Selection.Layers))
-				continue
-			}
 			if _, err := intent.Reconstitute(v, g, graphDir, reconOpts...); err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: reconstituting recipe: %s", entry.Name, err))
 			}

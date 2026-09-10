@@ -443,7 +443,7 @@ When the graph references an OpenAPI spec, every step's request and response is 
 | `strict` | Like `auto`, but a violation in the request or response fails the step (cleanup still runs); `expectFailure` steps are exempt |
 | `off` | Skip loading specs and validating entirely |
 
-The `--oas-validate` flag on `aat run plan`, `aat run batch`, and `aat prompt` overrides the environment setting for a single invocation (CLI flag > `settings.oasValidation` > `auto`). Turning it `off` in a busy environment saves the spec-loading time; keeping it on surfaces contract drift as `OAS: N warning(s)` markers and an `issues` count in the archive. See [Running Tests: OAS Validation](running.md#oas-validation) and [API Graphs: OAS Validation](graphs.md#oas-validation).
+The `--oas-validate` flag on `aat run plan`, `aat run batch`, and `aat prompt` overrides the environment setting for a single invocation (CLI flag > `settings.oasValidation` > `auto`). Any other value is rejected, in the environment file when it loads and on the command line, so a typo such as `stirct` cannot quietly mean `auto`. Turning it `off` in a busy environment saves the spec-loading time; keeping it on surfaces contract drift as `OAS: N warning(s)` markers and an `issues` count in the archive. See [Running Tests: OAS Validation](running.md#oas-validation) and [API Graphs: OAS Validation](graphs.md#oas-validation).
 
 ## Multi-Host Routing
 

@@ -31,12 +31,11 @@ execution:
       isGoal: true
       description: Ship the paid order
 
-  # Verification lives in the base template: slot and addon verification is not
-  # composed. Returned covers the Return After Delivery addon.
+  # An addon that verifies getOrder (Return After Delivery) replaces this check.
   verification:
     - node: getOrder
-      purpose: The order reached fulfilment (shipped, or returned when the return addon runs)
+      purpose: The paid order shipped
       assertions:
         mechanical:
           - type: predicate
-            expr: 'status == "shipped" || status == "returned"'
+            expr: 'status == "shipped"'

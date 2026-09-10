@@ -172,6 +172,38 @@ func TestValidateEnvironment_InvalidArchiveFormat(t *testing.T) {
 	assert.Contains(t, err.Error(), "unknown archiveFormat")
 }
 
+func TestValidateEnvironment_OASValidationMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    string
+		wantErr string
+	}{
+		{name: "unset", mode: ""},
+		{name: "auto", mode: "auto"},
+		{name: "warn", mode: "warn"},
+		{name: "strict", mode: "strict"},
+		{name: "off", mode: "off"},
+		{name: "typo", mode: "stirct", wantErr: `unknown oasValidation "stirct"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := &Environment{
+				Name:       "test",
+				APIBaseURL: "https://api.example.com",
+				Auth:       AuthConfig{Type: "none"},
+				Settings:   RuntimeSettings{ArchiveFormat: ArchiveJSON, OASValidation: tt.mode},
+			}
+			err := ValidateEnvironment(env)
+			if tt.wantErr == "" {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
 // --- SecretRef tests ---
 
 func TestSecretRef_ResolveEnv(t *testing.T) {

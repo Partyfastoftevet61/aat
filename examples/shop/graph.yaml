@@ -564,10 +564,6 @@ workflows:
     description: Apply a coupon (SAVE10 unless a coupon layer picks another) after adding items
     template: workflows/addons/apply-coupon.yaml
     after: addItem
-    # The cart comes from a slot, which addon compatibility checks cannot see,
-    # so name its producer explicitly.
-    wire:
-      cartId: createCart.cartId
 
   - name: Track Shipment
     kind: addon

@@ -123,12 +123,9 @@ func BuildServerContext(manifest *ProjectManifest) (*ServerContext, error) {
 }
 
 // reconstitute rebuilds a recipe into a full plan, loading its layers from the
-// manifest's layers directory. A recipe that names layers when no directory is
-// configured is an error rather than a silently different plan.
+// manifest's layers directory. intent.Reconstitute rejects recipe layers when
+// no directory is configured.
 func (ctx *ServerContext) reconstitute(r *plan.Recipe) (*plan.Plan, error) {
-	if len(r.Selection.Layers) > 0 && ctx.LayersDir == "" {
-		return nil, fmt.Errorf("recipe uses layers %v but no layers directory is configured (set `layers:` in aat-project.yaml)", r.Selection.Layers)
-	}
 	var opts []intent.ReconstituteOption
 	if ctx.LayersDir != "" {
 		opts = append(opts, intent.WithLayersDir(ctx.LayersDir))
@@ -138,17 +135,7 @@ func (ctx *ServerContext) reconstitute(r *plan.Recipe) (*plan.Plan, error) {
 
 // layeredDefaults stacks the named layers on the graph defaults for execution.
 func (ctx *ServerContext) layeredDefaults(layers []string) (map[string]*graph.InputDefault, error) {
-	if len(layers) == 0 {
-		return nil, nil
-	}
-	if ctx.LayersDir == "" {
-		return nil, fmt.Errorf("layers %v requested but no layers directory is configured", layers)
-	}
-	available, err := graph.ResolveLayerNames(layers, ctx.LayersDir)
-	if err != nil {
-		return nil, fmt.Errorf("loading layers: %w", err)
-	}
-	return graph.ApplyLayers(ctx.Graph, layers, available)
+	return graph.LayeredDefaults(ctx.Graph, layers, ctx.LayersDir)
 }
 
 // loadOASSpecs discovers and loads OAS spec files referenced in the manifest and graph.

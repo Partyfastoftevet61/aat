@@ -1,0 +1,28 @@
+metadata:
+  prompt: "test parent workflow with verification"
+
+intent:
+  goal: commit
+  description: "Test parent workflow with verification"
+
+execution:
+  steps:
+    - node: search
+      description: "Search for items"
+
+    - node: book
+      dependsOn: [search]
+      values:
+        flightId: {from: search.results, select: {strategy: first}}
+
+    - node: commit
+      dependsOn: [book]
+      isGoal: true
+      values:
+        itineraryId: {from: book.itineraryId}
+
+  verification:
+    - node: search
+      purpose: "base checks search"
+    - node: commit
+      purpose: "base checks commit"

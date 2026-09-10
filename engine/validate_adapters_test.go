@@ -10,6 +10,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestOutputExtractPaths(t *testing.T) {
+	g := &graph.Graph{Nodes: map[string]*graph.Node{
+		"getCart": {Name: "getCart", Adapter: "getCart", Outputs: []graph.Output{
+			{Name: "cartStatus"}, {Name: "firstSku"}, {Name: "lines"}, {Name: "itemCount"},
+		}},
+		"custom": {Name: "custom", Adapter: "customAdapter", Outputs: []graph.Output{{Name: "result"}}},
+	}}
+	registry := adapter.NewRegistry()
+	require.NoError(t, registry.Register("getCart", adapter.NewTemplateAdapter(adapter.Template{
+		Adapter: "getCart",
+		Response: adapter.TemplateResponse{
+			Extract: map[string]adapter.ExtractRule{
+				"cartStatus": {Path: "status"},
+				"firstSku":   {Path: "$.lines[0].sku"},
+				"lines":      {Path: "lines", Fields: map[string]string{"sku": "sku"}},
+			},
+			Transform: "return outputs",
+		},
+	})))
+
+	// itemCount has no extract rule but the transform may compute it; the
+	// custom node has no template and is left to the name-based check.
+	want := map[string]map[string]string{
+		"getCart": {"cartStatus": "status", "firstSku": "lines.0.sku", "lines": "lines", "itemCount": ""},
+	}
+	assert.Equal(t, want, map[string]map[string]string(OutputExtractPaths(g, registry)))
+}
+
 func TestValidateAdapterOutputs(t *testing.T) {
 	tests := []struct {
 		name        string

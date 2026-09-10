@@ -1,0 +1,42 @@
+openapi: 3.0.3
+info:
+  title: Output path fixtures
+  version: "1.0"
+paths:
+  /carts/{cartId}:
+    get:
+      operationId: getCart
+      parameters:
+        - name: cartId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A cart
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  totals:
+                    type: object
+                    properties:
+                      subtotal:
+                        type: integer
+                  lines:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sku:
+                          type: string
+                        category:
+                          type: string
+                  metadata:
+                    type: object
+                    additionalProperties:
+                      type: string

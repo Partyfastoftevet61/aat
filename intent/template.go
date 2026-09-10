@@ -26,7 +26,7 @@ func FindWorkflowTemplate(g *graph.Graph, name string) (templatePath string, fou
 
 // LoadWorkflowTemplate loads a plan template from the given path, resolving
 // it relative to graphDir (the directory containing the graph file).
-// It validates that all step and cleanup nodes exist in the graph.
+// It validates that all step, cleanup, and verification nodes exist in the graph.
 func LoadWorkflowTemplate(templatePath, graphDir string, g *graph.Graph) (*plan.Plan, error) {
 	resolved := templatePath
 	if !filepath.IsAbs(templatePath) {
@@ -52,6 +52,13 @@ func LoadWorkflowTemplate(templatePath, graphDir string, g *graph.Graph) (*plan.
 	for _, cs := range p.Execution.Cleanup {
 		if g.Nodes[cs.Node] == nil {
 			return nil, fmt.Errorf("workflow template cleanup references unknown node %q", cs.Node)
+		}
+	}
+
+	// Validate verification nodes.
+	for _, vs := range p.Execution.Verification {
+		if g.Nodes[vs.Node] == nil {
+			return nil, fmt.Errorf("workflow template verification references unknown node %q", vs.Node)
 		}
 	}
 

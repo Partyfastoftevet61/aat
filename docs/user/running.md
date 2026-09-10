@@ -30,7 +30,7 @@ Two single-plan flags support this:
 | Flag | Description |
 |------|-------------|
 | `--stop-after STEP` | Stop execution after the step whose ID equals `STEP` completes. Cleanup is **skipped**, so resources created up to that point stay alive for the handoff. |
-| `--dump-state FILE` | Write the accumulated run state to `FILE`. Use `-` for stdout instead of a file. Usable with or without `--stop-after`. |
+| `--dump-state FILE` | Write the accumulated run state to `FILE`. Use `-` for stdout instead of a file; stdout then carries only the state and progress goes to stderr. Usable with or without `--stop-after`. |
 
 ```
 aat run plan roundtrip-booking \
@@ -72,7 +72,7 @@ aat run plan roundtrip-booking --stop-after createItinerary --json --dump-state 
 }
 ```
 
-Without `--json`, `--dump-state -` prints the state object on its own (pair it with `--quiet` to suppress progress).
+Without `--json`, stdout carries only the state object: progress and the summary line go to stderr, so `aat run plan … --dump-state - | jq .values` works with or without `--quiet`.
 
 > **Security:** unlike run archives, auth headers in the dump are **not redacted** — that is the point, so the external harness can replay calls. To a file it is written with mode `0600`; to stdout it lands in your terminal/pipe. Either way, treat it as a secret: do not commit, log, or share it.
 
@@ -153,7 +153,7 @@ The `run plan` command adds:
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--stop-after` | string | — | Stop after the named step ID and skip cleanup (see [Checkpoints](#checkpoints-stopping-early-and-handing-off-state)) |
-| `--dump-state` | path | — | Write accumulated run state to a file (`-` for stdout); mode `0600` |
+| `--dump-state` | path | — | Write accumulated run state to a file (`-` for stdout, which then carries only the state); mode `0600` |
 
 The `run batch` command adds:
 

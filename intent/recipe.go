@@ -89,8 +89,12 @@ func Reconstitute(recipe *plan.Recipe, g *graph.Graph, graphDir string, opts ...
 			}
 		}
 
-		// Load missing layers from disk and merge.
-		if len(missing) > 0 && cfg.layersDir != "" {
+		// Load missing layers from disk and merge. Without a directory to load
+		// them from, the recipe would silently run without its layers.
+		if len(missing) > 0 {
+			if cfg.layersDir == "" {
+				return nil, fmt.Errorf("reconstitute: layers %v requested but %w", missing, graph.ErrNoLayersDir)
+			}
 			loaded, err := graph.ResolveLayerNames(missing, cfg.layersDir)
 			if err != nil {
 				return nil, fmt.Errorf("reconstitute: loading layers: %w", err)

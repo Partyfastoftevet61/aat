@@ -242,6 +242,94 @@ func TestValidateStep_NoRequestBody(t *testing.T) {
 	assert.Nil(t, result.Request) // no request body to validate
 }
 
+// concurrentSpecYAML answers with a component schema behind a $ref, like most
+// real specs. libopenapi-validator re-renders such a schema on each response
+// validation instead of using its warmed cache, and rendering writes into the
+// shared schema model.
+const concurrentSpecYAML = `openapi: "3.0.0"
+info:
+  title: Concurrent validation
+  version: "1.0"
+paths:
+  /carts/{cartId}:
+    get:
+      operationId: getCart
+      parameters:
+        - name: cartId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+components:
+  schemas:
+    Cart:
+      type: object
+      required: [cartId, lines]
+      properties:
+        cartId:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartLine'
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    CartLine:
+      type: object
+      required: [sku, quantity]
+      properties:
+        sku:
+          type: string
+        quantity:
+          type: integer
+`
+
+// TestValidateStep_ConcurrentValidationsShareSpec: parallel batch runs share one
+// SpecCache entry, and validating a response renders schema values that
+// libopenapi mutates as it goes. Run with -race: concurrent validations against
+// one spec must not race.
+func TestValidateStep_ConcurrentValidationsShareSpec(t *testing.T) {
+	specPath := filepath.Join(t.TempDir(), "carts.yaml")
+	require.NoError(t, os.WriteFile(specPath, []byte(concurrentSpecYAML), 0o644))
+	cache := NewSpecCache()
+	require.NoError(t, cache.Load("carts.yaml", specPath))
+	node := &graph.Node{Name: "getCart", OAS: &graph.OASRef{OperationID: "getCart", Spec: "carts.yaml"}}
+
+	const workers, rounds = 8, 10
+	type outcome struct {
+		invalid bool
+		result  *ValidationResult
+	}
+	outcomes := make(chan outcome, workers*rounds)
+	for w := 0; w < workers; w++ {
+		go func(invalid bool) {
+			body := `{"cartId": "c1", "lines": [{"sku": "SKU-1", "quantity": 2}], "metadata": {"channel": "web"}}`
+			if invalid {
+				body = `{"cartId": "c1", "lines": [{"sku": "SKU-1"}]}` // a line without its quantity
+			}
+			for r := 0; r < rounds; r++ {
+				headers := http.Header{"Content-Type": []string{"application/json"}}
+				outcomes <- outcome{invalid, ValidateStep(node, "", cache, "GET", "/carts/c1", nil, nil, 200, headers, []byte(body))}
+			}
+		}(w%2 == 1)
+	}
+
+	for i := 0; i < workers*rounds; i++ {
+		o := <-outcomes
+		require.NotNil(t, o.result)
+		assert.Equal(t, o.invalid, o.result.HasErrors(), "response validity")
+	}
+}
+
 func TestValidateStep_GraphOASFallback(t *testing.T) {
 	_, specPath := writeTestSpec(t)
 	cache := NewSpecCache()

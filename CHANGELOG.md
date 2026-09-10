@@ -19,6 +19,8 @@ the graph and plan formats may still change before 1.0.
   retries, a negative state-machine walk, `addItem` mutations), a declined-card overlay, a receipt
   visualizer, `us`/`eu` environments with payments routed to their own host and credential, and MCP
   configuration for AI coding tools.
+- Workflow slot options and addons can declare `verification:`. Composition merges it into the base
+  workflow's, and a node they verify replaces the base's verification of that node.
 - A step that succeeds after retrying shows `retried Nx: <category>` in run output, and archives record
   the category of each retried attempt in `retriedOn`.
 - `status` assertions accept a status class such as `expect: 2xx` or `expect: 4xx`.
@@ -77,6 +79,19 @@ the graph and plan formats may still change before 1.0.
   layer is reported and layer-supplied inputs no longer fail validation.
 - MCP `execute_plan` applies override values, `expectFailure`, and recipe layers like `aat run plan`.
 - `aat plan list` summarizes recipes instead of reporting a parse error for each.
+- `--dump-state -` without `--json` writes only the state to stdout; progress and the summary line go to
+  stderr, so the output pipes into `jq` as documented.
+- Workflow compatibility checking (`aat validate`) accounts for slots: an addon `AUTOWIRE` input that every
+  option of a slot produces is no longer reported as unfed, an addon that attaches after a slot option's
+  node is checked instead of skipped, and slot options are no longer checked as bases of their own.
+- The static OpenAPI output check looks each output up at its template extract path, through nested objects
+  and array items, instead of requiring a top-level response property named after the output.
+- `settings.oasValidation` and `--oas-validate` reject unknown values instead of treating them as `auto`.
+- A workflow template whose `verification:` names a node missing from the graph fails to load, as cleanup
+  entries already did.
+- `aat run batch --parallel N` with runtime OpenAPI validation no longer has a data race: parallel runs share
+  one loaded spec, and libopenapi-validator writes into the schema model while it renders a response schema
+  behind a `$ref`, so validations against a spec now take turns.
 - `--verbose-auth` no longer prints the full access token in the logged token response.
 - `aat validate`, `aat generate --oas`, and the MCP OpenAPI operation details include parameters
   declared on an OpenAPI path item (such as a shared `{cartId}`), not only those on the operation.

@@ -49,94 +49,6 @@ func buildCompatTestGraph() *graph.Graph {
 	}
 }
 
-// validateCompatInMemory mirrors ValidateWorkflowCompat logic using pre-built
-// plans instead of loading from disk. Includes the producible-names filter.
-func validateCompatInMemory(g *graph.Graph, plans map[string]*plan.Plan) *WorkflowCompatResult {
-	result := &WorkflowCompatResult{}
-
-	var bases, addons []graph.Workflow
-	for _, wf := range g.Workflows {
-		if wf.IsAddon() {
-			addons = append(addons, wf)
-		} else {
-			bases = append(bases, wf)
-		}
-	}
-
-	if len(addons) == 0 || len(bases) == 0 {
-		return result
-	}
-
-	producible := buildProducibleNames(g)
-
-	for _, addon := range addons {
-		addonPlan := plans[addon.Template]
-		if addonPlan == nil {
-			continue
-		}
-
-		autowireInputs := collectAutowireInputs(addonPlan)
-		for inputName := range addon.Wire {
-			delete(autowireInputs, inputName)
-		}
-		var nonProducibleInputs []string
-		for inputName := range autowireInputs {
-			if !producible[inputName] {
-				nonProducibleInputs = append(nonProducibleInputs, inputName)
-				delete(autowireInputs, inputName)
-			}
-		}
-		if len(nonProducibleInputs) > 0 {
-			result.NonProducible = append(result.NonProducible, WorkflowNonProducible{
-				Addon:  addon.Name,
-				Inputs: nonProducibleInputs,
-			})
-		}
-		if len(autowireInputs) == 0 {
-			continue
-		}
-
-		for _, base := range bases {
-			basePlan := plans[base.Template]
-			if basePlan == nil {
-				continue
-			}
-
-			if addon.After.IsSet() {
-				found := false
-				for _, afterNode := range addon.After {
-					if findStepByNode(basePlan, afterNode) != "" {
-						found = true
-						break
-					}
-				}
-				if !found {
-					continue
-				}
-			}
-
-			outputMap := buildOutputMap(basePlan, g)
-
-			var unfed []string
-			for inputName := range autowireInputs {
-				if _, found := outputMap[inputName]; !found {
-					unfed = append(unfed, inputName)
-				}
-			}
-
-			if len(unfed) > 0 {
-				result.Warnings = append(result.Warnings, WorkflowCompatWarning{
-					Addon:        addon.Name,
-					BaseWorkflow: base.Name,
-					UnfedInputs:  unfed,
-				})
-			}
-		}
-	}
-
-	return result
-}
-
 func TestValidateWorkflowCompat_AllSatisfied(t *testing.T) {
 	g := buildCompatTestGraph()
 	g.Workflows = []graph.Workflow{
@@ -466,9 +378,9 @@ func TestCollectAutowireInputs(t *testing.T) {
 	assert.False(t, inputs["c"])
 }
 
-// --- In-memory validation tests ---
+// --- In-memory checks (checkWorkflowCompat) ---
 
-func TestValidateWorkflowCompat_InMemory_AllSatisfied(t *testing.T) {
+func TestCheckWorkflowCompat_AllSatisfied(t *testing.T) {
 	g := buildCompatTestGraph()
 	g.Workflows = []graph.Workflow{
 		{Name: "Base", Template: "base"},
@@ -495,11 +407,11 @@ func TestValidateWorkflowCompat_InMemory_AllSatisfied(t *testing.T) {
 		},
 	}
 
-	result := validateCompatInMemory(g, plans)
+	result := checkWorkflowCompat(g, plans)
 	assert.False(t, result.HasWarnings())
 }
 
-func TestValidateWorkflowCompat_InMemory_UnfedStructural(t *testing.T) {
+func TestCheckWorkflowCompat_UnfedStructural(t *testing.T) {
 	g := buildCompatTestGraph()
 	g.Workflows = []graph.Workflow{
 		{Name: "Base", Template: "base"},
@@ -526,18 +438,16 @@ func TestValidateWorkflowCompat_InMemory_UnfedStructural(t *testing.T) {
 		},
 	}
 
-	result := validateCompatInMemory(g, plans)
+	result := checkWorkflowCompat(g, plans)
 	require.True(t, result.HasWarnings())
 	w := result.Warnings[0]
 	// search only produces "results" and "token".
 	// itineraryId is producible (book outputs it) but not in search-only base → unfed.
 	// specialInput is producible (specialProvider outputs it) but not in base → unfed.
-	assert.Len(t, w.UnfedInputs, 2)
-	assert.Contains(t, w.UnfedInputs, "itineraryId")
-	assert.Contains(t, w.UnfedInputs, "specialInput")
+	assert.Equal(t, []string{"specialInput", "itineraryId"}, w.UnfedInputs)
 }
 
-func TestValidateWorkflowCompat_InMemory_ValueInputFiltered(t *testing.T) {
+func TestCheckWorkflowCompat_ValueInputFiltered(t *testing.T) {
 	g := buildCompatTestGraph()
 	g.Workflows = []graph.Workflow{
 		{Name: "Base", Template: "base"},
@@ -565,10 +475,96 @@ func TestValidateWorkflowCompat_InMemory_ValueInputFiltered(t *testing.T) {
 		},
 	}
 
-	result := validateCompatInMemory(g, plans)
+	result := checkWorkflowCompat(g, plans)
 	// email is not produced by any node → no compatibility warning
 	assert.False(t, result.HasWarnings())
 	// email shows up as non-producible
 	require.True(t, result.HasNonProducible())
 	assert.Contains(t, result.NonProducible[0].Inputs, "email")
+}
+
+// TestCheckWorkflowCompat_Slots: composition fills a base's slots before it
+// splices addons, so slot options count toward what the base produces and
+// toward where an addon can attach.
+func TestCheckWorkflowCompat_Slots(t *testing.T) {
+	tests := []struct {
+		name        string
+		optionB     []plan.Step
+		after       graph.AfterSpec
+		addonValues map[string]plan.StepValue
+		wantUnfed   []string // nil: no warning expected
+	}{
+		{
+			name:        "every slot option produces the input",
+			optionB:     []plan.Step{{Node: "book"}},
+			after:       graph.AfterSpec{"commit"},
+			addonValues: map[string]plan.StepValue{"itineraryId": {Default: "AUTOWIRE"}},
+		},
+		{
+			name:        "one slot option does not produce the input",
+			optionB:     []plan.Step{{Node: "search"}},
+			after:       graph.AfterSpec{"commit"},
+			addonValues: map[string]plan.StepValue{"itineraryId": {Default: "AUTOWIRE"}},
+			wantUnfed:   []string{"itineraryId"},
+		},
+		{
+			name:        "after node contributed only by a slot option",
+			optionB:     []plan.Step{{Node: "book"}},
+			after:       graph.AfterSpec{"book"},
+			addonValues: map[string]plan.StepValue{"specialInput": {Default: "AUTOWIRE"}},
+			wantUnfed:   []string{"specialInput"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := buildCompatTestGraph()
+			g.Workflows = []graph.Workflow{
+				{Name: "Base", Template: "base", Slots: []graph.SlotDef{
+					{Name: "cart", Options: []string{"OptA", "OptB"}, Default: "OptA"},
+				}},
+				{Name: "OptA", Kind: "slot", Template: "optA"},
+				{Name: "OptB", Kind: "slot", Template: "optB"},
+				{Name: "Addon", Kind: "addon", Template: "addon", After: tt.after},
+			}
+			plans := map[string]*plan.Plan{
+				"base": {Execution: plan.Execution{Steps: []plan.Step{
+					{Node: "search"}, {Slot: "cart"}, {Node: "commit"},
+				}}},
+				"optA":  {Execution: plan.Execution{Steps: []plan.Step{{Node: "book"}}}},
+				"optB":  {Execution: plan.Execution{Steps: tt.optionB}},
+				"addon": {Execution: plan.Execution{Steps: []plan.Step{{Node: "addonNode", Values: tt.addonValues}}}},
+			}
+
+			result := checkWorkflowCompat(g, plans)
+			if tt.wantUnfed == nil {
+				assert.False(t, result.HasWarnings(), "unexpected warnings: %v", result.Warnings)
+				return
+			}
+			// Slot options are checked through their base, never as bases of their own.
+			require.Len(t, result.Warnings, 1)
+			assert.Equal(t, "Base", result.Warnings[0].BaseWorkflow)
+			assert.Equal(t, tt.wantUnfed, result.Warnings[0].UnfedInputs)
+		})
+	}
+}
+
+func TestCheckWorkflowCompat_MissingSlotOptionTemplateSkipsBase(t *testing.T) {
+	g := buildCompatTestGraph()
+	g.Workflows = []graph.Workflow{
+		{Name: "Base", Template: "base", Slots: []graph.SlotDef{
+			{Name: "cart", Options: []string{"OptA", "OptB"}},
+		}},
+		{Name: "OptA", Kind: "slot", Template: "optA"},
+		{Name: "OptB", Kind: "slot", Template: "optB"}, // failed to load: absent from the map
+		{Name: "Addon", Kind: "addon", Template: "addon", After: graph.AfterSpec{"commit"}},
+	}
+	plans := map[string]*plan.Plan{
+		"base":  {Execution: plan.Execution{Steps: []plan.Step{{Node: "search"}, {Slot: "cart"}, {Node: "commit"}}}},
+		"optA":  {Execution: plan.Execution{Steps: []plan.Step{{Node: "search"}}}},
+		"addon": {Execution: plan.Execution{Steps: []plan.Step{{Node: "addonNode", Values: map[string]plan.StepValue{"itineraryId": {Default: "AUTOWIRE"}}}}}},
+	}
+
+	result := checkWorkflowCompat(g, plans)
+	assert.False(t, result.HasWarnings(), "a base with an unloadable slot option is not checked")
 }

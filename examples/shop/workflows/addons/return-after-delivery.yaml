@@ -12,3 +12,13 @@ execution:
     - node: paymentRefund
       dependsOn: [createReturn]
       description: Refund the whole payment
+
+  # Replaces the base workflow's getOrder verification: after this addon the
+  # order ends returned, not shipped.
+  verification:
+    - node: getOrder
+      purpose: The order ends returned with its payment fully refunded
+      assertions:
+        mechanical:
+          - type: predicate
+            expr: 'status == "returned" && paymentStatus == "refunded"'

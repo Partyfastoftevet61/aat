@@ -574,6 +574,62 @@ func TestExecuteRun_JSONOutput(t *testing.T) {
 	assert.Equal(t, "passed", summary.Outcome)
 }
 
+// TestExecuteRun_DumpStateStdoutCarriesOnlyState: without --json,
+// --dump-state - owns stdout, so the export pipes into jq whether or not
+// --quiet is set; progress and the summary line go to stderr.
+func TestExecuteRun_DumpStateStdoutCarriesOnlyState(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"result": "ok"})
+	}))
+	defer apiServer.Close()
+
+	tests := []struct {
+		name       string
+		quiet      bool
+		wantStderr string
+	}{
+		{name: "progress", quiet: false, wantStderr: "aat: executing plan"},
+		{name: "quiet", quiet: true, wantStderr: "STOPPED"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			stdout, err := os.Create(filepath.Join(dir, "stdout"))
+			require.NoError(t, err)
+			stderr, err := os.Create(filepath.Join(dir, "stderr"))
+			require.NoError(t, err)
+
+			oldStdout, oldStderr := os.Stdout, os.Stderr
+			os.Stdout, os.Stderr = stdout, stderr
+			code := executeRun(&runArgs{
+				PlanPath:      "testdata/test_plan.yaml",
+				EnvPath:       writeTestEnv(t, "none", apiServer.URL),
+				GraphPath:     "testdata/test_graph.yaml",
+				TemplatesPath: "testdata/templates",
+				OutputDir:     filepath.Join(dir, "runs"),
+				Quiet:         tt.quiet,
+				StopAfterStep: "testNode",
+				DumpStatePath: "-",
+			})
+			os.Stdout, os.Stderr = oldStdout, oldStderr
+			require.NoError(t, stdout.Close())
+			require.NoError(t, stderr.Close())
+
+			assert.Equal(t, 0, code)
+			data, err := os.ReadFile(stdout.Name())
+			require.NoError(t, err)
+			var exp engine.StateExport
+			require.NoError(t, json.Unmarshal(data, &exp), "stdout must hold exactly the state export: %s", data)
+			assert.Equal(t, "stopped", exp.Outcome)
+
+			logs, err := os.ReadFile(stderr.Name())
+			require.NoError(t, err)
+			assert.Contains(t, string(logs), tt.wantStderr)
+		})
+	}
+}
+
 // --- Display outputs tests ---
 
 func TestPrintRunSummary_DisplayOutputs(t *testing.T) {
@@ -912,6 +968,33 @@ func TestRunCommand_LayersWithoutLayersDirFails(t *testing.T) {
 
 	require.Error(t, res.err)
 	assert.Contains(t, res.err.Error(), "no layers directory is configured")
+}
+
+func TestResolveOASMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		flag    string
+		setting string
+		want    string
+		wantErr string
+	}{
+		{name: "defaults to auto", want: "auto"},
+		{name: "environment setting", setting: "strict", want: "strict"},
+		{name: "flag beats the setting", flag: "off", setting: "strict", want: "off"},
+		{name: "unknown flag value", flag: "stirct", wantErr: `unknown --oas-validate mode "stirct"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveOASMode(tt.flag, tt.setting)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 // --- Helpers ---

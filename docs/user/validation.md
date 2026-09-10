@@ -55,10 +55,10 @@ Project validation: FAILED (2 section(s) with errors)
 |---------|-------------------|
 | Manifest | Manifest discovery, all referenced files and directories exist |
 | Graph structure | YAML parsing, node uniqueness, input/output types, required fields |
-| OAS validation | OpenAPI spec loading, operationId alignment, method/path consistency |
+| OAS validation | OpenAPI spec loading, operationId alignment, inputs and required parameters, outputs present in the 2xx response schema at their template extract paths (nested objects and array items included) |
 | Adapter outputs | Template extraction paths match graph output declarations |
 | Template inputs | Required template placeholders vs optional graph inputs |
-| Workflow compatibility | Inline workflow definitions: kinds, slot references, addon targets |
+| Workflow compatibility | Addon `AUTOWIRE` inputs are produced in every base the addon attaches to; a slot counts when all of its options produce the input, because slots are filled before addons are spliced |
 | Workflows | Workflow directory files parse correctly and validate against graph |
 | Plans | Plan directory files parse correctly and validate against graph; recipes reconstitute |
 

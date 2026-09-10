@@ -84,6 +84,59 @@ func TestValidate_PathItemParameters(t *testing.T) {
 	})
 }
 
+func TestValidate_OutputExtractPaths(t *testing.T) {
+	tests := []struct {
+		name    string
+		output  string
+		paths   OutputPaths // nil: no template paths known
+		wantMsg string      // empty: no issue expected
+	}{
+		{name: "top-level output name", output: "status"},
+		{name: "renamed output without paths", output: "cartStatus", wantMsg: `output "cartStatus" not found in OAS 2xx response schema`},
+		{name: "renamed output at its extract path", output: "cartStatus", paths: OutputPaths{"getCart": {"cartStatus": "status"}}},
+		{name: "nested object path", output: "subtotal", paths: OutputPaths{"getCart": {"subtotal": "totals.subtotal"}}},
+		{name: "array items path", output: "skus", paths: OutputPaths{"getCart": {"skus": "lines.#.sku"}}},
+		{name: "array index path", output: "firstSku", paths: OutputPaths{"getCart": {"firstSku": "lines.0.sku"}}},
+		{
+			name:    "missing nested property",
+			output:  "tax",
+			paths:   OutputPaths{"getCart": {"tax": "totals.tax"}},
+			wantMsg: `output "tax" (extracted from "totals.tax") not found in OAS 2xx response schema`,
+		},
+		{name: "additionalProperties map", output: "channel", paths: OutputPaths{"getCart": {"channel": "metadata.channel"}}},
+		{name: "computed by a transform", output: "itemCount", paths: OutputPaths{"getCart": {"itemCount": ""}}},
+		{name: "GJSON query is not checked", output: "gearSku", paths: OutputPaths{"getCart": {"gearSku": `lines.#(category=="gear").sku`}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := NewValidator().WithOutputPaths(tt.paths)
+			require.NoError(t, v.LoadSpec("carts.yaml", "testdata/output_paths.yaml"))
+			g := &graph.Graph{
+				Version: "1.0.0",
+				OAS:     "carts.yaml",
+				Nodes: map[string]*graph.Node{
+					"getCart": {
+						Name:    "getCart",
+						Adapter: "getCart",
+						OAS:     &graph.OASRef{OperationID: "getCart"},
+						Inputs:  []graph.Input{{Name: "cartId", Type: "string"}},
+						Outputs: []graph.Output{{Name: tt.output, Type: "string"}},
+					},
+				},
+			}
+
+			result := v.Validate(g)
+			if tt.wantMsg == "" {
+				assert.False(t, result.HasIssues(), result.Format())
+				return
+			}
+			require.True(t, result.HasIssues())
+			assert.Contains(t, result.Format(), tt.wantMsg)
+		})
+	}
+}
+
 func TestValidate_Rule1_EmptyOperationID(t *testing.T) {
 	v := NewValidator()
 	g := &graph.Graph{

@@ -97,7 +97,7 @@ func init() {
 	runPlanCmd.Flags().Bool("json", false, "output machine-readable JSON summary to stdout")
 	runPlanCmd.Flags().Bool("quiet", false, "suppress progress messages, show only final summary")
 	runPlanCmd.Flags().String("stop-after", "", "stop execution after the named step (by step ID); cleanup is skipped so resources stay alive for handoff")
-	runPlanCmd.Flags().String("dump-state", "", "write accumulated run state (base URL, live auth headers, step outputs) to FILE (mode 0600); use \"-\" for stdout (nested under \"state\" in --json output)")
+	runPlanCmd.Flags().String("dump-state", "", "write accumulated run state (base URL, live auth headers, step outputs) to FILE (mode 0600); use \"-\" for stdout, which then carries only the state (progress goes to stderr; with --json it is nested under \"state\")")
 }
 
 // executeRun handles output modes (JSON/quiet/normal) and returns an exit code.
@@ -111,8 +111,16 @@ func executeRun(ra *runArgs) int {
 	ti := DetectTerminal()
 	color := ti.IsTTY
 
+	// console receives progress and the summary line. With --dump-state - (and
+	// no --json) stdout carries only the state export, so they go to stderr and
+	// the export pipes cleanly into another tool.
+	var console io.Writer = os.Stdout
+	if ra.DumpStatePath == "-" && !ra.JSON {
+		console = os.Stderr
+	}
+
 	// Choose output writer: --quiet suppresses progress
-	var out io.Writer = os.Stdout
+	out := console
 	if ra.Quiet {
 		out = io.Discard
 	}
@@ -164,18 +172,18 @@ func executeRun(ra *runArgs) int {
 		}
 		switch res.summary.Outcome {
 		case "passed":
-			_, _ = fmt.Fprintf(os.Stdout, "%s (%d/%d steps)%s\n", colorOutcome("PASSED", color), res.summary.Summary.PassedSteps, res.summary.Summary.TotalSteps, attemptSuffix)
+			_, _ = fmt.Fprintf(console, "%s (%d/%d steps)%s\n", colorOutcome("PASSED", color), res.summary.Summary.PassedSteps, res.summary.Summary.TotalSteps, attemptSuffix)
 		case "failed":
-			_, _ = fmt.Fprintf(os.Stdout, "%s: %s%s\n", colorOutcome("FAILED", color), res.summary.Error, attemptSuffix)
+			_, _ = fmt.Fprintf(console, "%s: %s%s\n", colorOutcome("FAILED", color), res.summary.Error, attemptSuffix)
 		case "error":
-			_, _ = fmt.Fprintf(os.Stdout, "%s: %s%s\n", colorOutcome("ERROR", color), res.summary.Error, attemptSuffix)
+			_, _ = fmt.Fprintf(console, "%s: %s%s\n", colorOutcome("ERROR", color), res.summary.Error, attemptSuffix)
 		case "aborted":
-			_, _ = fmt.Fprintf(os.Stdout, "%s (%d/%d steps)%s\n", colorOutcome("ABORTED", color), res.summary.Summary.PassedSteps, res.summary.Summary.TotalSteps, attemptSuffix)
+			_, _ = fmt.Fprintf(console, "%s (%d/%d steps)%s\n", colorOutcome("ABORTED", color), res.summary.Summary.PassedSteps, res.summary.Summary.TotalSteps, attemptSuffix)
 		case "stopped":
-			_, _ = fmt.Fprintf(os.Stdout, "%s (%d/%d steps)%s\n", colorOutcome("STOPPED", color), res.summary.Summary.PassedSteps, res.summary.Summary.TotalSteps, attemptSuffix)
+			_, _ = fmt.Fprintf(console, "%s (%d/%d steps)%s\n", colorOutcome("STOPPED", color), res.summary.Summary.PassedSteps, res.summary.Summary.TotalSteps, attemptSuffix)
 		}
 		if res.archivePath != "" {
-			_, _ = fmt.Fprintf(os.Stdout, "Archive: %s\n", res.archivePath)
+			_, _ = fmt.Fprintf(console, "Archive: %s\n", res.archivePath)
 		}
 		return exitCode(res)
 	}

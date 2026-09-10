@@ -484,6 +484,49 @@ func TestMergeCleanup_EmptySub(t *testing.T) {
 	require.Len(t, parent.Execution.Cleanup, 1)
 }
 
+// --- mergeVerification ---
+
+func TestMergeVerification(t *testing.T) {
+	predicate := func(expr string) *plan.Assertions {
+		return &plan.Assertions{Mechanical: []plan.MechanicalAssertion{{Type: "predicate", Expr: expr}}}
+	}
+	shipped := plan.VerificationStep{Node: "getOrder", Assertions: predicate(`status == "shipped"`)}
+	returned := plan.VerificationStep{Node: "getOrder", Assertions: predicate(`status == "returned"`)}
+
+	tests := []struct {
+		name   string
+		parent []plan.VerificationStep
+		sub    []plan.VerificationStep
+		want   []plan.VerificationStep
+	}{
+		{
+			name:   "no sub-workflow verification",
+			parent: []plan.VerificationStep{shipped},
+			want:   []plan.VerificationStep{shipped},
+		},
+		{
+			name:   "a node the parent does not verify is added",
+			parent: []plan.VerificationStep{shipped},
+			sub:    []plan.VerificationStep{{Node: "getShipment"}},
+			want:   []plan.VerificationStep{shipped, {Node: "getShipment"}},
+		},
+		{
+			name:   "a node the parent verifies is replaced by every sub-workflow entry for it",
+			parent: []plan.VerificationStep{shipped, {Node: "getCart"}},
+			sub:    []plan.VerificationStep{returned, {Node: "getOrder", Purpose: "second check"}},
+			want:   []plan.VerificationStep{{Node: "getCart"}, returned, {Node: "getOrder", Purpose: "second check"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parent := &plan.Plan{Execution: plan.Execution{Verification: tt.parent}}
+			mergeVerification(parent, &plan.Plan{Execution: plan.Execution{Verification: tt.sub}})
+			assert.Equal(t, tt.want, parent.Execution.Verification)
+		})
+	}
+}
+
 // --- findStepByNode ---
 
 func TestFindStepByNode(t *testing.T) {
@@ -1169,6 +1212,49 @@ func TestCompose_Slots_CleanupMerge(t *testing.T) {
 	// Base has cleanup: commit (always). Options have no cleanup.
 	require.Len(t, p.Execution.Cleanup, 1)
 	assert.Equal(t, "commit", p.Execution.Cleanup[0].Node)
+}
+
+func TestCompose_Slots_VerificationMerge(t *testing.T) {
+	g := buildSlotTestGraph()
+	g.Workflows = append(g.Workflows, graph.Workflow{
+		Name:     "VerifiedOption",
+		Kind:     "slot",
+		Template: "testdata/compose/verify_slot_option.yaml",
+	})
+	base := findSlotBaseWorkflow(g)
+	base.Slots[0].Options = append(base.Slots[0].Options, "VerifiedOption")
+
+	p, err := Compose(ComposeRequest{Base: base, Choices: map[string]string{
+		"trip-search": "VerifiedOption",
+		"payment":     "CashPayment",
+	}, Graph: g, GraphDir: "."})
+	require.NoError(t, err)
+
+	// The base verifies nothing; the chosen option's verification is kept.
+	require.Len(t, p.Execution.Verification, 1)
+	assert.Equal(t, "book", p.Execution.Verification[0].Node)
+	assert.Equal(t, "slot option checks book", p.Execution.Verification[0].Purpose)
+}
+
+func TestCompose_Addon_VerificationReplacesBaseNode(t *testing.T) {
+	g := buildComposeTestGraph()
+	g.Workflows = append(g.Workflows, graph.Workflow{
+		Name:     "VerifyAddon",
+		Kind:     "addon",
+		Template: "testdata/compose/verify_addon.yaml",
+		After:    graph.AfterSpec{"book"},
+	})
+	base := graph.Workflow{Name: "VerifiedBase", Template: "testdata/compose/verify_parent.yaml"}
+
+	p, err := Compose(ComposeRequest{Base: base, Addons: []string{"VerifyAddon"}, Graph: g, GraphDir: "."})
+	require.NoError(t, err)
+
+	// The base's search check stays; its commit check is replaced by the addon's.
+	require.Len(t, p.Execution.Verification, 2)
+	assert.Equal(t, "search", p.Execution.Verification[0].Node)
+	assert.Equal(t, "base checks search", p.Execution.Verification[0].Purpose)
+	assert.Equal(t, "commit", p.Execution.Verification[1].Node)
+	assert.Equal(t, "addon checks commit", p.Execution.Verification[1].Purpose)
 }
 
 func TestCompose_SlotsAndAddons_Success(t *testing.T) {

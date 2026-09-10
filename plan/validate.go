@@ -646,7 +646,8 @@ func toInt(v any) (int, bool) {
 }
 
 // statusClass reports whether v is a status class such as "2xx" (any case)
-// and returns its leading digit.
+// and returns its leading digit. It mirrors validate.StatusClass, which plan
+// cannot import; keep the two in step.
 func statusClass(v any) (int, bool) {
 	s, ok := v.(string)
 	if !ok || len(s) != 3 || s[0] < '1' || s[0] > '5' || !strings.EqualFold(s[1:], "xx") {

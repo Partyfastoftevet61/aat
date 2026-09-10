@@ -394,7 +394,7 @@ Each slot marker is replaced by its chosen option's steps:
 - `[slot: payment]` with `choices: {payment: Cash}` becomes:
   `addPaymentMethodCash`
 
-Downstream `dependsOn` references to `trip-search` are rewritten to `addOfferByRef` (the last step of the Round-Trip option).
+Downstream `dependsOn` references to `trip-search` are rewritten to `addOfferByRef` (the last step of the Round-Trip option). Each option's `cleanup:` is merged into the base's, and so is its `verification:`: a node the option verifies replaces the base's verification of that node.
 
 ### Step 3: Resolve AUTOWIRE (Slots)
 
@@ -411,7 +411,9 @@ Each addon is processed in priority order:
 5. Wire AUTOWIRE placeholders using the explicit Wire map and output name matching
 6. Add insertion-point dependency to addon root steps
 7. Splice addon steps after the insertion point
-8. Merge addon cleanup with base cleanup
+8. Merge addon cleanup with base cleanup, and addon verification with base verification (a node the addon verifies replaces the base's check of that node, since the addon knows the state the plan ends in)
+
+Because slots are filled first, addons see slot option steps: an addon can attach after a node that the chosen slot option contributes, and `AUTOWIRE` an output that every option of a slot produces. `aat validate` checks addon compatibility the same way.
 
 ### Step 5: Fix Dependencies
 

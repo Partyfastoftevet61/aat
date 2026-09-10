@@ -25,6 +25,41 @@ func TestLayer_UnknownInputs(t *testing.T) {
 	assert.Equal(t, []string{"checkoutCart.deliverydate", "missingNode.category", "shippingTeir"}, layer.UnknownInputs(g))
 }
 
+func TestLayeredDefaults(t *testing.T) {
+	g := &Graph{Nodes: map[string]*Node{
+		"checkoutCart": {Name: "checkoutCart", Inputs: []Input{
+			{Name: "shippingTier", Default: &InputDefault{Value: "standard"}},
+		}},
+	}}
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "express.yaml"), []byte("name: express\ninputs:\n  shippingTier: express\n"), 0o644))
+
+	t.Run("no layers", func(t *testing.T) {
+		defaults, err := LayeredDefaults(g, nil, "")
+		require.NoError(t, err)
+		assert.Nil(t, defaults)
+	})
+
+	t.Run("layers without a directory", func(t *testing.T) {
+		_, err := LayeredDefaults(g, []string{"express"}, "")
+		require.ErrorIs(t, err, ErrNoLayersDir)
+		assert.Contains(t, err.Error(), "[express]")
+	})
+
+	t.Run("unknown layer", func(t *testing.T) {
+		_, err := LayeredDefaults(g, []string{"overnight"}, dir)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `layer "overnight" not found`)
+	})
+
+	t.Run("stacks the layer on the graph default", func(t *testing.T) {
+		defaults, err := LayeredDefaults(g, []string{"express"}, dir)
+		require.NoError(t, err)
+		require.Contains(t, defaults, "checkoutCart.shippingTier")
+		assert.Equal(t, "express", defaults["checkoutCart.shippingTier"].Value)
+	})
+}
+
 func TestParseLayer_ScalarValue(t *testing.T) {
 	yaml := `
 name: amex

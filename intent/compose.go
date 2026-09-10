@@ -306,6 +306,29 @@ func mergeCleanup(parent, sub *plan.Plan) {
 	}
 }
 
+// mergeVerification adds sub-workflow verification steps to parent. A node the
+// sub-workflow verifies replaces the parent's verification of that node: slot
+// options and addons compose after the base, so they know the state the plan
+// ends in (an addon that returns an order ends at "returned", not "shipped").
+func mergeVerification(parent, sub *plan.Plan) {
+	if len(sub.Execution.Verification) == 0 {
+		return
+	}
+
+	replaced := make(map[string]bool, len(sub.Execution.Verification))
+	for _, vs := range sub.Execution.Verification {
+		replaced[vs.Node] = true
+	}
+
+	merged := make([]plan.VerificationStep, 0, len(parent.Execution.Verification)+len(sub.Execution.Verification))
+	for _, vs := range parent.Execution.Verification {
+		if !replaced[vs.Node] {
+			merged = append(merged, vs)
+		}
+	}
+	parent.Execution.Verification = append(merged, sub.Execution.Verification...)
+}
+
 // ensureFromDeps scans all from references in the plan and ensures that
 // referenced steps are in the referencing step's dependsOn.
 //
@@ -477,8 +500,9 @@ func fillSlots(parent *plan.Plan, base graph.Workflow, choices map[string]string
 		lastOptionStep := optionPlan.Execution.Steps[len(optionPlan.Execution.Steps)-1].StepID()
 		slotLastStep[slotName] = lastOptionStep
 
-		// Merge cleanup from option.
+		// Merge cleanup and verification from option.
 		mergeCleanup(parent, optionPlan)
+		mergeVerification(parent, optionPlan)
 	}
 
 	// Rewrite dependsOn references: any step depending on a slot name gets
@@ -569,6 +593,7 @@ func composeAddonList(parent *plan.Plan, addons []graph.Workflow, graphDir strin
 		ensureFromDeps(sub, true)
 		spliceSteps(parent, sub, afterStep)
 		mergeCleanup(parent, sub)
+		mergeVerification(parent, sub)
 
 		lastAddonStep := sub.Execution.Steps[len(sub.Execution.Steps)-1].StepID()
 		lastStepByAfter[matchedAfter] = lastAddonStep

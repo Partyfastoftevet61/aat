@@ -1,0 +1,10 @@
+execution:
+  steps:
+    - node: addon1
+      description: "Addon step with its own verification"
+      values:
+        itineraryId: AUTOWIRE
+
+  verification:
+    - node: commit
+      purpose: "addon checks commit"

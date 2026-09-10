@@ -1,11 +1,11 @@
 kind: recipe
 metadata:
-  prompt: A registered customer checks out with a coupon and pays with PayPal
+  prompt: A registered customer checks out with a coupon, pays with PayPal, and returns the order
   graphVersion: "1.0.0"
 selection:
   workflow: Checkout
-  description: Registered customer, SAVE10 coupon (or a coupon layer), PayPal, shipped
+  description: Registered customer, SAVE10 coupon (or a coupon layer), PayPal, shipped, returned, and refunded
   choices:
     customer: Registered
     payment: PayPal
-  addons: [Apply Coupon]
+  addons: [Apply Coupon, Return After Delivery]

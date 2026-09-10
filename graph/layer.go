@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,6 +137,32 @@ func ResolveLayerNames(names []string, dir string) (map[string]*Layer, error) {
 	}
 
 	return result, nil
+}
+
+// ErrNoLayersDir reports layers that were requested without a layers directory
+// to load them from.
+var ErrNoLayersDir = errors.New("no layers directory is configured (set `layers:` in aat-project.yaml)")
+
+// LayeredDefaults loads the named layers from dir and stacks them, in order, on
+// the graph defaults (see ApplyLayers). It returns nil when no layers are named.
+// Naming layers without a directory is an error wrapping ErrNoLayersDir:
+// silently dropping them would run a different test than the one requested.
+func LayeredDefaults(g *Graph, names []string, dir string) (map[string]*InputDefault, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	if dir == "" {
+		return nil, fmt.Errorf("layers %v requested but %w", names, ErrNoLayersDir)
+	}
+	available, err := ResolveLayerNames(names, dir)
+	if err != nil {
+		return nil, fmt.Errorf("loading layers: %w", err)
+	}
+	defaults, err := ApplyLayers(g, names, available)
+	if err != nil {
+		return nil, fmt.Errorf("applying layers: %w", err)
+	}
+	return defaults, nil
 }
 
 // MergeInputDefault merges an overlay InputDefault on top of a base, producing

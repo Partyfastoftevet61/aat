@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3high "github.com/pb33f/libopenapi/datamodel/high/v3"
 
 	"github.com/gburgyan/aat/graph"
@@ -11,14 +12,29 @@ import (
 
 // Validator implements graph.SpecValidator for OpenAPI specifications.
 type Validator struct {
-	specs map[string]*v3high.Document
+	specs       map[string]*v3high.Document
+	outputPaths OutputPaths
 }
+
+// OutputPaths maps node name → output name → the GJSON path the node's template
+// extracts that output from. An empty path marks an output a response transform
+// computes, which has no response location to check.
+type OutputPaths map[string]map[string]string
 
 // NewValidator creates a new OAS validator.
 func NewValidator() *Validator {
 	return &Validator{
 		specs: make(map[string]*v3high.Document),
 	}
+}
+
+// WithOutputPaths makes the output check look for each output at its template
+// extract path, through nested objects and array items, instead of expecting a
+// top-level response property named after the output. Outputs missing from
+// paths keep the name-based check.
+func (v *Validator) WithOutputPaths(paths OutputPaths) *Validator {
+	v.outputPaths = paths
+	return v
 }
 
 // CollectSpecPaths returns the unique set of OAS spec paths referenced by the graph.
@@ -135,17 +151,26 @@ func (v *Validator) Validate(g *graph.Graph) *graph.SpecValidationResult {
 			}
 		}
 
-		// Rule 7: graph outputs should exist in OAS 2xx response schema
-		oasOutputNames := collectOutputNames(op)
-		if oasOutputNames != nil {
+		// Rule 7: graph outputs should exist in the OAS 2xx response schema, at
+		// their template extract path when one is known
+		if schema := successResponseSchema(op); schema != nil {
 			for _, out := range node.Outputs {
-				if _, exists := oasOutputNames[out.Name]; !exists {
-					result.Issues = append(result.Issues, graph.SpecValidationIssue{
-						Severity: graph.SpecWarning,
-						Node:     nodeName,
-						Message:  fmt.Sprintf("output %q not found in OAS 2xx response schema for %q", out.Name, node.OAS.OperationID),
-					})
+				path, fromTemplate := v.outputPath(nodeName, out.Name)
+				if fromTemplate && path == "" {
+					continue // computed by a transform
 				}
+				if schemaHasPath(schema, path) {
+					continue
+				}
+				msg := fmt.Sprintf("output %q not found in OAS 2xx response schema for %q", out.Name, node.OAS.OperationID)
+				if path != out.Name {
+					msg = fmt.Sprintf("output %q (extracted from %q) not found in OAS 2xx response schema for %q", out.Name, path, node.OAS.OperationID)
+				}
+				result.Issues = append(result.Issues, graph.SpecValidationIssue{
+					Severity: graph.SpecWarning,
+					Node:     nodeName,
+					Message:  msg,
+				})
 			}
 		}
 	}
@@ -156,6 +181,16 @@ func (v *Validator) Validate(g *graph.Graph) *graph.SpecValidationResult {
 // GetSpec returns the loaded spec for a reference path, or nil if not loaded.
 func (v *Validator) GetSpec(refPath string) *v3high.Document {
 	return v.specs[refPath]
+}
+
+// outputPath returns where a node's output sits in the response: the template
+// extract path when one was supplied (reported by the second result), or else
+// a top-level property named after the output.
+func (v *Validator) outputPath(nodeName, output string) (string, bool) {
+	if path, ok := v.outputPaths[nodeName][output]; ok {
+		return path, true
+	}
+	return output, false
 }
 
 // collectInputNames returns all parameter names (path-item and operation level)
@@ -214,14 +249,13 @@ func collectRequiredInputs(pathItem *v3high.PathItem, op *v3high.Operation) map[
 	return names
 }
 
-// collectOutputNames returns property names from the first 2xx response schema.
-// Returns nil if no 2xx response with a schema is found (skips rule 7).
-func collectOutputNames(op *v3high.Operation) map[string]bool {
+// successResponseSchema returns the first 2xx response schema that declares
+// properties. Returns nil if there is none, which skips rule 7.
+func successResponseSchema(op *v3high.Operation) *base.Schema {
 	if op.Responses == nil || op.Responses.Codes == nil {
 		return nil
 	}
 
-	// Check common 2xx codes
 	for code := range op.Responses.Codes.KeysFromOldest() {
 		if !strings.HasPrefix(code, "2") {
 			continue
@@ -234,15 +268,68 @@ func collectOutputNames(op *v3high.Operation) map[string]bool {
 			if mediaType.Schema != nil {
 				schema := mediaType.Schema.Schema()
 				if schema != nil && schema.Properties != nil {
-					names := make(map[string]bool)
-					for propName := range schema.Properties.KeysFromOldest() {
-						names[propName] = true
-					}
-					return names
+					return schema
 				}
 			}
 		}
 	}
 
 	return nil
+}
+
+// schemaHasPath reports whether a GJSON extract path can resolve in a response
+// described by schema. Object segments must be declared properties, and "#" or
+// index segments step into array items. Whatever the schema leaves open (no
+// declared properties, additionalProperties, a composition branch that
+// matches) counts as present, and GJSON queries, modifiers, and multipaths are
+// not checked, so only a definite mismatch is reported.
+func schemaHasPath(schema *base.Schema, path string) bool {
+	if path == "" || strings.ContainsAny(path, `@|()*?\{}[],:!=<>%`) {
+		return true
+	}
+	return schemaHasSegments(schema, strings.Split(path, "."))
+}
+
+func schemaHasSegments(schema *base.Schema, segments []string) bool {
+	if schema == nil || len(segments) == 0 {
+		return true
+	}
+	for _, group := range [][]*base.SchemaProxy{schema.AllOf, schema.OneOf, schema.AnyOf} {
+		for _, branch := range group {
+			if branch != nil && schemaHasSegments(branch.Schema(), segments) {
+				return true
+			}
+		}
+	}
+
+	segment, rest := segments[0], segments[1:]
+	if segment == "#" || isArrayIndex(segment) {
+		if schema.Items == nil || !schema.Items.IsA() || schema.Items.A == nil {
+			return true // no item schema to check against
+		}
+		return schemaHasSegments(schema.Items.A.Schema(), rest)
+	}
+	if schema.Properties == nil {
+		return true // no declared properties to check against
+	}
+	if property := schema.Properties.GetOrZero(segment); property != nil {
+		return schemaHasSegments(property.Schema(), rest)
+	}
+	if extra := schema.AdditionalProperties; extra != nil && ((extra.IsA() && extra.A != nil) || (extra.IsB() && extra.B)) {
+		return true
+	}
+	return false
+}
+
+// isArrayIndex reports whether a path segment is a numeric array index.
+func isArrayIndex(segment string) bool {
+	if segment == "" {
+		return false
+	}
+	for _, c := range segment {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }

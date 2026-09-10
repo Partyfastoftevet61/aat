@@ -289,6 +289,17 @@ func TestTargetedResponseToRecipeOverrides_EmptyMaps(t *testing.T) {
 	assert.Nil(t, ro.Descriptions)
 }
 
+func TestReconstitute_RecipeLayersWithoutLayersDirFail(t *testing.T) {
+	recipe := &plan.Recipe{
+		Kind:      "recipe",
+		Selection: plan.RecipeSelection{Workflow: "Base", Layers: []string{"recipeLayer"}},
+	}
+
+	_, err := Reconstitute(recipe, buildRecipeTestGraph(), ".")
+	require.ErrorIs(t, err, graph.ErrNoLayersDir, "a recipe must not silently run without its layers")
+	assert.Contains(t, err.Error(), "[recipeLayer]")
+}
+
 func TestReconstitute_MissingRecipeLayersLoadedFromDisk(t *testing.T) {
 	g := buildRecipeTestGraph()
 

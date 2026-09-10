@@ -67,6 +67,12 @@ func (r *ExtractRule) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+// GJSONPath returns the rule's path in GJSON syntax, the form responses are
+// queried with ("$.items[0].id" becomes "items.0.id").
+func (r ExtractRule) GJSONPath() string {
+	return normalizeJSONPath(r.Path)
+}
+
 // HasElementFields reports whether the named output has template-side
 // field mappings that transform array elements into flat maps.
 func (t *Template) HasElementFields(outputName string) bool {

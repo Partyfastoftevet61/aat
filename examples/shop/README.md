@@ -127,14 +127,16 @@ selection:
   choices:
     customer: Registered
     payment: PayPal
-  addons: [Apply Coupon]
+  addons: [Apply Coupon, Return After Delivery]
 ```
 
 - **Quick Purchase** (`workflows/quick-purchase.yaml`) is the shortest purchase and ends at payment.
 - **Checkout** (`workflows/checkout.yaml`) has two slots, `customer` (Guest, Registered) and
-  `payment` (Card, Gift Card, PayPal), and ends at shipping with a verification step.
+  `payment` (Card, Gift Card, PayPal), and ends at shipping with a verification step that the
+  order `shipped`.
 - Addons splice extra steps in: **Inventory Check**, **Apply Coupon**, **Track Shipment**, and
-  **Return After Delivery** (deliver, return, refund).
+  **Return After Delivery** (deliver, return, refund). An addon can bring its own verification:
+  Return After Delivery replaces the `shipped` check with `returned` and `refunded`.
 
 `aat plan list` summarizes each plan and recipe.
 

@@ -140,3 +140,66 @@ runs 63 permutations with 36 deduplicated.
 **Open questions:** none for Phase B. Phase C adds the Go e2e test, the CI job, the goreleaser build, and
 the root README/CLAUDE.md quick start. The web UI visual pass (timeline bars, matrix, receipt tab) and a
 Claude Code MCP session are author checks.
+
+## 2026-09-10 — Review of Phases A and B: root causes the example worked around
+
+**What:** Before Phase C, reviewed the three committed M1 commits and fixed six issues where they
+originate rather than in the example; a seventh, a data race, surfaced once the Phase C end-to-end test ran.
+Each fix has tests:
+
+- **Addon compatibility ignored slots.** `intent.ValidateWorkflowCompat` checked every addon against the
+  raw base template with its slot markers unfilled, while `Compose` fills slots before it splices addons.
+  An input now counts as fed when the base, or every option of one of its slots, produces it; an addon
+  whose `after:` node comes from a slot option is checked instead of skipped; slot options are no longer
+  checked as bases of their own. The tests had re-implemented the function in memory and now call it.
+- **Slot and addon `verification:` was never composed.** Composition merged cleanup only, so the Checkout
+  base had to accept `shipped || returned`. `mergeVerification` merges option and addon verification, and
+  a node they verify replaces the base's check of that node.
+- **The static OAS output check compared names, not paths.** Rule 7 wanted a top-level response property
+  named after each output and ignored the template's extract path. With templates loaded (`aat validate`,
+  `aat validate graph --templates`) it walks the 2xx schema along the extract path.
+- **`--dump-state -` without `--json` mixed progress and the summary line into stdout,** which running.md
+  said it did not. Stdout now carries only the state.
+- **The silent layer drop lived in `intent.Reconstitute`,** but the previous commit guarded three of its
+  callers. `Reconstitute` now returns the error itself, and `graph.LayeredDefaults` replaces the two
+  copies of load-and-apply in `cmd/aat` and `mcp`.
+- **`settings.oasValidation` and `--oas-validate` accepted any string;** a typo silently meant `auto`.
+- **Parallel batches raced during runtime OAS validation** (found once the Phase C end-to-end test ran under
+  `-race`). `aat run batch --parallel N` shares one `oas.SpecCache` entry across runs, and
+  libopenapi-validator v0.13.1 writes into the schema model while it renders a response schema. Per its
+  source it renders on every validation for a schema behind a `$ref`: the warm cache is stored under the
+  media type's schema hash but looked up under the resolved schema's hash. The shop spec declares every
+  response that way. Validations against one spec entry are now serialized; a `graph/oas` test with a
+  `$ref` response schema fails under `-race` without the lock (the same test with an inline schema never
+  raced, which is how the cache miss was confirmed).
+
+Example changes: Apply Coupon drops its `wire:`; Checkout verifies `shipped`; Return After Delivery
+verifies `returned` and `refunded`; `registered-paypal-coupon` adds Return After Delivery so that path runs
+in every batch; `env.yaml` drops `oasValidation: warn`, which behaved like the default. `validate --strict`
+stays clean, both regions pass 7/7 with strict OAS checks, and the matrix is unchanged (63 runs, 36 skipped,
+27 passed).
+
+**Decisions:**
+
+- **The Apply Coupon `wire:` was redundant, not a workaround.** Checkout's own `addItem` and `getCart`
+  produce `cartId`, so the unfixed checker never flagged it; a copy of the example without the `wire:`
+  validated and ran green on the Phase B binary. The compat bug shaped only the stated reason for keying
+  refunds by order.
+- **`paymentRefund` stays keyed by `orderId`** and the sandbox bodies stay flat. Both are reasonable API
+  shapes; reshaping the contract would churn the example for no demo value.
+- **Verification merges replace by node.** The synthetic `verify_<node>` IDs would collide otherwise, and
+  the later composition knows the plan's end state. All of a sub-workflow's entries for a node replace all
+  of the base's entries for it.
+- **The path-aware output check is conservative.** It keeps the old gate (a 2xx schema that declares
+  properties), and schemas without declared properties, `additionalProperties`, composition branches, and
+  GJSON queries or modifiers all count as present, so it reports only definite mismatches. Outputs a Lua
+  transform computes are skipped. `graph/oas` still imports nothing from `adapter`: `engine` builds the
+  path map and passes it in.
+- **Template placeholder escaping is its own item** (P13, needed before M5): bodies get no JSON escaping
+  and paths no URL encoding, which the M7 MCP demo would expose.
+- **Serialize validations per spec instead of loading the spec per run.** A mutex on the cache entry is
+  correct whatever libopenapi does internally, and a validation takes milliseconds, so parallel runs lose
+  little. The upstream cache miss is logged as a follow-up.
+
+**Corrections to earlier entries:** "compat checking only sees base steps" and "verification survives only
+in the base template" described bugs that are now fixed; bodies no longer need to be flat for `--strict`.

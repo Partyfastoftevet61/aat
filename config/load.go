@@ -199,5 +199,20 @@ func validateSettings(s *RuntimeSettings) []string {
 		}
 	}
 
+	if !ValidOASValidationMode(s.OASValidation) {
+		errs = append(errs, fmt.Sprintf("unknown oasValidation %q (expected auto, warn, strict, or off)", s.OASValidation))
+	}
+
 	return errs
+}
+
+// ValidOASValidationMode reports whether mode is an accepted oasValidation
+// setting or --oas-validate value: auto, warn, strict, or off. Empty means
+// unset and is valid.
+func ValidOASValidationMode(mode string) bool {
+	switch mode {
+	case "", "auto", "warn", "strict", "off":
+		return true
+	}
+	return false
 }

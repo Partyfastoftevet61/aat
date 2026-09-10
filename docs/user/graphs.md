@@ -382,7 +382,7 @@ The validator checks 7 rules, classified as errors or warnings:
 **Warnings** (fail only with `--strict`):
 - Graph input not in OAS parameters or request body
 - Required OAS parameter missing from graph inputs
-- Graph output not in OAS response schema
+- Graph output not in the 2xx response schema; when templates are loaded (`aat validate`, or `aat validate graph --templates`), each output is looked up at its template extract path, through nested objects and array items
 - HTTP method mismatch between graph adapter and spec
 - Response content type mismatch
 

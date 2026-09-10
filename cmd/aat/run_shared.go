@@ -375,30 +375,9 @@ func parseOverrideFlag(flag string) (string, string, error) {
 	return name, url, nil
 }
 
-// layeredDefaultsFor loads the named layers and stacks them on the graph
-// defaults. Naming layers without a layers directory is an error: silently
-// dropping them would run a different test than the one requested.
-func layeredDefaultsFor(rctx *runContext, layers []string) (map[string]*graph.InputDefault, error) {
-	if len(layers) == 0 {
-		return nil, nil
-	}
-	if rctx.LayersDir == "" {
-		return nil, errNoLayersDir(layers)
-	}
-	available, err := graph.ResolveLayerNames(layers, rctx.LayersDir)
-	if err != nil {
-		return nil, fmt.Errorf("loading layers: %w", err)
-	}
-	defaults, err := graph.ApplyLayers(rctx.Graph, layers, available)
-	if err != nil {
-		return nil, fmt.Errorf("applying layers: %w", err)
-	}
-	return defaults, nil
-}
-
 // errNoLayersDir reports layers that were requested without a layers directory.
 func errNoLayersDir(layers []string) error {
-	return fmt.Errorf("layers %v requested but no layers directory is configured (set `layers:` in aat-project.yaml)", layers)
+	return fmt.Errorf("layers %v requested but %w", layers, graph.ErrNoLayersDir)
 }
 
 // writeRunArchive creates a run archive in the output directory and returns
@@ -776,7 +755,10 @@ func loadRunContext(ctx context.Context, args *runArgs, logf func(string, ...any
 	}
 
 	// Resolve OAS validation mode: CLI flag > env setting > "auto"
-	oasMode := resolveOASMode(args.OASValidateMode, env.Settings.OASValidation)
+	oasMode, err := resolveOASMode(args.OASValidateMode, env.Settings.OASValidation)
+	if err != nil {
+		return nil, err
+	}
 	rctx.OASValidateMode = oasMode
 
 	// Load OAS specs for runtime validation (unless disabled)
@@ -868,7 +850,7 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 
 	// Compute layered defaults from the effective set of layers (CLI + recipe).
 	// This must happen after the switch so recipe-embedded layers are included.
-	layeredDefaults, err := layeredDefaultsFor(rctx, effectiveLayers)
+	layeredDefaults, err := graph.LayeredDefaults(rctx.Graph, effectiveLayers, rctx.LayersDir)
 	if err != nil {
 		return &runResult{setupErr: true, err: err}
 	}
@@ -1107,16 +1089,20 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 	}
 }
 
-// resolveOASMode returns the effective OAS validation mode.
-// CLI flag takes precedence over env setting; defaults to "auto".
-func resolveOASMode(cliFlag, envSetting string) string {
+// resolveOASMode returns the effective OAS validation mode: the CLI flag, else
+// the environment setting, else "auto". An unknown flag value is an error; the
+// environment setting is validated when the environment loads.
+func resolveOASMode(cliFlag, envSetting string) (string, error) {
 	if cliFlag != "" {
-		return cliFlag
+		if !config.ValidOASValidationMode(cliFlag) {
+			return "", fmt.Errorf("unknown --oas-validate mode %q (expected auto, warn, strict, or off)", cliFlag)
+		}
+		return cliFlag, nil
 	}
 	if envSetting != "" {
-		return envSetting
+		return envSetting, nil
 	}
-	return "auto"
+	return "auto", nil
 }
 
 // collectOASSpecPaths returns the unique set of OAS spec paths from the graph.

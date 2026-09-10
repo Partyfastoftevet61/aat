@@ -90,7 +90,7 @@ func TestValidate_RecipeLayersWithoutLayersDirFails(t *testing.T) {
 	code := validateCommand(&validateArgs{ManifestPath: manifest}, &buf)
 
 	assert.Equal(t, 1, code, buf.String())
-	assert.Contains(t, buf.String(), "sets no `layers:` directory")
+	assert.Contains(t, buf.String(), "no layers directory is configured")
 }
 
 func TestValidate_LayerKeyTypoFails(t *testing.T) {
