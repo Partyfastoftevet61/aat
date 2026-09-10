@@ -247,4 +247,5 @@ visualizer, and the batch page shows the By Test matrix with its layer filters. 
 in `examples/shop`, using the shipped `.mcp.json` and `.claude/settings.json`, called `shop-api`'s
 `list_api_operations` without a permission prompt and got 17 operations.
 
-**Open questions:** the CI `example-shop` job has not run yet (it runs on push).
+**Open questions:** none. The CI `example-shop` job passed on its first run (`fc80946`, run 34535337011), along
+with every other CI job.
