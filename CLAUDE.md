@@ -11,11 +11,14 @@ AAT is a Go CLI that models an API as a graph and executes long, multi-step test
 The project uses a Makefile for builds:
 
 ```bash
-make build      # Build frontend, then Go binary with version/commit/date ldflags
-make frontend   # cd server/web && npm install && npm run build
-make test       # go test ./...
-make check      # fmt + test-race + lint — mirrors CI pipeline
-make clean      # Remove binary and frontend artifacts (node_modules, dist)
+make build         # Build frontend, then aat and aat-sandbox with version/commit/date ldflags
+make cli           # aat only, without rebuilding the frontend (`aat web` needs `make build`)
+make sandbox       # aat-sandbox only (the offline shop API behind examples/shop)
+make frontend      # cd server/web && npm install && npm run build
+make test          # go test ./...
+make check         # fmt + test-race + lint — mirrors the CI test and lint jobs
+make example-shop  # examples/shop against a local sandbox — mirrors the CI example-shop job
+make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 ```
 
 `make build` injects `VERSION`, `COMMIT`, and `BUILD_DATE` into `internal/version` via `-ldflags`.
@@ -53,7 +56,7 @@ Dependencies flow in one direction. No cycles. No lateral imports within a tier.
 **Mid-tier**: `adapter` → config; `plan` → graph, config; `archive` → plan; `validate` → llm
 **Orchestrators**: `engine` → graph, adapter, plan, domain, llm, validate, archive, config
 **Entry points**: `intent` → graph, domain, plan, llm; `mcp` → all packages; `server` → engine, archive, plan, config
-**Binaries**: `cmd/aat` → engine, server, intent, mcp, archive, config; `cmd/aat-sandbox` → internal/sandbox/shop, root embed
+**Binaries**: `cmd/aat` → engine, server, intent, mcp, archive, config (its tests also import `internal/sandbox/shop` and the root embed for the shop end-to-end test); `cmd/aat-sandbox` → internal/sandbox/shop, root embed
 
 Data flows down, decisions flow up. No business logic in `cmd/`.
 
@@ -153,22 +156,30 @@ When making design decisions or completing stage milestones, add entries to `doc
 
 ## Running AAT
 
-Build the binary and run one of the example projects under `examples/`:
+Build both binaries and run the offline shop example (`examples/shop`, served by `aat-sandbox`):
 
 ```bash
-# Build (injects version/commit/date automatically)
+# Build (injects version/commit/date automatically): aat and aat-sandbox
 make build
+# Or without rebuilding the web UI (`aat web` then needs a frontend build):
+# make cli sandbox
 
-# Or without make (no web UI bundle; `aat web` will refuse to start):
-# go build -o aat ./cmd/aat/
-
-# Petstore example (public API, no credentials)
-cd examples/petstore/
-../../aat run plan plans/create-and-verify.yaml
-../../aat run batch
+# Shop example against the local sandbox (no network, no credentials)
+cd examples/shop/
+../../aat-sandbox serve --latency 0 &   # shop API :8765, payments :8766
+../../aat validate --strict
+../../aat run plan full-lifecycle
+../../aat run batch --oas-validate strict
+../../aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --parallel 4
+../../aat run plan smoke --env eu
 ../../aat web view
 
-# TODO(M1): replace with the shop sandbox quick start (aat-sandbox init/serve).
+# What CI runs against the shop (starts its own sandbox; needs curl, jq, free ports 8765/8766)
+make example-shop
+
+# Petstore example (public API, no credentials), from the repository root
+cd examples/petstore/
+../../aat run plan plans/create-and-verify.yaml
 
 # Explicit paths instead of manifest auto-discovery:
 ./aat run plan examples/petstore/plans/create-and-verify.yaml \

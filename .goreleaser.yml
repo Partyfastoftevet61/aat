@@ -6,23 +6,34 @@ builds:
   - id: aat
     main: ./cmd/aat/
     binary: aat
-    env:
+    env: &build_env
       - CGO_ENABLED=0
-    ldflags:
+    ldflags: &build_ldflags
       - -s -w
       - -X github.com/gburgyan/aat/internal/version.Version={{.Version}}
       - -X github.com/gburgyan/aat/internal/version.GitCommit={{.ShortCommit}}
       - -X github.com/gburgyan/aat/internal/version.BuildDate={{.Date}}
-    goos:
+    goos: &build_goos
       - linux
       - darwin
       - windows
-    goarch:
+    goarch: &build_goarch
       - amd64
       - arm64
 
+  # The offline demo API behind examples/shop. `aat-sandbox init` extracts the
+  # project from the binary, so the archives carry no copy of it.
+  - id: aat-sandbox
+    main: ./cmd/aat-sandbox/
+    binary: aat-sandbox
+    env: *build_env
+    ldflags: *build_ldflags
+    goos: *build_goos
+    goarch: *build_goarch
+
 archives:
   - id: default
+    ids: [aat, aat-sandbox]
     formats: [tar.gz]
     format_overrides:
       - goos: windows
@@ -60,20 +71,24 @@ homebrew_casks:
     homepage: https://gburgyan.github.io/aat/
     description: "Model your API as a graph; run long-chain tests, layer matrices, and an MCP server from it"
     license: Apache-2.0
-    binaries: [aat]
+    # aat-sandbox ships alongside so the offline quick start works right after install.
+    binaries: [aat, aat-sandbox]
     # The binaries are not notarized; strip the quarantine attribute so the
     # first run does not trip Gatekeeper.
     hooks:
       post:
         install: |
           if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/aat"]
+            %w[aat aat-sandbox].each do |binary|
+              system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/#{binary}"]
+            end
           end
 
-# Multi-arch image at ghcr.io/gburgyan/aat (see Dockerfile). Images are built
-# and pushed in the publish phase; `--snapshot` builds them locally.
+# Multi-arch image at ghcr.io/gburgyan/aat (see Dockerfile), aat only. Images are
+# built and pushed in the publish phase; `--snapshot` builds them locally.
 dockers_v2:
   - id: aat
+    ids: [aat]
     dockerfile: Dockerfile
     images:
       - ghcr.io/gburgyan/aat
@@ -95,6 +110,10 @@ release:
   footer: |
     ## Install
 
-    - Homebrew (macOS, Linux): `brew install gburgyan/tap/aat`
+    - Homebrew (macOS, Linux): `brew install gburgyan/tap/aat` (installs `aat` and `aat-sandbox`)
     - Docker: `docker run --rm ghcr.io/gburgyan/aat:{{ .Version }} --version`
     - Binaries: download the archive for your platform above and verify with `checksums.txt`
+
+    ## Try it offline
+
+    `aat-sandbox init shop && cd shop`, start `aat-sandbox serve` in another terminal, then `aat run plan full-lifecycle`.

@@ -50,7 +50,7 @@ and two chaos hooks for retry demos.
 
   aat-sandbox init shop && cd shop     # extract the example project
   aat-sandbox serve &                  # shop API :8765, payments :8766
-  aat run plan smoke`,
+  aat run plan full-lifecycle`,
 	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version.Effective(), version.GitCommit, version.BuildDate),
 }
 
@@ -205,7 +205,7 @@ func initCommand(a initArgs, out io.Writer) error {
 		return fmt.Errorf("init: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(out, "Extracted %d files to %s\n\nNext steps:\n  cd %s\n  aat-sandbox serve &\n  aat run plan smoke\n", count, a.Dir, a.Dir)
+	_, _ = fmt.Fprintf(out, "Extracted %d files to %s\n\nNext steps:\n  cd %s\n  aat-sandbox serve &\n  aat run plan full-lifecycle\n", count, a.Dir, a.Dir)
 	return nil
 }
 

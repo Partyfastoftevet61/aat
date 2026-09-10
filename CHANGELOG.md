@@ -19,6 +19,9 @@ the graph and plan formats may still change before 1.0.
   retries, a negative state-machine walk, `addItem` mutations), a declined-card overlay, a receipt
   visualizer, `us`/`eu` environments with payments routed to their own host and credential, and MCP
   configuration for AI coding tools.
+- Release archives and the Homebrew cask include `aat-sandbox` next to `aat`. `make example-shop` runs
+  `examples/shop` against a local sandbox the way the new CI `example-shop` job does, and `make cli`
+  builds `aat` without rebuilding the web UI.
 - Workflow slot options and addons can declare `verification:`. Composition merges it into the base
   workflow's, and a node they verify replaces the base's verification of that node.
 - A step that succeeds after retrying shows `retried Nx: <category>` in run output, and archives record

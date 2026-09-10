@@ -11,19 +11,20 @@ With an LLM configured, AAT can also generate test plans from natural language p
 
 ## Quick start
 
+The fastest way to see AAT work is the offline shop: `aat-sandbox` serves a small e-commerce API on your machine, and `aat-sandbox init` extracts a complete AAT project for it (a 17-operation graph, workflows, layers, two regions, negative tests). No signup, no network.
+
 ```bash
-# Build (compiles the Svelte frontend + Go binary with version metadata)
-make build
-
-# Run the Petstore example (no API keys needed)
-cd examples/petstore
-../../aat run plan plans/create-and-verify.yaml
-
-# Browse the results in the web UI
-../../aat web view
+aat-sandbox init shop && cd shop   # extract the example project
+aat-sandbox serve &                # shop API on :8765, payments API on :8766
+aat run plan full-lifecycle        # one order through every state, verified and cleaned up
+aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --parallel 4
+aat web view                       # browse the latest run
+aat run plan smoke --env eu        # the same plan with EU prices and VAT
 ```
 
-See the [Petstore Walkthrough](docs/user/petstore-walkthrough.md) for a line-by-line explanation of how these files work together, or follow the [Quickstart guide](docs/user/quickstart.md) to set up AAT for your own API.
+From a source checkout, `make build` builds both binaries; run the same commands from `examples/shop` as `../../aat` and `../../aat-sandbox`. The [shop README](examples/shop/README.md) explains what each command shows.
+
+For the smallest example, [examples/petstore](examples/petstore/README.md) runs two-step plans against the public Petstore API, and the [Petstore Walkthrough](docs/user/petstore-walkthrough.md) explains how the files fit together. To set AAT up for your own API, follow the [Quickstart guide](docs/user/quickstart.md).
 
 ## How it works
 
@@ -78,6 +79,7 @@ make clean    # Removes binary and frontend artifacts
 
 ## Documentation
 
+- [Shop example](examples/shop/README.md) — the offline quick start: layers, regions, negative tests, checkpoints, MCP
 - [Quickstart](docs/user/quickstart.md) — install AAT and set it up for your own API
 - [Petstore Walkthrough](docs/user/petstore-walkthrough.md) — line-by-line tour of graph, templates, workflows, and recipes
 - [Petstore Quickstart](examples/petstore/README.md) — runnable example with no setup

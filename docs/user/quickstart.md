@@ -2,6 +2,14 @@
 
 Get from zero to a running API test in 5 minutes. This guide uses the [Petstore API](https://petstore.swagger.io/) as an example — substitute your own API to make it real.
 
+> **Want to watch AAT work before setting it up?** The [shop example](../../examples/shop/README.md) needs no API key or network:
+>
+> ```bash
+> aat-sandbox init shop && cd shop
+> aat-sandbox serve &
+> aat run plan full-lifecycle
+> ```
+
 ## Prerequisites
 
 - AAT installed — grab a release binary (see the Install section of the README) or build from source with `make build`

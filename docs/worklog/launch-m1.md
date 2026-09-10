@@ -203,3 +203,48 @@ stays clean, both regions pass 7/7 with strict OAS checks, and the matrix is unc
 
 **Corrections to earlier entries:** "compat checking only sees base steps" and "verification survives only
 in the base template" described bugs that are now fixed; bodies no longer need to be flat for `--strict`.
+
+## 2026-09-10 — Phase C: end-to-end test, CI job, release packaging, quick-start docs
+
+**What:** `cmd/aat/sandbox_e2e_test.go` runs the embedded `examples/shop` against the in-process sandbox:
+`validate --strict`, the plan batch in `us` and `eu` with strict OAS validation, the two-group layer matrix
+(63 runs, 36 skipped, 27 passed), the declined-card overlay, the resilience retries, and a checkpoint whose
+dumped bearer token reads the live order. `scripts/example-shop.sh` runs the same checks against the real
+binaries and backs both `make example-shop` and the new CI `example-shop` job. goreleaser builds
+`aat-sandbox` next to `aat` and ships it in the archives and the Homebrew cask. The root README, the docs
+index and quickstart, and CLAUDE.md now lead with the shop.
+
+**Decisions:**
+
+- **The e2e test extracts the embedded project** (`aat.ShopExampleFS` and `os.CopyFS`), so it proves that
+  what `aat-sandbox init` ships runs, not only the checkout. Each subtest starts its own `shop.New` behind two
+  `httptest` servers and rewrites the copy's `apiHost`/`payHost` vars to their addresses; it requires exactly
+  one match for each, so an `env.yaml` change fails loudly. Run arguments come from `config.LoadManifest`
+  rather than `ResolveProjectPaths`, so a home config or `AAT_PROJECT` cannot leak in. Subtests run in
+  parallel with separate sandboxes, which keeps IDs and chaos counters deterministic; the test takes about
+  7 s under `-race` and is skipped with `-short`.
+- **One script for CI and developers.** The command list lives in `scripts/example-shop.sh` rather than in
+  workflow YAML, so `make example-shop` reproduces a CI failure locally. It refuses to start when something
+  already answers on 8765 or 8766 (it would otherwise test someone else's sandbox), checks the JSON summaries
+  with `jq` instead of trusting exit codes alone (a batch that finds no plans exits 0), writes archives under
+  `_output/example-shop/`, and keeps the dumped state, which holds a live token, in a temp file.
+- **`make cli`** builds `aat` without the frontend: the CI job needs no Node step, and the tracked
+  `web/dist/index.html` satisfies the embed.
+- **Packaging (author decision):** archives and the cask ship `aat` and `aat-sandbox`, and the cask's
+  quarantine hook covers both; archives carry no `examples/shop/**` copy because `aat-sandbox init` is the
+  single source; the Docker image stays `aat`-only (`dockers_v2.ids: [aat]`).
+- `aat-sandbox init` and its help text now suggest `full-lifecycle`, matching the READMEs.
+- **The e2e test paid for itself immediately:** under `-race` it exposed the parallel-batch race (R8 in the
+  review entry above), which the CLI matrix run could not show because release builds have no race detector.
+
+**Verification:** `make check` and `make example-shop` pass. A goreleaser snapshot builds six archives that
+each carry `aat` and `aat-sandbox`, a cask that installs both, and images that run `--version`;
+`aat-sandbox init` from the extracted darwin archive writes all 59 project files, dotfiles included.
+
+**The last two acceptance checks:** in Chrome, against a sandbox at normal latency, the run page shows
+timeline bars for the 353 ms charge and the 601 ms shipment, the checkout step's Receipt tab renders the
+visualizer, and the batch page shows the By Test matrix with its layer filters. A headless Claude Code session
+in `examples/shop`, using the shipped `.mcp.json` and `.claude/settings.json`, called `shop-api`'s
+`list_api_operations` without a permission prompt and got 17 operations.
+
+**Open questions:** the CI `example-shop` job has not run yet (it runs on push).
