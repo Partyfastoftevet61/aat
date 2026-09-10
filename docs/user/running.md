@@ -131,21 +131,29 @@ These flags apply to both `run plan` and `run batch`.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--manifest` | path | auto-discovered | Explicit path to `aat-project.yaml` |
-| `--env` | path | from manifest | Environment config file |
-| `--env-name` | string | from manifest | Environment name (for multi-environment files) |
+| `--env-config` | path | from manifest | Environment config file |
+| `--env` | string | from manifest | Environment name (for multi-environment files) |
 | `--graph` | path | from manifest | API graph file |
 | `--templates` | path | from manifest | Templates directory |
 | `--domain` | path | from manifest | Domain knowledge file |
 | `--output` | path | `_output/runs` | Archive output directory |
 | `--override` | `NODE=URL` | — | Route a node to a different URL (repeatable) |
-| `--env-overlay` | path | — | Overlay YAML with additional environment overrides |
+| `--overlay` | path | — | Overlay YAML with additional environment overrides |
 | `--retries` | int | `0` | Max plan-level retries on failure |
 | `--layer` | string | — | Data layer to apply (repeatable) |
 | `--no-auto-overrides` | bool | `false` | Disable auto-discovery of `.aat-overrides.yaml` |
+| `--oas-validate` | string | `auto` | OAS validation mode: `auto`, `warn`, `strict`, or `off` (see [OAS Validation](#oas-validation)) |
 | `--no-mutations` | bool | `false` | Skip mutation-expanded sibling steps; run only the happy path (smoke-test mode) |
 | `--verbose-auth` | bool | `false` | Log auth request/response details to stderr for debugging |
 | `--json` | bool | `false` | Machine-readable JSON summary to stdout |
 | `--quiet` | bool | `false` | Suppress progress, show final line only |
+
+The `run plan` command adds:
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--stop-after` | string | — | Stop after the named step ID and skip cleanup (see [Checkpoints](#checkpoints-stopping-early-and-handing-off-state)) |
+| `--dump-state` | path | — | Write accumulated run state to a file (`-` for stdout); mode `0600` |
 
 The `run batch` command adds:
 
@@ -153,8 +161,13 @@ The `run batch` command adds:
 |------|------|---------|-------------|
 | `--parallel` | int | `1` | Concurrency limit (1 = sequential) |
 | `--layer-group` | string | — | Comma-separated layer names for permutations (repeatable) |
+| `--no-dedup` | bool | `false` | Disable duplicate plan detection across permutations |
+| `--shuffle` | bool | `false` | Randomize plan execution order |
+| `--seed` | int | `0` | Random seed for `--shuffle` (`0` = current time; the seed used is logged) |
 
-When a manifest is discoverable, `--env`, `--graph`, `--templates`, and `--domain` are optional. Explicit flags always override manifest paths. See [Project Setup: Auto-Discovery](project-setup.md#auto-discovery) for how manifest resolution works.
+See [Matrix Testing: Controlling Behavior](batch-layers.md#controlling-behavior) for how dedup, shuffle, and seed interact with layer groups.
+
+When a manifest is discoverable, `--env-config`, `--graph`, `--templates`, and `--domain` are optional. Explicit flags always override manifest paths. See [Project Setup: Auto-Discovery](project-setup.md#auto-discovery) for how manifest resolution works.
 
 AAT also auto-discovers a `.aat-overrides.yaml` dotfile for personal, per-project routing overrides. This is especially useful for [local development](local-dev.md) — drop the file once and every run picks it up without extra flags. Use `--no-auto-overrides` to disable this for CI or clean runs.
 
@@ -216,8 +229,30 @@ $ aat run plan smoke-test --json
 | `0` | Passed / Stopped | All steps succeeded, or a `--stop-after` checkpoint was reached |
 | `1` | Failed | One or more steps or assertions failed |
 | `2` | Error | Infrastructure or setup error (bad config, network failure, invalid plan) |
+| `130` | Aborted | The run was interrupted by Ctrl+C or `SIGTERM` (see [Interrupting a Run](#interrupting-a-run-ctrlc)) |
+
+For batches, the exit code reflects the worst outcome across all plans: any aborted plan gives `130`, otherwise any error gives `2`, otherwise any failure gives `1`.
 
 These codes are deterministic and designed for CI/CD pipelines. See [CI/CD Integration: Exit Codes](ci-cd.md#exit-codes) for detailed scenarios.
+
+## Interrupting a Run (Ctrl+C)
+
+Pressing Ctrl+C (or sending `SIGTERM`) during a run does not simply kill the process. AAT stops issuing new requests, runs cleanup for the resources created so far, and writes a partial archive:
+
+```
+$ aat run plan full-checkout
+  [1/5] listProducts            200  52ms
+  [2/5] createCart              201  98ms
+^C
+aat: interrupted, writing partial results...
+
+  cleanup:
+    deleteCart                  204  41ms
+
+ABORTED (2/5 steps, 191ms)
+```
+
+The archive records the outcome as `aborted` with the steps that completed, and the process exits with code `130`. Cleanup for an aborted run executes under its own 30-second budget so a hung API cannot keep the process alive indefinitely. In a batch, the plan that was running is marked `aborted`; plans that had not yet started still get an entry, but each stops before issuing a request and is recorded as `aborted` too. The batch outcome is `aborted` and the process exits `130`.
 
 ## What Happens During Execution
 
@@ -226,7 +261,7 @@ When you run a plan, AAT performs these steps in order:
 1. **Load and validate** — parse the plan YAML, validate it against the graph
 2. **Authenticate** — obtain credentials using the environment's auth config
 3. **Resolve and execute** — for each step in topological order: resolve input values, execute the HTTP request, extract outputs, run assertions
-4. **Cleanup** — run cleanup steps in reverse order, even if main steps failed
+4. **Cleanup** — run plan-level cleanup steps, then graph-level cleanup pairings (newest resource first), even if main steps failed
 5. **Archive** — write the full execution trace to the output directory
 
 ### Step Execution Order
@@ -241,7 +276,18 @@ See [Value Resolution](value-flow.md) for the full priority chain and resolution
 
 ### Cleanup
 
-Steps with `cleanup: true` run after all main steps complete, regardless of whether main steps passed or failed. Cleanup steps run in reverse declaration order. A failed cleanup step does not affect the run outcome — the outcome is determined by the main steps.
+Cleanup runs after the main steps finish — whether the plan passed, failed, errored, or was interrupted with Ctrl+C. The only time cleanup is skipped is a `--stop-after` checkpoint, where the whole point is to leave resources alive.
+
+Two sources of cleanup work combine, in this order:
+
+1. **Plan-level cleanup steps** (`execution.cleanup:` in the plan) run first, in declaration order. Each step's `runOn` (`always`, `success`, `failure`; empty means `always`) is checked against the outcome — `success` runs only when the plan passed, `failure` runs when it failed, errored, or was aborted.
+2. **Graph-level cleanup pairings** (`cleanup: deleteX` on a node) run next from a stack: every main step whose node declares a cleanup partner pushes that partner when the step succeeds, and the stack unwinds last-in-first-out, so the most recently created resource is torn down first. A pairing whose node already ran as a plan-level cleanup step is skipped rather than run twice.
+
+Cleanup steps do not carry `values:`. Their inputs are filled by matching input names against the outputs of earlier steps — the step that registered the cleanup is consulted first, then any other executed step. A `deleteOrder` cleanup with an `orderId` input picks up `orderId` from the `createOrder` step that created it.
+
+Cleanup results are recorded in the archive (and in the `cleanup` array of `--json` output) with the same detail as main steps, but a failed cleanup step never changes the run outcome — the outcome is determined by the main steps alone.
+
+See [Plans: Cleanup Steps](plans.md#cleanup-steps) and [API Graphs: Cleanup](graphs.md#cleanup) for how each kind is declared.
 
 ## Retries
 
@@ -287,6 +333,49 @@ Archives capture the full execution trace: per-step request/response pairs (meth
 
 Archives are safe to store as CI artifacts or share with teammates. See [Web UI and Archives](web-ui.md) for browsing and debugging with the archive viewer.
 
+### Pruning Old Runs (`aat run clean`)
+
+The output directory grows by one directory per run. `aat run clean` deletes auto-generated run and batch directories older than a cutoff:
+
+```
+aat run clean                # delete runs older than 7 days
+aat run clean --days 30      # keep a month
+aat run clean --dry-run      # list what would be deleted, remove nothing
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--days` | int | `7` | Delete runs older than this many days |
+| `--dry-run` | bool | `false` | Preview without deleting |
+| `--output` | path | from manifest | Archive directory to clean (defaults to the manifest's `archives`) |
+
+Only directories with the auto-generated `run-`/`batch-` prefix are candidates. Runs you have named or saved in the web UI (their directory no longer starts with `run-`/`batch-`, or starts with `!`) are never deleted, and the summary line reports how many were skipped. See [Web UI: Naming and Saving Runs](web-ui.md#naming-and-saving-runs).
+
+### Rebuilding Summaries (`aat run rebuild-summaries`)
+
+Each run directory carries a cached `summary.json` that the web UI reads for its list views (step counts, issue counts, and similar). After upgrading AAT, older summaries may lack fields the new UI expects. Rebuild them from the full archives without re-running anything:
+
+```
+aat run rebuild-summaries
+```
+
+It walks the output directory (or `--output DIR`), recomputes every summary, and reports how many were rebuilt. The next web UI listing picks them up immediately.
+
+## OAS Validation
+
+When the graph references an OpenAPI spec (a graph-level `oas:` or per-node `oas` references — see [API Graphs: OAS Integration](graphs.md#oas-integration)), AAT validates each step's request and response against the spec as it runs. Violations show up in three places: an `OAS: N warning(s)` marker on the step line and a total after the summary, an `issues` map (`{"oas": N}`) in the `--json` summary and archive summary, and the per-step detail in the archive.
+
+The `--oas-validate` flag controls the mode:
+
+| Mode | Behavior |
+|------|----------|
+| `auto` | Default. Validate when specs are present; report violations as warnings |
+| `warn` | Same reporting as `auto` |
+| `strict` | Like `auto`, but a request or response that violates the spec fails the step (outcome `failed`, cleanup still runs). Skipped validations and schema compilation warnings never fail a step; `expectFailure` steps are exempt. Use a `schema` assertion instead when only specific steps should be strict (see [Plans: Assertions](plans.md#assertions)) |
+| `off` | Do not load specs or validate |
+
+The default comes from `settings.oasValidation` in the environment file; the flag overrides it for one run. See [Environments: Runtime Settings](environments.md#runtime-settings).
+
 ## Debugging Authentication
 
 The `--verbose-auth` flag prints the full authentication exchange to stderr, so you can see exactly what AAT sends and receives when obtaining tokens.
@@ -314,9 +403,11 @@ Key details:
 
 This flag is available on both `run plan` and `run batch`.
 
-## Building AAT
+## Installing and Building AAT
 
-Build the AAT binary with version information embedded:
+The easiest path is a prebuilt release binary — see the Install section of the README. The binary is self-contained: no runtime dependencies, no external files needed beyond your project's YAML configuration.
+
+To build from source with version information and the web UI embedded:
 
 ```
 make build
@@ -330,7 +421,7 @@ For a quick build without the frontend:
 go build -o aat ./cmd/aat/
 ```
 
-The resulting binary is self-contained — no runtime dependencies, no external files needed beyond your project's YAML configuration.
+A build without the frontend (including `go install github.com/gburgyan/aat/cmd/aat@latest`) runs every CLI, MCP, and CI feature, but `aat web` exits with code `2` and an install hint because there is no UI bundle to serve. Use a release build or `make build` when you want the web UI.
 
 ---
 

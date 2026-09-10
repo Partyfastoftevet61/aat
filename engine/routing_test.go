@@ -97,7 +97,7 @@ func TestExecutorRouter_WithPathRewrite(t *testing.T) {
 	assert.Equal(t, "/api/v2", rw.Prefix)
 }
 
-func TestExecutorRouter_FirstGlobWins(t *testing.T) {
+func TestExecutorRouter_LastGlobWins(t *testing.T) {
 	defaultExec := adapter.NewHTTPExecutor("https://default.example.com")
 	firstExec := adapter.NewHTTPExecutor("https://first.example.com")
 	secondExec := adapter.NewHTTPExecutor("https://second.example.com")
@@ -106,8 +106,10 @@ func TestExecutorRouter_FirstGlobWins(t *testing.T) {
 	router.AddOverride("search*", firstExec, &adapter.EnvironmentConfig{}, nil)
 	router.AddOverride("search*", secondExec, &adapter.EnvironmentConfig{}, nil)
 
+	// Later registrations (.aat-overrides.yaml, --overlay, --override) beat
+	// earlier ones (env.yaml overrides).
 	exec, _, _ := router.Resolve("searchFlights")
-	assert.Equal(t, firstExec, exec)
+	assert.Equal(t, secondExec, exec)
 }
 
 func TestExecutorRouter_HasOverrides(t *testing.T) {
@@ -293,4 +295,46 @@ func TestEngine_Run_PathRewriteIntegration(t *testing.T) {
 
 	// Path should be rewritten: /11/search/flights → /api/v2/search/flights
 	assert.Equal(t, "/api/v2/search/flights", receivedPath)
+}
+
+func TestExecutorRouter_LastRegisteredOverrideWins(t *testing.T) {
+	defaultExec := adapter.NewHTTPExecutor("https://default.example.com")
+	envGlob := adapter.NewHTTPExecutor("https://env.example.com")
+	overlayGlob := adapter.NewHTTPExecutor("http://localhost:9091")
+	exact := adapter.NewHTTPExecutor("http://localhost:9092")
+	laterExact := adapter.NewHTTPExecutor("http://localhost:9093")
+
+	router := NewExecutorRouter(defaultExec, &adapter.EnvironmentConfig{})
+	router.AddOverride("payment*", envGlob, &adapter.EnvironmentConfig{}, nil)
+	router.AddOverride("payment*", overlayGlob, &adapter.EnvironmentConfig{}, nil)
+
+	exec, _, _ := router.Resolve("paymentCharge")
+	assert.Equal(t, overlayGlob, exec, "a later glob beats an earlier glob")
+
+	router.AddOverride("paymentCharge", exact, &adapter.EnvironmentConfig{}, nil)
+	router.AddOverride("payment*", envGlob, &adapter.EnvironmentConfig{}, nil)
+	exec, _, _ = router.Resolve("paymentCharge")
+	assert.Equal(t, exact, exec, "an exact match beats any glob, even a later one")
+
+	router.AddOverride("paymentCharge", laterExact, &adapter.EnvironmentConfig{}, nil)
+	exec, _, _ = router.Resolve("paymentCharge")
+	assert.Equal(t, laterExact, exec, "a later exact match beats an earlier exact match")
+
+	exec, _, _ = router.Resolve("paymentRefund")
+	assert.Equal(t, envGlob, exec, "glob still applies to other nodes")
+}
+
+func TestExecutorRouter_ValueOverrideLastExpectFailureWins(t *testing.T) {
+	router := NewExecutorRouter(adapter.NewHTTPExecutor("https://default.example.com"), &adapter.EnvironmentConfig{})
+	router.AddValueOverride("payment*", map[string]any{"cardNumber": "1"}, &plan.ExpectFailure{Status: []int{402}})
+	router.AddValueOverride("payment*", map[string]any{"cardNumber": "2"}, &plan.ExpectFailure{Status: []int{409}})
+
+	values, ef := router.ResolveValueOverride("paymentCharge")
+	assert.Equal(t, "2", values["cardNumber"])
+	require.NotNil(t, ef)
+	assert.Equal(t, []int{409}, ef.Status, "later glob wins")
+
+	router.AddValueOverride("paymentCharge", nil, &plan.ExpectFailure{Status: []int{422}})
+	_, ef = router.ResolveValueOverride("paymentCharge")
+	assert.Equal(t, []int{422}, ef.Status, "exact beats glob")
 }

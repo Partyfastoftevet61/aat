@@ -115,7 +115,7 @@ An output declares one piece of data the operation produces. Outputs are extract
 | `name` | string | yes | Output name, unique within the node |
 | `type` | string | yes | Data type (see [Types](#types)); use `X[]` for arrays |
 | `description` | string | no | Human-readable description |
-| `display` | string | no | Display format hint for the web UI |
+| `display` | string | no | Label for surfacing this output to the user. When set, the extracted value is printed under the step in console output (`  Locator: ABC123`), included as `display_outputs` in `--json` summaries, and stored in the archive |
 | `elementFields` | list | no | Field definitions for array element structure (see below) |
 
 ### Array Outputs and Element Fields

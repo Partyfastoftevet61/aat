@@ -4,7 +4,7 @@ Trace from a 21-line recipe to a fully automated, self-cleaning API test.
 
 This walkthrough takes you through every file in the [Petstore example](../../examples/petstore/) and explains how they compose into working tests. By the end, you will understand how AAT models an API, wires data between steps, runs cleanup automatically, and keeps test plans short.
 
-**Prerequisites:** Go 1.24+, internet access (the Petstore API is public).
+**Prerequisites:** Go 1.25+, internet access (the Petstore API is public).
 
 **Time:** ~15 minutes to read in full. Pass 1 is 2 minutes if you just want to run something.
 
@@ -98,7 +98,7 @@ archives: _output/runs
 
 The manifest marks the project root and tells AAT where to find every artifact. When you run a command from this directory (or any subdirectory), AAT walks up the file tree until it finds `aat-project.yaml` and resolves all paths relative to it.
 
-This is why `../../aat run plan plans/create-and-verify.yaml` works without `--env`, `--graph`, or `--templates` flags. The manifest supplies all of them.
+This is why `../../aat run plan plans/create-and-verify.yaml` works without `--env-config`, `--graph`, or `--templates` flags. The manifest supplies all of them.
 
 Each field maps to one file or directory:
 

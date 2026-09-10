@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 
 	"github.com/gburgyan/aat/plan"
@@ -208,8 +209,10 @@ func defaultRetryable(cat ErrorCategory) bool {
 }
 
 // shouldRetry determines whether a failed step should be retried based on
-// the error category, retry configuration, and current attempt number.
-func shouldRetry(cat ErrorCategory, config *plan.RetryConfig, attempt int) bool {
+// the error category, the HTTP status code, the retry configuration, and the
+// current attempt number. Rules in On/FailOn are either category names
+// (e.g. "transient") or HTTP status codes written as integers (e.g. 503).
+func shouldRetry(cat ErrorCategory, status int, config *plan.RetryConfig, attempt int) bool {
 	if config == nil {
 		return false
 	}
@@ -217,19 +220,17 @@ func shouldRetry(cat ErrorCategory, config *plan.RetryConfig, attempt int) bool 
 		return false
 	}
 
-	catName := cat.String()
-
-	// FailOn overrides everything — if the category is in failOn, never retry
+	// FailOn overrides everything — if any rule matches, never retry
 	for _, f := range config.FailOn {
-		if f == catName {
+		if retryRuleMatches(f, cat, status) {
 			return false
 		}
 	}
 
-	// If On is specified, only retry listed categories
+	// If On is specified, only retry when a rule matches
 	if len(config.On) > 0 {
 		for _, o := range config.On {
-			if o == catName {
+			if retryRuleMatches(o, cat, status) {
 				return true
 			}
 		}
@@ -238,4 +239,15 @@ func shouldRetry(cat ErrorCategory, config *plan.RetryConfig, attempt int) bool 
 
 	// No On list — use defaults
 	return defaultRetryable(cat)
+}
+
+// retryRuleMatches reports whether a single retry rule matches a failure.
+// Numeric rules compare against the HTTP status code; other rules compare
+// (case-insensitively) against the error category name.
+func retryRuleMatches(rule string, cat ErrorCategory, status int) bool {
+	rule = strings.TrimSpace(rule)
+	if code, err := strconv.Atoi(rule); err == nil {
+		return status != 0 && code == status
+	}
+	return strings.EqualFold(rule, cat.String())
 }

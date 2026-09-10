@@ -363,3 +363,42 @@ func TestRetry_CancelledContextReturnsImmediately(t *testing.T) {
 	// The main loop should catch cancellation before even executing the step
 	assert.Equal(t, int32(0), atomic.LoadInt32(&callCount))
 }
+
+func TestRetryOnStatusCodeRule(t *testing.T) {
+	var callCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if callCount.Add(1) <= 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error": "service unavailable"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	result := buildRetryEngine(t, server.URL).Run(context.Background(), buildRetryPlan(&plan.RetryConfig{Max: 3, On: []string{"503"}}))
+
+	assert.Equal(t, OutcomePassed, result.Outcome)
+	require.Len(t, result.Steps, 1)
+	assert.Equal(t, 2, result.Steps[0].RetryCount)
+	assert.Equal(t, int32(3), callCount.Load())
+}
+
+func TestRetryStatusCodeRuleIgnoresOtherStatuses(t *testing.T) {
+	var callCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount.Add(1)
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error": "bad gateway"}`))
+	}))
+	defer server.Close()
+
+	result := buildRetryEngine(t, server.URL).Run(context.Background(), buildRetryPlan(&plan.RetryConfig{Max: 3, On: []string{"503"}}))
+
+	assert.Equal(t, OutcomeFailed, result.Outcome)
+	require.Len(t, result.Steps, 1)
+	assert.Equal(t, 0, result.Steps[0].RetryCount, "502 does not match the 503 rule")
+	assert.Equal(t, int32(1), callCount.Load())
+}

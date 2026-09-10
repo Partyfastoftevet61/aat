@@ -10,6 +10,15 @@ import (
 //go:embed web/dist
 var webAssets embed.FS
 
+// HasWebAssets reports whether the compiled frontend bundle is embedded in
+// this binary. A plain `go install` build embeds only the tracked index.html;
+// the hashed JS/CSS bundle under web/dist/assets is produced by `make build`
+// and by the release pipeline.
+func HasWebAssets() bool {
+	entries, err := fs.ReadDir(webAssets, "web/dist/assets")
+	return err == nil && len(entries) > 0
+}
+
 // spaFileServer returns an http.Handler that serves static files from the
 // embedded web/dist directory. Unknown paths fall back to index.html so that
 // client-side routing works (SPA behavior).

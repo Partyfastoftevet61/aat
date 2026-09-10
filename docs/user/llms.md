@@ -479,7 +479,7 @@ at execution time, bypassing template placeholder substitution.
 
 ### 4. Overlay value and `expectFailure` overrides
 
-Overlay files (`.aat-overrides.yaml`, `--env-overlay`, or `env.yaml`
+Overlay files (`.aat-overrides.yaml`, `--overlay`, or `env.yaml`
 `overrides:`) can override individual input values and declare expected
 failure on matched nodes — without editing the plan. This is the primitive for
 CI-driven negative suites, local debugging, and rerunning an existing plan as

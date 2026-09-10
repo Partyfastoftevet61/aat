@@ -424,7 +424,7 @@ func writeRunArchiveWithSecrets(result *engine.RunResult, p *plan.Plan, env *con
 		Plan:         p,
 		Environment:  env.Name,
 		GraphVersion: g.Version,
-		ToolVersion:  version.Version,
+		ToolVersion:  version.Effective(),
 		Layers:       layers,
 	}
 	arc := engine.ToArchive(result, meta, env.APIBaseURL, secrets)
@@ -1075,7 +1075,7 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 		Plan:          p,
 		Environment:   rctx.Env.Name,
 		GraphVersion:  rctx.Graph.Version,
-		ToolVersion:   version.Version,
+		ToolVersion:   version.Effective(),
 		Attempt:       attempt,
 		TotalAttempts: totalAttempts,
 		Layers:        effectiveLayers,

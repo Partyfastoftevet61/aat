@@ -533,7 +533,7 @@ func batchCommand(ctx context.Context, args *batchArgs, out io.Writer) *batchRes
 			BatchID:     batchID,
 			Timestamp:   batchStart,
 			Source:      source,
-			ToolVersion: version.Version,
+			ToolVersion: version.Effective(),
 			Layers:      args.Layers,
 			LayerGroups: args.LayerGroups,
 		},

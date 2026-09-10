@@ -161,7 +161,7 @@ overrides:
     baseUrl: http://localhost:8080
 ```
 
-Now `aat run plan ...` picks up the `dev` environment automatically whenever this overlay is active. Passing `--env pp` on the command line still wins, so the project default is never hidden from you.
+Now `aat run plan ...` picks up the `dev` environment automatically whenever this overlay is active, and logs `aat: using environment "dev" from overlay /path/to/project/.aat-overrides.yaml` so the choice is visible. Passing `--env pp` on the command line (or setting `AAT_ENV_NAME`) still wins, so the project default is never hidden from you. When both an explicit `--overlay` file and `.aat-overrides.yaml` set `environment:`, the explicit file's value is used.
 
 Top-level `environment`, `auth`, `headers`, and `overrides` can all be combined in a single file. See [Environments: Overlay Files](environments.md#overlay-files) for the full reference.
 
@@ -177,18 +177,27 @@ AAT walks up from your current working directory looking for `.aat-overrides.yam
 
 ### Priority Chain
 
-Overrides are applied in this order, with later entries taking precedence:
+Override entries are registered from these sources, in this order:
 
 1. `env.yaml` `overrides:` section (permanent, shared)
 2. `.aat-overrides.yaml` (auto-discovered, personal)
-3. `--env-overlay` flag (explicit overlay file)
+3. `--overlay` flag (explicit overlay file)
 4. `--override` flag (CLI one-off)
+
+When a node matches more than one entry, two rules decide which applies:
+
+- **Exact names beat globs.** An entry with `match: createOrder` always wins over `match: "create*"` for `createOrder`, no matter which source each came from.
+- **Within the same kind, the last registered wins.** A glob in `.aat-overrides.yaml` beats a glob in `env.yaml`; an exact name from `--override` beats the same exact name in any file.
+
+So a personal `match: "*"` in `.aat-overrides.yaml` really does redirect everything that `env.yaml` only routed by glob, while an exact-name entry in `env.yaml` still pins that one node unless you override it by exact name too. The same rules apply to `values:` and `expectFailure:` entries (see [Environments: Input-Value and Expected-Failure Overrides](environments.md#input-value-and-expected-failure-overrides)).
+
+Environment *selection* has its own chain: `--env` flag, then `AAT_ENV_NAME`, then `environment:` from the `--overlay` file, then `environment:` from `.aat-overrides.yaml`, then the manifest's `defaultEnvironment`.
 
 Transaction-level auth follows a separate chain (later entries replace earlier ones):
 
 1. `env.yaml` `auth:` — base environment credentials
 2. `.aat-overrides.yaml` `auth:` — auto-discovered overlay
-3. `--env-overlay` file `auth:` — explicit overlay
+3. `--overlay` file `auth:` — explicit overlay
 4. Plan-level `auth:` — per-plan override
 
 ### Logging
@@ -220,7 +229,7 @@ The `--no-auto-overrides` flag is available on `aat run plan`, `aat run batch`, 
 `.aat-overrides.yaml` is the recommended approach for ongoing local development. For other scenarios:
 
 - **`--override NODE=URL`** — one-off overrides on the command line, good for quick experiments
-- **`--env-overlay FILE`** — explicit overlay file, useful when you want to version-control an alternate routing config
+- **`--overlay FILE`** — explicit overlay file, useful when you want to version-control an alternate routing config
 - **`env.yaml` `overrides:` section** — permanent multi-host routing shared across all developers
 
 See [Environments](environments.md) for full override and auth documentation.

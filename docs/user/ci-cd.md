@@ -6,11 +6,12 @@ AAT is designed for automated pipelines: deterministic exit codes, machine-reada
 
 | Code | Meaning | Example Scenarios |
 |------|---------|-------------------|
-| `0` | Passed | All steps and assertions succeeded |
+| `0` | Passed | All steps and assertions succeeded; also a `--stop-after` checkpoint (`stopped`) |
 | `1` | Failed | One or more assertions failed; a step returned an unexpected status code |
 | `2` | Error | Invalid plan file, missing environment config, network failure, authentication error |
+| `130` | Aborted | The process received `SIGINT` (Ctrl+C) or `SIGTERM` — a cancelled CI job, a timeout wrapper, a runner shutting down. Cleanup still runs and a partial archive is written |
 
-For batch runs, the exit code reflects the worst outcome across all plans: if any plan errors, exit code is `2`; if any plan fails (but none error), exit code is `1`; only if all plans pass is the exit code `0`.
+For batch runs, the exit code reflects the worst outcome across all plans: if any plan was aborted, exit code is `130`; if any plan errors, exit code is `2`; if any plan fails (but none error), exit code is `1`; only if all plans pass is the exit code `0`.
 
 ## JSON Output
 
@@ -26,14 +27,15 @@ aat run plan smoke-test --json
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `outcome` | string | `"passed"`, `"failed"`, or `"error"` |
+| `outcome` | string | `"passed"`, `"failed"`, `"error"`, `"aborted"` (interrupted), or `"stopped"` (`--stop-after` checkpoint) |
 | `error` | string | Error message (present only when outcome is `"error"`) |
 | `steps` | array | Per-step results (see StepSummary below) |
 | `cleanup` | array | Cleanup step results (same schema as steps; omitted if none) |
-| `summary` | object | Aggregate stats: `total_steps`, `passed_steps`, `failed_steps`, `duration_ms` |
+| `summary` | object | Aggregate stats: `total_steps`, `passed_steps`, `failed_steps`, `duration_ms`, and `issues` — a map of issue category to count (currently `oas` for OpenAPI violations; omitted when empty) |
 | `archive_path` | string | Path to the archive directory |
 | `attempts` | int | Total execution attempts (omitted if 1) |
 | `retried` | bool | Whether any retries occurred (omitted if false) |
+| `state` | object | Accumulated run state, present only with `--dump-state -` (unredacted; see [Running Tests: Checkpoints](running.md#checkpoints-stopping-early-and-handing-off-state)) |
 
 **StepSummary fields:**
 
@@ -147,10 +149,10 @@ aat run batch --json
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `outcome` | string | `"passed"`, `"failed"`, or `"error"` |
+| `outcome` | string | `"passed"`, `"failed"`, `"error"`, or `"aborted"` |
 | `batchId` | string | Batch run identifier |
 | `runs` | array | Per-plan results (see BatchRunResult below) |
-| `summary` | object | Aggregate: `total_plans`, `passed_plans`, `failed_plans`, `error_plans`, `duration_ms` |
+| `summary` | object | Aggregate: `total_plans`, `passed_plans`, `failed_plans`, `error_plans`, `duration_ms`; plus `aborted_plans` and `skipped_plans` when non-zero |
 | `archive_path` | string | Path to the batch archive directory |
 
 **BatchRunResult fields:**
@@ -158,7 +160,7 @@ aat run batch --json
 | Field | Type | Description |
 |-------|------|-------------|
 | `plan_name` | string | Plan filename |
-| `outcome` | string | `"passed"`, `"failed"`, or `"error"` |
+| `outcome` | string | `"passed"`, `"failed"`, `"error"`, or `"aborted"` |
 | `step_count` | int | Total steps in the plan |
 | `passed_steps` | int | Steps that passed |
 | `failed_steps` | int | Steps that failed |
@@ -168,6 +170,8 @@ aat run batch --json
 | `attempts` | int | Total execution attempts (omitted if 1) |
 | `layers` | array | Effective layer names applied (omitted if none) |
 | `permutation` | string | Layer permutation label (omitted if no layer groups) |
+| `skipped` | bool | `true` when the run was skipped as a duplicate permutation (see [Matrix Testing: Duplicate Detection](batch-layers.md#duplicate-detection)) |
+| `duplicate_of` | string | Display name of the canonical run this one duplicates (omitted unless skipped) |
 
 **Example — batch with mixed outcomes:**
 
@@ -264,20 +268,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-
-      - name: Build AAT
-        run: make build
+      - name: Install AAT
+        run: |
+          curl -fsSL https://github.com/gburgyan/aat/releases/latest/download/aat_linux_amd64.tar.gz | tar -xz aat
+          sudo install -m 0755 aat /usr/local/bin/aat
+          aat --version
 
       - name: Validate project
         working-directory: my-ecommerce-api
-        run: ../aat validate
+        run: aat validate
 
       - name: Run tests
         working-directory: my-ecommerce-api
-        run: ../aat run batch --json --output _output/runs > results.json
+        run: aat run batch --json --output _output/runs > results.json
 
       - name: Upload archives
         if: always()
@@ -287,7 +290,9 @@ jobs:
           path: my-ecommerce-api/_output/runs/
 ```
 
-Other CI systems follow the same pattern: build the binary, validate, run tests with `--json`, and upload the archive directory as an artifact. The exit codes and JSON output are CI-system-agnostic.
+Release archives are named `aat_<os>_<arch>.tar.gz` (`aat_linux_arm64`, `aat_darwin_arm64`, and so on; Windows ships as `.zip`), so the URL above always fetches the latest release for the runner's platform. Pin a specific version by replacing `latest/download` with `download/vX.Y.Z` when you want reproducible pipelines. Building from source (`make build`, which needs Go and Node) also works but is slower.
+
+Other CI systems follow the same pattern: install the binary, validate, run tests with `--json`, and upload the archive directory as an artifact. The exit codes and JSON output are CI-system-agnostic.
 
 ## Environment Management
 
@@ -297,29 +302,39 @@ Secrets are supplied through environment variables and resolved via `SecretRef` 
 # env.yaml
 auth:
   type: oauth2
-  clientId:
-    resolvedFrom: CLIENT_ID
-  clientSecret:
-    resolvedFrom: CLIENT_SECRET
+  tokenUrl: https://auth.example.com/oauth/token
+  credentials:
+    clientId:
+      source: env
+      var: CLIENT_ID
+    clientSecret:
+      source: env
+      var: CLIENT_SECRET
 ```
 
 Set the environment variables in your CI system's secrets configuration. AAT resolves them at runtime.
 
 ### Per-Environment Configs
 
-Use the `--env` flag to switch between environment files:
+With a multi-environment file, select the target by name with `--env` (or the `AAT_ENV_NAME` variable, which is convenient in CI):
 
 ```bash
 # Development
-aat run batch --env env-dev.yaml --json
+aat run batch --env dev --json
 
 # Staging
-aat run batch --env env-staging.yaml --json
+AAT_ENV_NAME=staging aat run batch --json
+```
+
+To point at a different environment *file* altogether, use `--env-config`:
+
+```bash
+aat run batch --env-config env-staging.yaml --json
 ```
 
 ### Overlay Files
 
-The `--env-overlay` flag applies a sparse YAML overlay on top of the base environment. This is useful for CI-specific overrides like different base URLs or reduced timeouts:
+The `--overlay` flag applies a sparse YAML overlay on top of the base environment. This is useful for CI-specific overrides like different base URLs or reduced timeouts:
 
 ```yaml
 # ci-overlay.yaml
@@ -329,8 +344,10 @@ overrides:
 ```
 
 ```bash
-aat run batch --env-overlay ci-overlay.yaml --json
+aat run batch --overlay ci-overlay.yaml --json
 ```
+
+Add `--no-auto-overrides` in CI so a developer's `.aat-overrides.yaml` can never leak into a pipeline run.
 
 ### Pinning the Project Root
 
@@ -361,6 +378,38 @@ Upload the entire output directory as a CI artifact. Archives contain redacted h
 
 See [Web UI and Archives](web-ui.md) for browsing archives locally after downloading CI artifacts.
 
+## JUnit / Datadog
+
+The `tools/` directory in the AAT repository ships two stdlib-only Python scripts for feeding archives into test-reporting systems.
+
+### `tools/aat-to-junit.py`
+
+Converts a run or batch archive into JUnit XML. Each AAT step becomes a `<testcase>` (cleanup steps are prefixed `[cleanup]`), and Datadog-style `dd_tags` properties carry the HTTP method, status, URL, node name, run ID, and step index — batches add plan name, permutation, and layer tags. A step is reported as failed when it has an error, a failed assertion, a failed `expectFailure`, or an HTTP status `>= 400` without a passing `expectFailure`.
+
+```bash
+# Single run → stdout
+python3 tools/aat-to-junit.py _output/runs/run-XXXXX/archive.json
+
+# Batch (per-run archives are loaded automatically)
+python3 tools/aat-to-junit.py _output/runs/batch-XXXXX/batch.json -o report.xml --pretty
+
+# Tag with a service name and upload to Datadog Test Visibility
+python3 tools/aat-to-junit.py _output/runs/batch-XXXXX/batch.json --service aat-tests -o report.xml
+datadog-ci junit upload --service aat-tests report.xml
+```
+
+Any CI system that understands JUnit XML (GitHub's test summaries, GitLab, Jenkins, CircleCI) can consume the same file.
+
+### `tools/batch-coverage.py`
+
+Reports which graph nodes a batch exercised — passed, failed, or never touched — with per-node execution counts and an overall coverage percentage. Pass `--json` for machine-readable output.
+
+```bash
+python3 tools/batch-coverage.py _output/runs/batch-XXXXX graph.yaml
+```
+
+See `tools/README.md` in the repository for the full option list.
+
 ## Debugging Failures
 
 When a pipeline fails:
@@ -370,8 +419,12 @@ When a pipeline fails:
 3. **Inspect the archive** — download the CI artifact and open it with `aat web view`
 
 ```bash
-# Download CI artifacts, then:
-aat web view _output/runs/run-20260223-143105-b2c3d4e5
+# Download CI artifacts, then point the viewer at the run directory...
+aat web view --output _output/runs run-20260223-143105-b2c3d4e5
+
+# ...or at a single file, no project setup needed
+aat web view _output/runs/run-20260223-143105-b2c3d4e5/archive.json
+aat web view exported-run.aar
 ```
 
 The web UI shows the full request/response, value resolution chain, and assertion results for each step. See [Web UI and Archives: Debugging Patterns](web-ui.md#debugging-patterns) for a detailed walkthrough.

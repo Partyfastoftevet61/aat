@@ -87,6 +87,19 @@ A slot option is a workflow with `kind: slot` and a template:
 
 Slot options have no `after`, `wire`, or `slots` fields. Their template contains the steps that replace the slot marker in the base workflow.
 
+A slot option may also carry an `inject` map. After every slot has been filled, each `inject` entry is applied across the **whole composed plan**: any step whose graph node declares an input with that name receives the value as its default — unless the step already sets that input explicitly (a `default`, `from`, `fromSelection`, `select`, `fromResolved`, or a locked value). This is how a choice made in one slot reaches steps that live outside it:
+
+```yaml
+  - name: Two Travelers
+    kind: slot
+    description: "Search and book for two passengers"
+    template: workflows/slots/travelers/two.yaml
+    inject:
+      passengers: 2          # every step with a `passengers` input gets 2
+```
+
+Because injected values are defaults, a recipe's `values:` override still wins, and steps that do not declare the input are untouched.
+
 ### Addon Declaration
 
 An addon is a workflow with `kind: addon`. It declares where to insert (`after`), how to wire inputs (`wire`), and optional ordering (`priority`):
@@ -121,6 +134,7 @@ An addon is a workflow with `kind: addon`. It declares where to insert (`after`)
 | `kind` | slot, addon | string | `"slot"` or `"addon"` (empty = base workflow) |
 | `template` | all | string | Path to the template YAML, relative to the graph file |
 | `slots` | base only | list | Slot definitions (choice points) |
+| `inject` | slot only | map | Input name → value applied as a default to every composed step whose node has that input (skipped where the step sets the input itself) |
 | `after` | addon only | string or list | Node name(s) to insert after; first match wins |
 | `wire` | addon only | map | Explicit input wiring overrides (see [The Wire Map](#the-wire-map)) |
 | `priority` | addon only | int | Composition ordering — lower values compose first (default: 0) |

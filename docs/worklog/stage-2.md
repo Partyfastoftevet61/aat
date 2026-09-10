@@ -143,7 +143,7 @@
 - `mcp/prompts_workflow.go` — NEW: registerWorkflowPrompts, 3 handlers, uniqueFailedNodeNames helper (~265 lines)
 - `mcp/prompts_workflow_test.go` — NEW: 20 tests (7 integration_guide + 6 test_workflow + 7 debug_failing_test)
 - `mcp/server.go` — modified: added `s.registerWorkflowPrompts()` call
-- `docs/internal/progress.md` — marked 60c-WI9 and 60c complete
+- `docs/worklog/progress-archive-2026-02.md` (originally `docs/internal/progress.md`) — marked 60c-WI9 and 60c complete
 - `docs/user/mcp-server.md` — added 3 prompts to table + workflow prompts section
 
 **Open questions:** None.
@@ -413,7 +413,7 @@
 - `intent/interpret.go` — refactored analyzeGoal return type, added trace capture throughout Interpret(), partial trace on error
 - `cmd/aat/prompt.go` — added TracePlan/TraceDir to promptArgs, --trace/--trace-dir flags, trace writing after Interpret
 - `cmd/aat/prompt_test.go` — 2 new tests (trace flag parsing, defaults)
-- `docs/internal/progress.md` — marked complete
+- `docs/worklog/progress-archive-2026-02.md` (originally `docs/internal/progress.md`) — marked complete
 
 **Open questions:** None.
 

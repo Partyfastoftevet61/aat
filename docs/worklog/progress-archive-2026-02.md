@@ -1,3 +1,5 @@
+> Frozen 2026-02-24. Historical stage tracker; superseded by CHANGELOG.md and ROADMAP.md. Several items marked unfinished here (web UI, verification steps, plan persistence) have since shipped.
+
 # AAT Progress Tracker
 
 Cross-references task numbers from the implementation plan.

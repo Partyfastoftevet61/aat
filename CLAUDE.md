@@ -1,10 +1,10 @@
 # AAT — Adaptive API Toolkit
 
-AAT is a Go CLI tool that uses LLM-assisted planning and execution to test API workflows end-to-end.
+AAT is a Go CLI that models an API as a graph and executes long, multi-step test plans against it: automatic data wiring between steps, layers for matrix testing, multi-environment routing, run archives with a full decision trail, an embedded web UI, and an MCP server so AI coding tools can integrate with the API. Execution is deterministic; LLMs are optional and only draft plans (`aat prompt`).
 
 ## Module
 
-`github.com/gburgyan/aat` — Go 1.24+
+`github.com/gburgyan/aat` — Go 1.25+
 
 ## Build System
 
@@ -32,7 +32,7 @@ make clean      # Remove binary and frontend artifacts (node_modules, dist)
 | `domain/` | Domain knowledge: concepts, types, value pools |
 | `plan/` | Plan model, expression evaluator, validation, persistence |
 | `intent/` | LLM-powered prompt → plan transformation |
-| `engine/` | Execution engine: scheduling, value resolution, retry, adaptation |
+| `engine/` | Execution engine: scheduling, value resolution, retry, cleanup, verification |
 | `validate/` | Mechanical, semantic, and intent validation |
 | `archive/` | Run archives: capture, inspection, diffing, reports |
 | `llm/` | Provider-agnostic LLM client |
@@ -134,7 +134,7 @@ The environment file supports two formats: **single-environment** (legacy, one `
 - **`docs/worklog/`** — decision log entries per stage (date, decisions, rationale)
 - **`docs/user/`** — user-facing docs (created when there's something to document)
 
-Update `docs/internal/progress.md` as tasks complete. Add worklog entries for non-trivial decisions.
+Record user-visible changes in `CHANGELOG.md` under *Unreleased* as tasks complete. Add worklog entries for non-trivial decisions. The public launch roadmap lives in `LAUNCH-PLAN.md`.
 
 ## Worklogs
 
@@ -148,64 +148,57 @@ When making design decisions or completing stage milestones, add entries to `doc
 **Open questions:** Anything deferred
 ```
 
-## Running AAT (Airline Example)
+## Running AAT
 
-Build the binary and use the airline config files in `airline/`:
+Build the binary and run one of the example projects under `examples/`:
 
 ```bash
 # Build (injects version/commit/date automatically)
 make build
 
-# Or without make:
+# Or without make (no web UI bundle; `aat web` will refuse to start):
 # go build -o aat ./cmd/aat/
 
-# With manifest auto-discovery (from airline/ directory):
-cd airline/
-./aat prompt "book a flight from rome to new york"
-./aat prompt --env qag "book a flight from rome to new york"
-./aat run plan workflows/roundtrip-booking.yaml
-./aat run batch
-./aat run batch booking/
-./aat env list
+# Petstore example (public API, no credentials)
+cd examples/petstore/
+../../aat run plan plans/create-and-verify.yaml
+../../aat run batch
+../../aat web view
 
-# Or with explicit paths (from repo root):
-./aat prompt \
-  --env-config airline/env.yaml \
-  --env pp \
-  --graph airline/graph.yaml \
-  --templates airline/templates/ \
-  --domain airline/domain.yaml \
-  "book a flight from rome to new york"
+# TODO(M1): replace with the shop sandbox quick start (aat-sandbox init/serve).
+
+# Explicit paths instead of manifest auto-discovery:
+./aat run plan examples/petstore/plans/create-and-verify.yaml \
+  --env-config examples/petstore/env.yaml \
+  --graph examples/petstore/graph.yaml \
+  --templates examples/petstore/templates/
 
 # Optional prompt flags:
 #   --yes              skip interactive confirmation (auto-execute)
 #   --save FILE        save generated plan to a YAML file
 #   --trace            capture planning pipeline trace for debugging
 #   --trace-dir DIR    trace output directory (default: traces/)
-#   --output DIR       archive output directory (default: runs/)
+#   --output DIR       archive output directory (default: _output/runs/)
 
 # Shared run flags (apply to both plan and batch):
-#   --output DIR       archive output directory (default: runs/)
+#   --output DIR       archive output directory (default: _output/runs/)
 #   --env NAME         environment name (for multi-environment files)
+#   --env-config FILE  environment file (overrides the manifest)
 #   --json             machine-readable JSON summary to stdout
 #   --quiet            suppress progress, show final line only
 #   --override NODE=URL  route a node to a different URL (repeatable)
 #   --overlay FILE       path to overlay YAML with additional overrides
-#   --no-auto-overrides  disable auto-discovery of aat-overrides.yaml
+#   --no-auto-overrides  disable auto-discovery of .aat-overrides.yaml
 #   --retries N        max plan-level retries on failure (0 = no retries)
+#   --oas-validate MODE  runtime OpenAPI validation: auto|warn|strict|off
+#   --stop-after STEP  stop after a step, skip cleanup, keep resources alive
+#   --dump-state FILE  write live state (base URL, auth headers, outputs) for external harnesses
 ```
 
-**Airline config files:**
-- `airline/aat-project.yaml` — project manifest (auto-discovery root)
-- `airline/env.yaml` — multi-environment config (6 envs: pp, pn, qag, qab, int, local)
-- `airline/env.secrets.yaml` — auth credentials (gitignored)
-- `airline/graph.yaml` — API graph (59 nodes)
-- `airline/templates/` — 56 request templates
-- `airline/domain.yaml` — domain knowledge (concepts, types, value pools)
-- `airline/workflows/` — pre-written workflow templates (base + addons)
-- `airline/plans/` — saved plan instances from `aat prompt --save`
-
-LLM config (endpoint, API key, model) comes from the `llm:` section in the env YAML. The API key resolves from an OS environment variable via `SecretRef`.
+The author's production-grade project (a 74-node airline API graph) lives in a separate private
+repository; it is cited by numbers only in public docs. LLM config (endpoint, API key, model) comes
+from the `llm:` section in the env YAML. The API key resolves from an OS environment variable via
+`SecretRef`.
 
 ## Observability & Debugging
 
@@ -299,5 +292,4 @@ If a task seems too aggressive to do in one operation, push back and offer to br
 
 ## Current Stage
 
-**Stage 3a: CI/CD, Web UI & Polish** — Stage 2 complete.
-See `docs/internal/progress.md` for detailed status.
+Public launch work is tracked milestone by milestone in `LAUNCH-PLAN.md`; feature status is in `ROADMAP.md` and `CHANGELOG.md`. The historical stage tracker is archived at `docs/worklog/progress-archive-2026-02.md`.

@@ -26,9 +26,6 @@ func (s *Server) registerExecTools() {
 				mcp.Description("Plan filename (e.g. 'booking-test' or 'booking-test.yaml')"),
 				mcp.Required(),
 			),
-			mcp.WithString("mode",
-				mcp.Description("Execution mode: strict (no LLM), lean (LLM after pool exhausted), or adaptive (lean + relaxation). Defaults to environment setting or strict."),
-			),
 		),
 		s.handleExecutePlan,
 	)
@@ -161,7 +158,7 @@ func (s *Server) handleExecutePlan(ctx context.Context, req mcp.CallToolRequest)
 		Plan:         p,
 		Environment:  s.ctx.Environment.Name,
 		GraphVersion: s.ctx.Graph.Version,
-		ToolVersion:  version.Version,
+		ToolVersion:  version.Effective(),
 	}
 	secrets := s.ctx.Environment.CollectSecrets()
 	if p.Auth != nil {

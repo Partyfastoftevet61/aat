@@ -5,7 +5,7 @@ Thanks for your interest in contributing to Adaptive API Toolkit!
 ## Getting started
 
 1. Fork the repository and clone your fork
-2. Install prerequisites: Go 1.24+, Node.js 18+, Make
+2. Install prerequisites: Go 1.25+, Node.js 18+, Make
 3. Build: `make build`
 4. Run tests: `make test`
 
@@ -29,6 +29,8 @@ The goal here is to set honest expectations so nobody gets defensive. A PR that 
 ## Project structure
 
 AAT is organized into focused packages with one-way dependencies. See [CLAUDE.md](CLAUDE.md) for the full package map and dependency rules.
+
+Architecture notes live in `docs/internal/`; the decision history is in `docs/worklog/`.
 
 Key entry points:
 - `cmd/aat/` — CLI binary

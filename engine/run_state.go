@@ -6,6 +6,7 @@ import "fmt"
 type RunState struct {
 	outputs map[string]map[string]any // stepID → outputName → value
 	inputs  map[string]map[string]any // stepID → inputName → resolved value
+	order   []string                  // step IDs in the order their outputs were first stored
 }
 
 // NewRunState creates an empty RunState.
@@ -18,6 +19,9 @@ func NewRunState() *RunState {
 
 // StoreOutputs records the outputs for a completed step.
 func (s *RunState) StoreOutputs(nodeName string, outputs map[string]any) {
+	if _, seen := s.outputs[nodeName]; !seen {
+		s.order = append(s.order, nodeName)
+	}
 	s.outputs[nodeName] = outputs
 }
 
@@ -58,11 +62,10 @@ func (s *RunState) GetInput(stepID, inputName string) (any, error) {
 	return val, nil
 }
 
-// ExecutedSteps returns the IDs of all steps that have stored outputs.
+// ExecutedSteps returns the IDs of all steps that have stored outputs, in
+// execution order (earliest first).
 func (s *RunState) ExecutedSteps() []string {
-	keys := make([]string, 0, len(s.outputs))
-	for k := range s.outputs {
-		keys = append(keys, k)
-	}
+	keys := make([]string, len(s.order))
+	copy(keys, s.order)
 	return keys
 }

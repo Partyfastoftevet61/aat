@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -210,8 +211,23 @@ type webArgs struct {
 	OpenURL       string // specific URL to open; if empty and Open is true, opens the base URL
 }
 
+// requireWebAssets returns an exit-code-2 error when the frontend bundle was
+// not embedded at build time (for example a plain `go install` build). Dev
+// mode proxies to Vite and does not need the bundle.
+func requireWebAssets(devMode bool) error {
+	if devMode || server.HasWebAssets() {
+		return nil
+	}
+	return &exitError{Code: 2, Err: errors.New("this build has no web UI (frontend bundle not embedded): " +
+		"install a release build from https://github.com/gburgyan/aat/releases or `brew install gburgyan/tap/aat`, " +
+		"or build from source with `make build`; the CLI, MCP server, and CI features work without it")}
+}
+
 // webServeCommand starts the web server and blocks until interrupted.
 func webServeCommand(args *webArgs) error {
+	if err := requireWebAssets(args.DevMode); err != nil {
+		return err
+	}
 	srv := server.NewServer(server.ServerOptions{
 		Port:          args.Port,
 		ArchiveDir:    args.ArchiveDir,
@@ -257,6 +273,9 @@ func webServeCommand(args *webArgs) error {
 // webViewCommand opens a run in the browser. If no server is running on the
 // given port, it starts a temporary one that serves until interrupted.
 func webViewCommand(port int, ref string, archiveDir string, tracesDir string, visualizerDir string) error {
+	if err := requireWebAssets(false); err != nil {
+		return err
+	}
 	baseURL := fmt.Sprintf("http://localhost:%d", port)
 
 	if err := checkServerHealth(baseURL); err == nil {
@@ -280,6 +299,9 @@ func webViewCommand(port int, ref string, archiveDir string, tracesDir string, v
 // webViewTraceCommand opens the trace viewer in the browser. If no server is
 // running on the given port, it starts a temporary one that serves until interrupted.
 func webViewTraceCommand(port int, traceRef string, archiveDir string, tracesDir string, visualizerDir string) error {
+	if err := requireWebAssets(false); err != nil {
+		return err
+	}
 	baseURL := fmt.Sprintf("http://localhost:%d", port)
 
 	url := buildTraceViewURL(port, traceRef)
@@ -533,6 +555,9 @@ func loadBatchMemberRuns(dir string) (map[string]*archive.Archive, map[string]ma
 // webViewFileCommand loads an archive file into memory and serves it via
 // an ephemeral web server. No temp files are created on disk.
 func webViewFileCommand(port int, filePath string, ft fileType) error {
+	if err := requireWebAssets(false); err != nil {
+		return err
+	}
 	svc, ref, archiveType, err := loadArchiveFile(filePath, ft)
 	if err != nil {
 		return err

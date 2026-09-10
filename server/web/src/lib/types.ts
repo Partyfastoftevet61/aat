@@ -1,4 +1,4 @@
-export type Outcome = 'passed' | 'failed' | 'error' | 'skipped';
+export type Outcome = 'passed' | 'failed' | 'error' | 'skipped' | 'aborted' | 'stopped';
 
 export interface ApiError {
   error: string;

@@ -311,6 +311,17 @@ Skipped runs appear in `batch.json` but have no run directory — there's nothin
 
 See [Web UI and Archives](web-ui.md) for inspecting archives in the browser.
 
+### Reading the matrix in the web UI
+
+`aat web` renders the same batch as a permutation matrix. Open the batch (from the run list, or `aat web view batch-...`) and use the **By Layers** / **By Test** toggle at the top of the batch detail page:
+
+![Batch matrix](assets/ui-batch-matrix.png)
+
+- **By Layers** groups runs by permutation — one block per layer combination — which is the quickest way to see whether a whole configuration is broken.
+- **By Test** pivots to one row per plan and one column per permutation, with an **Overall** column, so a single test can be scanned across every configuration. The per-dimension drop-downs above the table pin any layer group to **All**, **(none)**, or one value, and the counter shows how many permutations remain.
+
+Skipped duplicates appear greyed out with a pointer to the run they duplicate; the **hide skipped** toggle collapses them. See [Web UI: Batch Detail](web-ui.md#batch-detail) for the full description of both views.
+
 ## Putting It Together
 
 Here's a complete example for an e-commerce API test suite.

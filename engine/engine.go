@@ -172,7 +172,8 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 	cleanupStack := &CleanupStack{}
 	var stepResults []StepResult
 	outcome := OutcomePassed
-	total := len(sorted)
+	verificationSteps := plan.VerificationSteps(instantiatedPlan, e.graph, e.layeredDefaults)
+	total := len(sorted) + len(verificationSteps)
 
 	if e.Observer != nil {
 		e.Observer.OnRunStart(total, "strict")
@@ -185,7 +186,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 			// even though the parent context is cancelled.
 			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cleanupCancel()
-			cleanupResults := e.executeCleanupWithNotifications(cleanupCtx, cleanupStack, state)
+			cleanupResults := e.runCleanup(cleanupCtx, instantiatedPlan, cleanupStack, state, OutcomeAborted)
 			return &RunResult{
 				Outcome:          OutcomeAborted,
 				Steps:            stepResults,
@@ -227,7 +228,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 		if stepResult.Error != nil {
 			outcome = OutcomeError
 			// Run cleanup before returning
-			cleanupResults := e.executeCleanupWithNotifications(ctx, cleanupStack, state)
+			cleanupResults := e.runCleanup(ctx, instantiatedPlan, cleanupStack, state, outcome)
 			return &RunResult{
 				Outcome:          outcome,
 				Steps:            stepResults,
@@ -261,7 +262,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 				if stepResult.Validation != nil && !stepResult.Validation.Passed {
 					outcome = OutcomeFailed
 					if !e.ContinueOnAssertionFailure {
-						cleanupResults := e.executeCleanupWithNotifications(ctx, cleanupStack, state)
+						cleanupResults := e.runCleanup(ctx, instantiatedPlan, cleanupStack, state, outcome)
 						return &RunResult{
 							Outcome:          outcome,
 							Steps:            stepResults,
@@ -276,7 +277,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 
 			// Unexpected success or wrong error code — FAIL.
 			outcome = OutcomeFailed
-			cleanupResults := e.executeCleanupWithNotifications(ctx, cleanupStack, state)
+			cleanupResults := e.runCleanup(ctx, instantiatedPlan, cleanupStack, state, outcome)
 			return &RunResult{
 				Outcome:          outcome,
 				Steps:            stepResults,
@@ -289,7 +290,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 		if stepResult.StatusCode >= 400 {
 			outcome = OutcomeFailed
 			// Run cleanup before returning
-			cleanupResults := e.executeCleanupWithNotifications(ctx, cleanupStack, state)
+			cleanupResults := e.runCleanup(ctx, instantiatedPlan, cleanupStack, state, outcome)
 			return &RunResult{
 				Outcome:          outcome,
 				Steps:            stepResults,
@@ -304,7 +305,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 			outcome = OutcomeFailed
 			// Do NOT store outputs — error responses produce unreliable data
 			// Do NOT push cleanup — failing node did not create a valid resource
-			cleanupResults := e.executeCleanupWithNotifications(ctx, cleanupStack, state)
+			cleanupResults := e.runCleanup(ctx, instantiatedPlan, cleanupStack, state, outcome)
 			return &RunResult{
 				Outcome:          outcome,
 				Steps:            stepResults,
@@ -328,11 +329,26 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 			})
 		}
 
+		// Strict OAS mode: a request or response that violates the spec fails
+		// the step. Checked after the cleanup push because the API may have
+		// accepted the request and created a resource.
+		if err := e.oasStrictError(step, &stepResult); err != nil {
+			outcome = OutcomeFailed
+			cleanupResults := e.runCleanup(ctx, instantiatedPlan, cleanupStack, state, outcome)
+			return &RunResult{
+				Outcome:          outcome,
+				Steps:            stepResults,
+				CleanupResults:   cleanupResults,
+				Error:            err,
+				InstantiatedPlan: instantiatedPlan,
+			}
+		}
+
 		// Run mechanical assertions if configured
 		if stepResult.Validation != nil && !stepResult.Validation.Passed {
 			outcome = OutcomeFailed
 			if !e.ContinueOnAssertionFailure {
-				cleanupResults := e.executeCleanupWithNotifications(ctx, cleanupStack, state)
+				cleanupResults := e.runCleanup(ctx, instantiatedPlan, cleanupStack, state, outcome)
 				return &RunResult{
 					Outcome:          outcome,
 					Steps:            stepResults,
@@ -356,29 +372,180 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 		}
 	}
 
-	// All steps succeeded — run cleanup
-	cleanupResults := e.executeCleanupWithNotifications(ctx, cleanupStack, state)
+	// Main flow complete — run verification steps (read-only checks with their
+	// own assertions), then cleanup.
+	verResults, verOutcome, verErr := e.runVerification(ctx, verificationSteps, state, len(sorted), total)
+	stepResults = append(stepResults, verResults...)
+	if verOutcome != OutcomePassed {
+		outcome = verOutcome
+	}
+
+	cleanupResults := e.runCleanup(ctx, instantiatedPlan, cleanupStack, state, outcome)
 
 	return &RunResult{
 		Outcome:          outcome,
 		Steps:            stepResults,
 		CleanupResults:   cleanupResults,
+		Error:            verErr,
 		InstantiatedPlan: instantiatedPlan,
 	}
 }
 
-// executeCleanupWithNotifications runs cleanup and notifies the observer.
-func (e *Engine) executeCleanupWithNotifications(ctx context.Context, cleanupStack *CleanupStack, state *RunState) []StepResult {
-	if e.Observer != nil && cleanupStack.Len() > 0 {
-		e.Observer.OnCleanupStart(cleanupStack.Len())
+// runCleanup executes cleanup after the main flow. Plan-level cleanup steps
+// (execution.cleanup) run first, in declaration order, honoring runOn
+// (always/success/failure). Graph-level cleanup pairings then run from the
+// FILO stack; an entry whose node already ran as a plan-level cleanup step is
+// skipped. Cleanup inputs are matched by output name against earlier steps.
+// Cleanup failures are recorded but never change the run outcome.
+func (e *Engine) runCleanup(ctx context.Context, p *plan.Plan, cleanupStack *CleanupStack, state *RunState, outcome Outcome) []StepResult {
+	var planEntries []CleanupEntry
+	ran := make(map[string]bool)
+	for _, cs := range p.Execution.Cleanup {
+		if !cleanupRunOnMatches(cs.RunOn, outcome) {
+			continue
+		}
+		planEntries = append(planEntries, CleanupEntry{NodeName: cs.Node})
+		ran[cs.Node] = true
 	}
-	cleanupResults := cleanupStack.ExecuteAll(ctx, e.graph, e.registry, e.router, state)
+	cleanupStack.Filter(func(entry CleanupEntry) bool { return !ran[entry.NodeName] })
+
+	total := len(planEntries) + cleanupStack.Len()
+	if total == 0 {
+		return nil
+	}
 	if e.Observer != nil {
-		for i, cr := range cleanupResults {
-			e.Observer.OnCleanupStepComplete(i, len(cleanupResults), cr)
+		e.Observer.OnCleanupStart(total)
+	}
+
+	results := make([]StepResult, 0, total)
+	// Cleanup must run even when the parent context is cancelled.
+	cleanupCtx := context.WithoutCancel(ctx)
+	for _, entry := range planEntries {
+		results = append(results, executeCleanupEntry(cleanupCtx, entry, e.graph, e.registry, e.router, state))
+	}
+	results = append(results, cleanupStack.ExecuteAll(ctx, e.graph, e.registry, e.router, state)...)
+
+	if e.Observer != nil {
+		for i, cr := range results {
+			e.Observer.OnCleanupStepComplete(i, len(results), cr)
 		}
 	}
-	return cleanupResults
+	return results
+}
+
+// cleanupRunOnMatches reports whether a plan-level cleanup step with the given
+// runOn value should run for the outcome. An empty runOn means always.
+func cleanupRunOnMatches(runOn string, outcome Outcome) bool {
+	switch runOn {
+	case "", "always":
+		return true
+	case "success":
+		return outcome == OutcomePassed
+	case "failure":
+		return outcome != OutcomePassed
+	default:
+		return false
+	}
+}
+
+// runVerification executes the plan's verification steps after the main flow.
+// Inputs the plan does not wire are matched by name to outputs of earlier
+// steps (most recent first). Verification steps never register cleanup
+// entries. A failed assertion or an error status marks the run as failed; the
+// remaining verification steps still run when ContinueOnAssertionFailure is
+// set, otherwise verification stops at the first failure.
+func (e *Engine) runVerification(ctx context.Context, steps []plan.Step, state *RunState, offset, total int) ([]StepResult, Outcome, error) {
+	var results []StepResult
+	outcome := OutcomePassed
+	var firstErr error
+
+	for i, step := range steps {
+		node, ok := e.graph.Nodes[step.Node]
+		if !ok {
+			return results, OutcomeError, fmt.Errorf("verification node %q not found in graph", step.Node)
+		}
+		fillValuesByOutputName(&step, node, state)
+
+		idx := offset + i
+		if e.Observer != nil {
+			e.Observer.OnStepStart(idx, total, step)
+		}
+		sr := e.executeStepWithTracking(ctx, step, node, state)
+		results = append(results, sr)
+		if e.Observer != nil {
+			e.Observer.OnStepComplete(idx, total, sr)
+		}
+
+		var failure error
+		switch {
+		case sr.Error != nil:
+			return results, OutcomeError, sr.Error
+		case sr.StatusCode >= 400:
+			failure = fmt.Errorf("verification step %q returned status %d", step.StepID(), sr.StatusCode)
+		case sr.ResponseBodyError != nil:
+			failure = fmt.Errorf("verification step %q: %s", step.StepID(), sr.ResponseBodyError.Summary())
+		case sr.Validation != nil && !sr.Validation.Passed:
+			failure = fmt.Errorf("verification step %q failed mechanical validation", step.StepID())
+		}
+		if failure == nil {
+			failure = e.oasStrictError(step, &sr)
+		}
+		if failure == nil {
+			if sr.Outputs != nil {
+				state.StoreOutputs(step.StepID(), sr.Outputs)
+			}
+			continue
+		}
+		outcome = OutcomeFailed
+		if firstErr == nil {
+			firstErr = failure
+		}
+		if !e.ContinueOnAssertionFailure {
+			break
+		}
+	}
+	return results, outcome, firstErr
+}
+
+// oasStrictError returns an error when strict OAS validation is enabled and
+// the step's request or response violated the spec. Skipped validations and
+// schema compilation warnings never fail a step, and expected-failure steps
+// are exempt because their error responses are the point of the test.
+func (e *Engine) oasStrictError(step plan.Step, result *StepResult) error {
+	if !e.oasStrict || step.ExpectFailure != nil || result.OASValidation == nil || result.OASValidation.Skipped {
+		return nil
+	}
+	var n int
+	if r := result.OASValidation.Request; r != nil {
+		n += len(r.Errors)
+	}
+	if r := result.OASValidation.Response; r != nil {
+		n += len(r.Errors)
+	}
+	if n == 0 {
+		return nil
+	}
+	return fmt.Errorf("step %q: OAS validation failed in strict mode (%d error(s))", step.StepID(), n)
+}
+
+// fillValuesByOutputName wires any node input the step leaves unset to the
+// most recently executed step that produced an output with the same name.
+func fillValuesByOutputName(step *plan.Step, node *graph.Node, state *RunState) {
+	if step.Values == nil {
+		step.Values = make(map[string]plan.StepValue)
+	}
+	executed := state.ExecutedSteps()
+	for _, input := range node.Inputs {
+		if _, set := step.Values[input.Name]; set {
+			continue
+		}
+		for i := len(executed) - 1; i >= 0; i-- {
+			if _, err := state.GetOutput(executed[i], input.Name); err == nil {
+				step.Values[input.Name] = plan.StepValue{From: executed[i] + "." + input.Name}
+				break
+			}
+		}
+	}
 }
 
 func (e *Engine) executeStep(ctx context.Context, step plan.Step, node *graph.Node, state *RunState) StepResult {

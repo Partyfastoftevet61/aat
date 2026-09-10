@@ -1,7 +1,10 @@
 version: 2
 
+project_name: aat
+
 builds:
-  - main: ./cmd/aat/
+  - id: aat
+    main: ./cmd/aat/
     binary: aat
     env:
       - CGO_ENABLED=0
@@ -19,11 +22,17 @@ builds:
       - arm64
 
 archives:
-  - format: tar.gz
+  - id: default
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
-        format: zip
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+        formats: [zip]
+    # Versionless names give stable URLs:
+    #   https://github.com/gburgyan/aat/releases/latest/download/aat_darwin_arm64.tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
 
 checksum:
   name_template: checksums.txt
@@ -36,3 +45,56 @@ changelog:
       - "^test:"
       - "^ci:"
       - "^chore:"
+
+# Homebrew cask pushed to github.com/gburgyan/homebrew-tap (Casks/aat.rb).
+# Requires the HOMEBREW_TAP_GITHUB_TOKEN secret (fine-grained PAT, Contents RW on the tap repo).
+# Casks are macOS-only; Linux users install from the release archives, Docker, or `go install`.
+homebrew_casks:
+  - name: aat
+    repository:
+      owner: gburgyan
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: https://gburgyan.github.io/aat/
+    description: "Model your API as a graph; run long-chain tests, layer matrices, and an MCP server from it"
+    license: Apache-2.0
+    binaries: [aat]
+    # The binaries are not notarized; strip the quarantine attribute so the
+    # first run does not trip Gatekeeper.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/aat"]
+          end
+
+# Multi-arch image at ghcr.io/gburgyan/aat (see Dockerfile). Images are built
+# and pushed in the publish phase; `--snapshot` builds them locally.
+dockers_v2:
+  - id: aat
+    dockerfile: Dockerfile
+    images:
+      - ghcr.io/gburgyan/aat
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.source": "https://github.com/gburgyan/aat"
+      "org.opencontainers.image.licenses": "Apache-2.0"
+      "org.opencontainers.image.description": "Model your API as a graph; run long-chain tests, layer matrices, and an MCP server from it"
+
+release:
+  footer: |
+    ## Install
+
+    - Homebrew (macOS, Linux): `brew install gburgyan/tap/aat`
+    - Docker: `docker run --rm ghcr.io/gburgyan/aat:{{ .Version }} --version`
+    - Binaries: download the archive for your platform above and verify with `checksums.txt`

@@ -4,7 +4,7 @@ Get from zero to a running API test in 5 minutes. This guide uses the [Petstore 
 
 ## Prerequisites
 
-- AAT binary built (`make build` or `go build -o aat ./cmd/aat/`)
+- AAT installed — grab a release binary (see the Install section of the README) or build from source with `make build`
 - An OpenAPI spec for your API (or use the Petstore spec)
 - Optional but recommended: an AI coding assistant (Claude Code, Cursor, etc.) — see [Accelerating with AI Assistance](#accelerating-with-ai-assistance)
 
@@ -156,13 +156,10 @@ execution:
             value: "Buddy"
   cleanup:
     - node: deletePet
-      values:
-        petId:
-          from: add.petId
       runOn: always
 ```
 
-The plan says: create a pet named "Buddy", then fetch it by the returned ID and verify the name matches, then delete it regardless of outcome.
+The plan says: create a pet named "Buddy", then fetch it by the returned ID and verify the name matches, then delete it regardless of outcome. Cleanup steps take no `values:` — `deletePet` needs a `petId`, and AAT fills it by matching the input name against the outputs of the steps that ran (here, `add`'s `petId`).
 
 Cross-ref: [Plans and Recipes](plans.md)
 
@@ -178,14 +175,26 @@ aat run plan create-and-verify
 Expected output:
 
 ```
-Step add (addPet)          ... PASSED (201)
-Step verify (getPetById)   ... PASSED (200)
-Cleanup deletePet          ... OK (200)
+aat: loading environment...
+aat: loaded environment "dev"
+aat: loaded graph (3 nodes)
+aat: loaded 3 templates
+aat: authenticated via apikey
+aat: executing plan (2 steps)...
 
-Plan create-and-verify: PASSED
+  [1/2] addPet               200  145ms
+  [2/2] getPetById           200  89ms
+
+  cleanup:
+    deletePet              200  52ms
+
+PASSED (2/2 steps, 286ms)
+Archive: runs/run-20260910-143052-a1b2c3d4/archive.json
 ```
 
-The full request/response archive is written to `runs/`. Use `aat web` to browse it visually.
+Each step line shows the index, node name, HTTP status, and duration; the `cleanup:` block lists the teardown that ran afterwards. The `deletePet` cleanup appears once even though it is declared both in the plan and on the `addPet` node — a graph-level pairing whose node already ran as a plan-level cleanup step is skipped.
+
+The full request/response archive is written to `runs/`. Use `aat web` to browse it visually (or `aat web view run-20260910-143052-a1b2c3d4` to jump straight to this run).
 
 ## Accelerating with AI Assistance
 

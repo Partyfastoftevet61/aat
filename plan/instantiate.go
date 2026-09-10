@@ -141,6 +141,55 @@ func mergeGraphDefaultsWithLayers(p *Plan, g *graph.Graph, layeredDefaults map[s
 	}
 }
 
+// VerificationSteps converts the plan's verification entries into executable
+// steps. Each step targets the verification node, carries the declared
+// assertions, and receives graph (or layered) input defaults exactly as main
+// steps do at instantiation, with from-references translated to step IDs.
+// Inputs without a default are left unset; the engine matches them by output
+// name against earlier steps. Step IDs are "verify_<node>", suffixed with an
+// ordinal when the same node is verified more than once.
+func VerificationSteps(p *Plan, g *graph.Graph, layeredDefaults map[string]*graph.InputDefault) []Step {
+	if p == nil || g == nil || len(p.Execution.Verification) == 0 {
+		return nil
+	}
+	steps := make([]Step, 0, len(p.Execution.Verification))
+	seen := make(map[string]int)
+	for _, vs := range p.Execution.Verification {
+		seen[vs.Node]++
+		id := "verify_" + vs.Node
+		if seen[vs.Node] > 1 {
+			id = fmt.Sprintf("%s_%d", id, seen[vs.Node])
+		}
+		step := Step{
+			ID:          id,
+			Node:        vs.Node,
+			Description: vs.Purpose,
+			Assertions:  vs.Assertions,
+			Values:      make(map[string]StepValue),
+		}
+		if node, ok := g.Nodes[vs.Node]; ok {
+			for _, input := range node.Inputs {
+				effectiveDefault := input.Default
+				if layeredDefaults != nil {
+					if ld, ok := layeredDefaults[vs.Node+"."+input.Name]; ok {
+						effectiveDefault = ld
+					}
+				}
+				if effectiveDefault == nil || !effectiveDefault.HasValue() {
+					continue
+				}
+				sv := inputDefaultToStepValue(effectiveDefault)
+				if sv.From != "" {
+					sv.From = translateFromRef(sv.From, p)
+				}
+				step.Values[input.Name] = sv
+			}
+		}
+		steps = append(steps, step)
+	}
+	return steps
+}
+
 // inputDefaultToStepValue converts a graph InputDefault to a plan StepValue.
 func inputDefaultToStepValue(d *graph.InputDefault) StepValue {
 	sv := StepValue{}

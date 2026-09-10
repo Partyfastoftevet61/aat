@@ -42,8 +42,10 @@ func NewExecutorRouter(exec *adapter.HTTPExecutor, cfg *adapter.EnvironmentConfi
 	}
 }
 
-// AddOverride registers a named or glob-pattern override. Overrides are checked
-// in the order they are added. Exact matches are checked before glob patterns.
+// AddOverride registers a named or glob-pattern override. Exact matches are
+// checked before glob patterns; within each kind the last registered match
+// wins, so later sources (.aat-overrides.yaml, --overlay, --override) take
+// precedence over earlier ones (env.yaml overrides).
 func (r *ExecutorRouter) AddOverride(pattern string, exec *adapter.HTTPExecutor, cfg *adapter.EnvironmentConfig, rewrite *adapter.PathRewrite) {
 	r.overrides = append(r.overrides, routeEntry{
 		pattern:     pattern,
@@ -55,17 +57,20 @@ func (r *ExecutorRouter) AddOverride(pattern string, exec *adapter.HTTPExecutor,
 }
 
 // Resolve returns the executor, config, and optional path rewrite for the given node name.
-// Resolution order: exact matches first (in order added), then glob matches (first wins), then default.
+// Resolution order: exact matches first, then glob matches, then the default.
+// Within each pass the last registered match wins.
 func (r *ExecutorRouter) Resolve(nodeName string) (*adapter.HTTPExecutor, *adapter.EnvironmentConfig, *adapter.PathRewrite) {
-	// Pass 1: exact matches
-	for _, entry := range r.overrides {
+	// Pass 1: exact matches (last registered wins)
+	for i := len(r.overrides) - 1; i >= 0; i-- {
+		entry := r.overrides[i]
 		if !entry.isGlob && entry.pattern == nodeName {
 			return entry.executor, entry.config, entry.pathRewrite
 		}
 	}
 
-	// Pass 2: glob matches
-	for _, entry := range r.overrides {
+	// Pass 2: glob matches (last registered wins)
+	for i := len(r.overrides) - 1; i >= 0; i-- {
+		entry := r.overrides[i]
 		if entry.isGlob {
 			if matched, _ := filepath.Match(entry.pattern, nodeName); matched {
 				return entry.executor, entry.config, entry.pathRewrite
@@ -94,8 +99,9 @@ func (r *ExecutorRouter) AddValueOverride(pattern string, values map[string]any,
 
 // ResolveValueOverride returns the merged value and expected-failure overrides
 // for a node. Matches are applied in glob-first, exact-last order so that exact
-// matches win over glob matches on key conflict for values. For expectFailure,
-// the first exact match wins; if no exact match, the first glob match wins.
+// matches win over glob matches on key conflict for values, and later
+// registrations overwrite earlier ones. For expectFailure, the last exact match
+// wins; if no exact match, the last glob match wins.
 func (r *ExecutorRouter) ResolveValueOverride(nodeName string) (map[string]any, *plan.ExpectFailure) {
 	if len(r.valueOverrides) == 0 {
 		return nil, nil
@@ -120,7 +126,7 @@ func (r *ExecutorRouter) ResolveValueOverride(nodeName string) (map[string]any, 
 		if entry.isGlob {
 			if matched, _ := filepath.Match(entry.pattern, nodeName); matched {
 				mergeValues(entry.values)
-				if globEF == nil && entry.expectFailure != nil {
+				if entry.expectFailure != nil {
 					globEF = entry.expectFailure
 				}
 			}
@@ -129,7 +135,7 @@ func (r *ExecutorRouter) ResolveValueOverride(nodeName string) (map[string]any, 
 	for _, entry := range r.valueOverrides {
 		if !entry.isGlob && entry.pattern == nodeName {
 			mergeValues(entry.values)
-			if exactEF == nil && entry.expectFailure != nil {
+			if entry.expectFailure != nil {
 				exactEF = entry.expectFailure
 			}
 		}

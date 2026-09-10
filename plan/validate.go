@@ -2,11 +2,53 @@ package plan
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/graph"
 )
+
+// RetryCategories lists the error category names accepted in retry.on and
+// retry.failOn. The engine's ErrorCategory names must stay in sync with this list.
+var RetryCategories = []string{"transient", "client", "auth", "server", "adapter", "network", "timeout", "response_error"}
+
+// ValidRetryRule reports whether a retry rule is a known category name or an
+// HTTP status code in the range 100-599.
+func ValidRetryRule(rule string) bool {
+	rule = strings.TrimSpace(rule)
+	if code, err := strconv.Atoi(rule); err == nil {
+		return code >= 100 && code <= 599
+	}
+	for _, c := range RetryCategories {
+		if strings.EqualFold(rule, c) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateRetryConfig returns validation errors for a step's retry block.
+func validateRetryConfig(prefix string, rc *RetryConfig) []string {
+	if rc == nil {
+		return nil
+	}
+	var errs []string
+	if rc.Max < 0 {
+		errs = append(errs, fmt.Sprintf("%s: retry.max must be >= 0", prefix))
+	}
+	for _, r := range rc.On {
+		if !ValidRetryRule(r) {
+			errs = append(errs, fmt.Sprintf("%s: retry.on has unknown rule %q (use a category: %s, or an HTTP status code)", prefix, r, strings.Join(RetryCategories, ", ")))
+		}
+	}
+	for _, r := range rc.FailOn {
+		if !ValidRetryRule(r) {
+			errs = append(errs, fmt.Sprintf("%s: retry.failOn has unknown rule %q (use a category: %s, or an HTTP status code)", prefix, r, strings.Join(RetryCategories, ", ")))
+		}
+	}
+	return errs
+}
 
 // ValidationError collects all validation errors for a plan.
 type ValidationError struct {
@@ -436,6 +478,8 @@ func Validate(p *Plan, g *graph.Graph) error {
 		}
 
 		// Validate expectFailure
+		errs = append(errs, validateRetryConfig(fmt.Sprintf("step %d (%s)", i, step.StepID()), step.Retry)...)
+
 		if step.ExpectFailure != nil {
 			if len(step.ExpectFailure.Status) == 0 {
 				errs = append(errs, fmt.Sprintf("step %d (%s): expectFailure must have at least one status code", i, sid))

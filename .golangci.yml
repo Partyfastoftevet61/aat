@@ -8,4 +8,3 @@ linters:
   exclusions:
     paths:
       - server/web
-      - airline

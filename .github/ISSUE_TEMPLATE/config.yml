@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/gburgyan/aat/discussions
+    about: Ask a question, share what you are building, or discuss a proposal before opening an issue.
+  - name: Documentation
+    url: https://gburgyan.github.io/aat/
+    about: User guide, quick start, and reference.

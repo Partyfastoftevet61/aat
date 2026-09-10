@@ -123,7 +123,7 @@ AAT resolves project paths through a 4-level priority chain. Each level overwrit
 3. **CWD walk-up** — automatic discovery from the current working directory
 4. **`--manifest` flag** — explicit manifest path (overrides discovery)
 
-After manifest resolution, **explicit CLI flags** (`--graph`, `--templates`, `--env`, etc.) always take final precedence over any manifest-derived path.
+After manifest resolution, **explicit CLI flags** (`--graph`, `--templates`, `--env-config`, etc.) always take final precedence over any manifest-derived path.
 
 ### User Config
 
@@ -162,14 +162,14 @@ CLI flags always override the corresponding manifest field. This lets you test a
 |----------|---------------|
 | `--graph` | `graph` |
 | `--templates` | `templates` |
-| `--env` | `environment` |
+| `--env-config` | `environment` |
 | `--domain` | `domain` |
 | `--output` | `archives` |
 | `--trace-dir` | `traces` |
 
 ```bash
 # Use the project's graph and templates, but a different environment
-aat run plan checkout.yaml --env staging-env.yaml
+aat run plan checkout.yaml --env-config staging-env.yaml
 
 # Use the project's environment, but a different graph
 aat validate graph --graph experimental-graph.yaml
@@ -193,13 +193,13 @@ my-ecommerce-api/
 aat run batch
 
 # Selects a specific environment
-aat run batch --env-name staging
+aat run batch --env staging
 
 # List all available environments
 aat env list
 ```
 
-Set `defaultEnvironment` in the manifest to avoid passing `--env-name` every time. The `AAT_ENV_NAME` environment variable also works, which is useful for CI/CD.
+Set `defaultEnvironment` in the manifest to avoid passing `--env` every time. The `AAT_ENV_NAME` environment variable also works, which is useful for CI/CD.
 
 You can also use the `include` directive in env.yaml to split secrets into a separate, gitignored file. See [Environments: File Splitting](environments.md#file-splitting-with-include) for details.
 

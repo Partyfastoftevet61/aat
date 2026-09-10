@@ -4,11 +4,11 @@ The environment file configures how AAT connects to your API at runtime — base
 
 ## Overview
 
-AAT separates **what to test** (graph, plans, templates) from **where to test** (environment). The environment file holds connection details for a specific target: API endpoints, credentials, static headers, and runtime settings. Switching between development, staging, and production is a matter of selecting a different environment via `--env-name` or the [project manifest](project-setup.md).
+AAT separates **what to test** (graph, plans, templates) from **where to test** (environment). The environment file holds connection details for a specific target: API endpoints, credentials, static headers, and runtime settings. Switching between development, staging, and production is a matter of selecting a different environment via `--env` or the [project manifest](project-setup.md).
 
 AAT supports two environment file formats:
-- **Single-environment** (legacy) — one environment per file, selected with `--env`
-- **Multi-environment** — multiple environments in one file, selected with `--env-name`
+- **Single-environment** (legacy) — one environment per file, selected by pointing `--env-config` (or the manifest's `environment:`) at the file
+- **Multi-environment** — multiple environments in one file, selected with `--env`
 
 ## Single-Environment Format
 
@@ -94,10 +94,10 @@ environments:
           var: PROD_CLIENT_SECRET
 ```
 
-Select an environment with `--env-name`:
+Select an environment with `--env`:
 
 ```bash
-aat run plan checkout.yaml --env-name staging
+aat run plan checkout.yaml --env staging
 ```
 
 AAT detects the format automatically: if the YAML has an `environments` key, it's multi-environment; if it has `apiBaseUrl` at the top level, it's single-environment.
@@ -148,7 +148,7 @@ Inheritance chains are supported (`a` extends `b` extends `c`). Circular inherit
 
 ### Abstract Environments
 
-Environment names starting with `_` (underscore) are abstract — they serve as templates for inheritance but cannot be selected directly with `--env-name`. This is useful for defining override patterns that are shared across similar environments.
+Environment names starting with `_` (underscore) are abstract — they serve as templates for inheritance but cannot be selected directly with `--env`. This is useful for defining override patterns that are shared across similar environments.
 
 ### Variable Substitution
 
@@ -221,10 +221,11 @@ Include files use the same format (`shared` + `environments` sections) and are m
 
 When using a multi-environment file, the environment name is resolved from:
 
-1. **`--env-name` flag** (highest priority)
+1. **`--env` flag** (highest priority)
 2. **`AAT_ENV_NAME` environment variable**
-3. **`defaultEnvironment` in the project manifest**
-4. Error listing available environments
+3. **`environment:` in an overlay file** — an explicit `--overlay` file first, then an auto-discovered `.aat-overrides.yaml` (see [Selecting the Environment](#selecting-the-environment))
+4. **`defaultEnvironment` in the project manifest**
+5. Error listing available environments
 
 ### Listing Environments
 
@@ -356,7 +357,7 @@ Header merge order (later values override earlier ones for the same key):
 2. **Template headers** — per-template `request.headers` (see [Templates](templates.md))
 3. **Plan-level headers** — per-step header overrides (see [Plans](plans.md))
 4. **Auth headers** — authentication headers
-5. **Overlay headers** — headers from `.aat-overrides.yaml` or `--env-overlay` (final precedence)
+5. **Overlay headers** — headers from `.aat-overrides.yaml` or `--overlay` (final precedence)
 
 ## Secrets
 
@@ -419,6 +420,7 @@ settings:
   maxRunDuration: 120s
   defaultRetries: 2
   archiveFormat: json
+  oasValidation: auto
 ```
 
 | Field | Default | Description |
@@ -426,8 +428,22 @@ settings:
 | `maxRunDuration` | `120s` | Maximum wall-clock time for a single plan run |
 | `defaultRetries` | `2` | Plan-level retry count on failure |
 | `archiveFormat` | `json` | Archive format: `json` or `json.gz` |
+| `oasValidation` | `auto` | OpenAPI validation mode: `auto`, `warn`, `strict`, or `off` |
 
 Duration values use Go duration syntax: `30s`, `5m`, `2h30m`, etc.
+
+### OAS Validation Mode
+
+When the graph references an OpenAPI spec, every step's request and response is checked against it at runtime. `oasValidation` sets the per-environment default:
+
+| Value | Behavior |
+|-------|----------|
+| `auto` | Validate whenever specs are present; violations are reported as warnings (default) |
+| `warn` | Same reporting as `auto` |
+| `strict` | Like `auto`, but a violation in the request or response fails the step (cleanup still runs); `expectFailure` steps are exempt |
+| `off` | Skip loading specs and validating entirely |
+
+The `--oas-validate` flag on `aat run plan`, `aat run batch`, and `aat prompt` overrides the environment setting for a single invocation (CLI flag > `settings.oasValidation` > `auto`). Turning it `off` in a busy environment saves the spec-loading time; keeping it on surfaces contract drift as `OAS: N warning(s)` markers and an `issues` count in the archive. See [Running Tests: OAS Validation](running.md#oas-validation) and [API Graphs: OAS Validation](graphs.md#oas-validation).
 
 ## Multi-Host Routing
 
@@ -462,7 +478,7 @@ Each override matches node names using glob patterns. When a node matches:
 - **`auth`** — replaces the top-level auth for that node. If omitted, inherits the top-level auth.
 - **`headers`** — merged with the environment-level headers (override-specific headers win on conflict).
 
-Overrides are evaluated in order. For nodes matching multiple patterns, the last match wins.
+Overrides are matched against the node name with two rules: an exact name always beats a glob pattern, and within each kind (exact or glob) the **last registered** entry wins. Entries register in this order — `env.yaml` `overrides:`, then `.aat-overrides.yaml`, then the `--overlay` file, then `--override` flags — so a later source overrides an earlier one for the same node, whether both are globs or both are exact names. See [Local Development: Priority Chain](local-dev.md#priority-chain).
 
 ### Path Rewriting
 
@@ -498,10 +514,10 @@ aat run plan checkout.yaml --override createPayment=https://sandbox.payments.exa
 
 This flag is repeatable for multiple overrides.
 
-**`--env-overlay` flag** — merges a sparse overlay file on top of the base environment:
+**`--overlay` flag** — merges a sparse overlay file on top of the base environment:
 
 ```bash
-aat run plan checkout.yaml --env-overlay local-routing.yaml
+aat run plan checkout.yaml --overlay local-routing.yaml
 ```
 
 **`.aat-overrides.yaml` dotfile** — auto-discovered by walking up from your working directory. Same format as an overlay file, but requires no flags. Ideal for [local development](local-dev.md) where you always want traffic routed to your local service. Use `--no-auto-overrides` to disable.
@@ -525,7 +541,7 @@ overrides:
       type: none
 ```
 
-When both the base environment and an overlay define overrides for the same match pattern, the overlay's entry appears later in the list and takes precedence (last match wins).
+When both the base environment and an overlay define overrides that match the same node, the overlay's entry registers later and takes precedence: exact names beat globs, and among entries of the same kind the last registered wins. Registration order is `env.yaml` `overrides:` → `.aat-overrides.yaml` → `--overlay` → `--override`.
 
 ### Input-Value and Expected-Failure Overrides
 
@@ -550,7 +566,7 @@ Semantics:
 
 - `values:` merge into the resolved inputs map at step execution time, overwriting plan-supplied values. Precedence: overlay values > plan step values > graph defaults.
 - `expectFailure:` applies to matched steps only when the plan step doesn't already declare its own `expectFailure`. Status codes must all be `>= 400`.
-- Match precedence: exact matches win over glob matches on key conflicts. For `expectFailure`, the first exact match wins; if no exact match, the first glob match wins.
+- Match precedence: exact matches win over glob matches on key conflicts, and later registrations overwrite earlier ones (`env.yaml` → `.aat-overrides.yaml` → `--overlay` → `--override`). For `expectFailure`, the last exact match wins; if no exact match, the last glob match wins.
 
 Both fields can be combined with `baseUrl`, `auth`, `headers`, and `pathRewrite` in a single override entry.
 
@@ -588,7 +604,7 @@ Auth priority (lowest to highest):
 
 1. `env.yaml` `auth:` — base environment credentials
 2. `.aat-overrides.yaml` `auth:` — auto-discovered overlay
-3. `--env-overlay` file `auth:` — explicit overlay
+3. `--overlay` file `auth:` — explicit overlay
 4. Plan-level `auth:` — per-plan override
 
 ### Transaction-Level Headers
@@ -747,6 +763,7 @@ settings:                                 # optional — runtime defaults
   maxRunDuration: 120s                    #   max plan execution time (default: 120s)
   defaultRetries: 2                       #   plan-level retries (default: 2)
   archiveFormat: json                     #   json or json.gz (default: json)
+  oasValidation: auto                     #   auto, warn, strict, or off (default: auto)
 
 notes: "Staging environment for QA"       # optional — freeform notes
 
@@ -800,7 +817,7 @@ shared:                                   # optional — defaults merged into ev
     region: us-east
 
 environments:
-  dev:                                    # selectable with --env-name dev
+  dev:                                    # selectable with --env dev
     apiBaseUrl: https://api.dev.example.com
     auth:
       type: none

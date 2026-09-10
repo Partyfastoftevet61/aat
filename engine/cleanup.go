@@ -30,6 +30,17 @@ func (s *CleanupStack) Len() int {
 	return len(s.entries)
 }
 
+// Filter removes entries for which keep returns false, preserving order.
+func (s *CleanupStack) Filter(keep func(CleanupEntry) bool) {
+	kept := s.entries[:0]
+	for _, entry := range s.entries {
+		if keep(entry) {
+			kept = append(kept, entry)
+		}
+	}
+	s.entries = kept
+}
+
 // ExecuteAll runs all cleanup entries in FILO order (last pushed, first executed).
 // Errors are recorded in the StepResult but do not stop subsequent cleanup steps.
 func (s *CleanupStack) ExecuteAll(

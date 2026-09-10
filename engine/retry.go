@@ -56,7 +56,7 @@ func (e *Engine) executeStepWithRetry(ctx context.Context, step plan.Step, node 
 		default:
 		}
 
-		if !shouldRetry(cls.Category, step.Retry, attempt) {
+		if !shouldRetry(cls.Category, result.StatusCode, step.Retry, attempt) {
 			cls.Action = "failed_fast"
 			cls.RetryAttempt = attempt - 1
 			result.ErrorClass = cls

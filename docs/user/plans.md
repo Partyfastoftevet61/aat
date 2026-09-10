@@ -427,6 +427,8 @@ Assertions validate the step's response. Two kinds:
 | `predicate` | `expr` (string) | Predicate expression evaluates to true against the response body |
 | `schema` | — | Validate the response body against the node's OAS response schema. Requires OAS specs wired into the graph; otherwise the assertion is reported as `skipped`. |
 
+Every mechanical assertion also accepts `raw: true` (see below).
+
 ```yaml
 assertions:
   mechanical:
@@ -441,6 +443,26 @@ assertions:
     - type: predicate
       expr: "order.totalPrice > 0 && order.totalPrice < 10000"
 ```
+
+**What `path` and `expr` see.** By default, `fieldExists`, `fieldEquals`, and `predicate` are evaluated against the step's **extracted outputs** — the values the node's template pulled out of the response, keyed by output name — not the raw HTTP body. That keeps assertions stable when the API's envelope changes, and it means a Lua-transformed output is asserted in its transformed shape. Only when no outputs were extracted (for example on a 4xx response) does the check fall back to the raw body.
+
+Set `raw: true` on an assertion to evaluate it against the raw response body instead. Use it for fields the template does not extract, or to assert on the envelope itself:
+
+```yaml
+assertions:
+  mechanical:
+    - type: fieldEquals            # against extracted outputs
+      path: "orderId"
+      value: "ord-123"
+    - type: fieldExists            # against the raw body
+      path: "meta.requestId"
+      raw: true
+    - type: predicate
+      expr: "data.items.#(sku==\"ABC\").price < 100"
+      raw: true
+```
+
+`status` and `schema` are unaffected by `raw` — they always look at the HTTP status and the full response body respectively.
 
 **Semantic assertions** are prose descriptions for documentation and future automated evaluation:
 
@@ -459,17 +481,32 @@ Steps can configure retry behavior:
   - node: searchProducts
     retry:
       max: 3
-      on: [500, 502, 503]
-      failOn: [400, 401, 403]
+      on: [transient, 503]
+      failOn: [auth, 400]
 ```
 
 | Field | Description |
 |-------|-------------|
 | `retry.max` | Maximum retry attempts |
-| `retry.on` | Status codes that trigger a retry |
-| `retry.failOn` | Status codes that cause immediate failure (no retry) |
+| `retry.on` | Rules that trigger a retry — error category names and/or HTTP status codes |
+| `retry.failOn` | Rules that cause immediate failure with no retry; checked before `on` |
 | `fallback.action` | Action on exhausted retries (e.g., `"skip"`) |
 | `fallback.maxAttempts` | Maximum fallback attempts |
+
+Each entry in `on` and `failOn` is either an **error category** name or an **HTTP status code** written as an integer. The two can be mixed freely: `on: [503, transient]` retries on any transient failure *and* on a bare 503. AAT classifies every failure into exactly one category:
+
+| Category | Covers |
+|----------|--------|
+| `transient` | HTTP 429, 502, 503, 504; connection refused or reset |
+| `client` | Any other 4xx |
+| `auth` | HTTP 401, 403 |
+| `server` | HTTP 500, 501, and any other 5xx not listed under `transient` |
+| `timeout` | Request or context deadline exceeded |
+| `network` | DNS and other connection-level errors |
+| `adapter` | Template rendering, input resolution, or output extraction errors |
+| `response_error` | A 2xx response whose body matched the graph's `errorDetection` rules |
+
+When `on` is omitted, the default retries `transient`, `timeout`, and `server` failures. A `failOn` match always wins, so `failOn: [auth]` stops the step on the first 401 even if `on` would otherwise retry it. Status codes must be in the range 100–599; `aat validate plan` rejects unknown category names and out-of-range codes rather than letting a typo silently disable retries.
 
 #### Negative Testing (expectFailure)
 
@@ -642,7 +679,7 @@ execution:
 
 ### Cleanup Steps
 
-Cleanup steps run after execution completes — whether the plan passed, failed, or errored:
+Cleanup steps run after the main steps finish — whether the plan passed, failed, errored, or was interrupted with Ctrl+C. The one exception is a `--stop-after` checkpoint, which deliberately skips cleanup so the created resources stay alive.
 
 ```yaml
 execution:
@@ -657,9 +694,13 @@ execution:
 |---------------|-------------------|
 | `always` | After every execution (default if omitted) |
 | `success` | Only if the plan passed |
-| `failure` | Only if the plan failed or errored |
+| `failure` | If the plan failed, errored, or was aborted |
 
-Cleanup steps run in declaration order. They use graph defaults and `from` references to the main execution's state (e.g., referencing `createOrder.orderId` to cancel the order).
+A cleanup step has just two fields: `node` and `runOn`. There is no `values:` block — inputs are filled by **output-name matching**: for each input the node declares, AAT looks for an output of the same name, first on the step that registered the resource, then on any other executed step. `cancelOrder` with an `orderId` input picks up `orderId` from the `createOrder` step. Name your graph outputs to match the inputs of their teardown nodes and this needs no wiring at all.
+
+**Ordering.** Plan-level cleanup steps run first, in declaration order. Then any graph-level `cleanup:` pairings (see [API Graphs: Cleanup](graphs.md#cleanup)) run from a last-in-first-out stack, so the most recently created resource is released first. A graph-level pairing whose node already ran as a plan-level cleanup step is skipped, so declaring `cancelOrder` in both places does not cancel the order twice.
+
+Cleanup results are recorded in the archive and in the `cleanup` array of `--json` output, and appear under a `cleanup:` block in the console. A cleanup failure never changes the run outcome. See [Running Tests: Cleanup](running.md#cleanup) for the execution-time details.
 
 ## Plan-Level Auth and Headers
 
@@ -925,6 +966,7 @@ aat run batch plans/ --layer-group layers/european.yaml,layers/international.yam
 - `mutationScope` is only set on steps that declare `mutations:`
 - Isolated-mutation clone ids don't collide with existing step ids
 - Cleanup `runOn` values are valid (`always`, `success`, `failure`)
+- Retry `on`/`failOn` entries are known categories or HTTP status codes (100–599)
 - No duplicate step IDs
 
 ```bash
@@ -1063,8 +1105,8 @@ execution:
       # Retry configuration
       retry:
         max: 3                        # maximum retry attempts
-        on: [500, 502, 503]           # status codes that trigger retry
-        failOn: [400, 401]            # status codes that cause immediate failure
+        on: [transient, server, 503]  # categories and/or HTTP status codes that trigger retry
+        failOn: [auth, client]        # categories and/or status codes that fail immediately
 
       # Fallback on exhausted retries
       fallback:
@@ -1101,8 +1143,11 @@ execution:
           - type: fieldEquals
             path: "status"
             value: "confirmed"
+          - type: fieldExists
+            path: "meta.requestId"
+            raw: true                 # evaluate against the raw body, not extracted outputs
 
-  # Optional — cleanup runs after execution
+  # Optional — cleanup runs after execution (inputs matched by output name; no values block)
   cleanup:
     - node: graphNodeName
       runOn: always                   # always, success, failure

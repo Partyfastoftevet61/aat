@@ -51,7 +51,8 @@ Press Enter (or `y`) to execute immediately. Press `n` to abort. Press `a` to ed
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--manifest` | path | auto-discovered | Explicit path to `aat-project.yaml` |
-| `--env` | path | from manifest | Environment config file |
+| `--env-config` | path | from manifest | Environment config file |
+| `--env` | string | from manifest | Environment name (for multi-environment files) |
 | `--graph` | path | from manifest | API graph file |
 | `--templates` | path | from manifest | Templates directory |
 | `--domain` | path | from manifest | Domain knowledge file |
@@ -62,8 +63,10 @@ Press Enter (or `y`) to execute immediately. Press `n` to abort. Press `a` to ed
 | `--trace` | bool | `false` | Capture planning pipeline trace for debugging |
 | `--trace-dir` | path | `_output/traces` | Directory for plan trace output |
 | `--layer` | string | — | Data layer to apply (repeatable) |
+| `--no-auto-overrides` | bool | `false` | Disable auto-discovery of `.aat-overrides.yaml` |
+| `--oas-validate` | string | `auto` | OAS validation mode for the executed plan: `auto`, `warn`, `strict`, or `off` (see [Running Tests: OAS Validation](running.md#oas-validation)) |
 
-When a manifest is discoverable, `--env`, `--graph`, `--templates`, and `--domain` are optional.
+When a manifest is discoverable, `--env-config`, `--graph`, `--templates`, and `--domain` are optional.
 
 ## Interactive Flow
 

@@ -66,7 +66,7 @@ Data flows automatically between steps via graph edges. When step A produces an 
 
 ## Building
 
-Requires Go 1.24+, Node.js 18+, and Make:
+Requires Go 1.25+, Node.js 18+, and Make:
 
 ```bash
 make build    # Compiles Svelte frontend, then Go binary with version/commit/date
@@ -81,7 +81,6 @@ make clean    # Removes binary and frontend artifacts
 - [Quickstart](docs/user/quickstart.md) — install AAT and set it up for your own API
 - [Petstore Walkthrough](docs/user/petstore-walkthrough.md) — line-by-line tour of graph, templates, workflows, and recipes
 - [Petstore Quickstart](examples/petstore/README.md) — runnable example with no setup
-- [Airline Booking Example](docs/user/airline-example.md) — real-world airline booking flow (requires [separate graph repo](https://github.com/gburgyan/aat-graph-airline))
 - [Graphs](docs/user/graphs.md) — nodes, edges, conditions, OAS linking
 - [Templates](docs/user/templates.md) — HTTP request/response template format
 - [Plans](docs/user/plans.md) — test plan YAML schema and assertions
@@ -94,7 +93,7 @@ make clean    # Removes binary and frontend artifacts
 
 ## Status
 
-AAT is in active development (Stage 3a: CI/CD, Web UI & Polish). The core engine, graph model, plan execution, validation, archiving, LLM-assisted planning, web UI, and MCP server are complete. See `docs/internal/progress.md` for detailed status.
+AAT is in active development and is used daily against a 74-node airline API. The core engine, graph model, plan execution, validation, archiving, LLM-assisted plan authoring, web UI, and MCP server are complete. See [ROADMAP.md](ROADMAP.md) for what is next.
 
 ## Contributing
 

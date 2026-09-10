@@ -399,7 +399,7 @@ func TestShouldRetry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := shouldRetry(tt.cat, tt.config, tt.attempt)
+			got := shouldRetry(tt.cat, 0, tt.config, tt.attempt)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -428,4 +428,25 @@ func TestStatusCodeDetail(t *testing.T) {
 	// Unknown 5xx
 	assert.Contains(t, statusCodeDetail(599), "599")
 	assert.Contains(t, statusCodeDetail(599), "Server Error")
+}
+
+func TestShouldRetry_StatusCodeRules(t *testing.T) {
+	cfg := &plan.RetryConfig{Max: 3, On: []string{"503", "response_error"}}
+	assert.True(t, shouldRetry(CategoryTransient, 503, cfg, 1), "numeric rule matches the status")
+	assert.False(t, shouldRetry(CategoryTransient, 429, cfg, 1), "same category, different status")
+	assert.True(t, shouldRetry(CategoryResponseError, 200, cfg, 1), "category rule still matches")
+
+	failCfg := &plan.RetryConfig{Max: 3, FailOn: []string{"500"}}
+	assert.False(t, shouldRetry(CategoryServer, 500, failCfg, 1), "failOn status short-circuits")
+	assert.True(t, shouldRetry(CategoryServer, 501, failCfg, 1), "other server statuses use defaults")
+
+	assert.True(t, shouldRetry(CategoryTransient, 0, &plan.RetryConfig{Max: 3, On: []string{"TRANSIENT"}}, 1), "category names are case-insensitive")
+}
+
+func TestErrorCategoryNamesMatchPlanRetryCategories(t *testing.T) {
+	cats := []ErrorCategory{CategoryTransient, CategoryClient, CategoryAuth, CategoryServer, CategoryAdapter, CategoryNetwork, CategoryTimeout, CategoryResponseError}
+	for _, c := range cats {
+		assert.True(t, plan.ValidRetryRule(c.String()), "category %q must be accepted by plan validation", c.String())
+	}
+	assert.Len(t, plan.RetryCategories, len(cats), "plan.RetryCategories must list every engine category")
 }

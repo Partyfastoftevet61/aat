@@ -78,7 +78,6 @@ Progressive reading order — each builds on the previous.
 | Document | What you'll learn |
 |----------|-------------------|
 | [Petstore Walkthrough](petstore-walkthrough.md) | A line-by-line tour of a working example: graph, templates, workflows, recipes, and how they compose |
-| [Case Study: Airline](airline-example.md) | A real-world airline booking API with selections, addons, Lua transforms, and domain knowledge |
 
 ## Concepts Glossary
 

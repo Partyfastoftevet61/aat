@@ -37,10 +37,12 @@ HTTP mode automatically uses the `api` persona (read-only Integration tools) and
 The MCP server supports **personas** that tailor the tool set for different workflows. Instead of exposing all tools to every user, personas filter to what's relevant — reducing context window usage and keeping the AI focused.
 
 ```
-aat mcp serve                   # all tools (backward compatible)
-aat mcp serve --persona api     # API knowledge tools (~22 tools)
-aat mcp serve --persona test    # test lifecycle tools (~26 tools)
+aat mcp serve                   # all tools (36 with OAS specs loaded, 29 without)
+aat mcp serve --persona api     # API knowledge tools (24 with OAS specs loaded, 17 without)
+aat mcp serve --persona test    # test lifecycle tools (26)
 ```
+
+The seven OpenAPI tools register only when the graph references an OAS spec, which is why the `api` and all-tools counts vary.
 
 | Persona | Target User | Focus |
 |---------|------------|-------|
@@ -60,6 +62,7 @@ aat mcp serve --persona test    # test lifecycle tools (~26 tools)
 |------|------|---------|-------------|
 | `--manifest` | path | auto-discovered | Explicit path to `aat-project.yaml` |
 | `--persona` | string | *(all)* | Server persona: `api`, `test`, or omit for all tools |
+| `--env` | string | from manifest | Environment name to load (for multi-environment files) |
 | `--http` | bool | false | Serve over Streamable HTTP instead of stdio |
 | `--port` | int | 8080 | HTTP listen port (used with `--http`) |
 | `--http-base-path` | string | `/mcp` | HTTP endpoint path (used with `--http`) |
@@ -190,7 +193,7 @@ The proxy forwards to `http://localhost:8080/mcp`. AAT does not handle TLS direc
 
 ## Tools — API Persona
 
-The API persona registers 22 tools focused on understanding and integrating with the API.
+The API persona registers 24 tools focused on understanding and integrating with the API — 17 when no OpenAPI spec is loaded, since the OpenAPI group below is registered only when the graph references one. Over `--http`, `get_sample_response` is also excluded, giving 23 (or 16).
 
 ### API Operations (7 tools)
 
@@ -253,7 +256,7 @@ The API persona registers 22 tools focused on understanding and integrating with
 
 ## Tools — Test Persona
 
-The test persona registers 26 tools focused on test plan lifecycle, execution, and debugging.
+The test persona registers 26 tools focused on test plan lifecycle, execution, and debugging. This is the only persona that can execute plans; `execute_plan` runs a saved plan against the environment loaded at startup (select it with `--env`).
 
 ### Graph Exploration (4 tools)
 
@@ -309,7 +312,7 @@ The test persona registers 26 tools focused on test plan lifecycle, execution, a
 
 | Tool | Description |
 |------|-------------|
-| `execute_plan` | Execute a saved test plan: authenticate, run engine, write archive, return summary |
+| `execute_plan` | Execute a saved test plan by name: authenticate, run the engine, write the archive, and return a summary |
 
 ### Archives (5 tools)
 

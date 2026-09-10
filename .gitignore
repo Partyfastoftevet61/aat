@@ -6,6 +6,7 @@
 # IDE
 .idea/
 .vscode/
+.run/
 *.swp
 *.swo
 
@@ -27,13 +28,29 @@ traces/
 server/web/node_modules/
 server/web/dist/assets/
 
+# Docs site (MkDocs build output and its virtualenv)
+site/
+/.venv-docs/
+
+# Python
+__pycache__/
+/venv/
+
 # Secrets
 .env
 .env.*
 
-# Local override dotfiles
+# Local per-developer config
 .aat-overrides.yaml
+.mcp.json
 
 # Environment configs (may contain credentials)
 environments/
 /setup-local.sh
+
+# Scratch files at the repo root
+/graph.yaml
+/package-lock.json
+
+# goreleaser output
+dist/

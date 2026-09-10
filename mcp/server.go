@@ -93,7 +93,7 @@ func newServer(ctx *ServerContext, persona ServerPersona, opts ...ServerOption) 
 		mcpOpts = append(mcpOpts, server.WithHooks(NewLoggingHooks(cfg.logger)))
 	}
 
-	mcpServer := server.NewMCPServer(name, version.Version, mcpOpts...)
+	mcpServer := server.NewMCPServer(name, version.Effective(), mcpOpts...)
 
 	s := &Server{
 		mcp:     mcpServer,
