@@ -27,6 +27,7 @@ make clean      # Remove binary and frontend artifacts (node_modules, dist)
 | Package | Responsibility |
 |---------|---------------|
 | `cmd/aat/` | CLI binary — thin wrapper, wires packages together |
+| `cmd/aat-sandbox/` | Demo API binary: `serve` runs the offline shop sandbox, `init` extracts `examples/shop` |
 | `graph/` | API graph model, YAML parsing, traversal, backward chaining, diffing |
 | `adapter/` | Adapter interface, HTTP executor, Tier 1/3 loaders |
 | `domain/` | Domain knowledge: concepts, types, value pools |
@@ -39,18 +40,20 @@ make clean      # Remove binary and frontend artifacts (node_modules, dist)
 | `config/` | Configuration, environments, local storage |
 | `server/` | Local web API server (chi), embedded Svelte SPA frontend, archive viewer |
 | `mcp/` | MCP server: API lifecycle platform for IDE-based AI tools (stdio transport) |
+| `internal/sandbox/shop/` | Offline e-commerce sandbox API (regions, OAuth2/API key, order state machine, chaos hooks); stdlib only |
 | `internal/testutil/` | Shared test helpers and fixtures |
 | `internal/version/` | Build version info |
+| root `embed.go` | `package aat`: embeds `examples/shop` for `aat-sandbox init` |
 
 ## Dependency Rules
 
 Dependencies flow in one direction. No cycles. No lateral imports within a tier.
 
-**Leaf packages** (zero aat imports): `config`, `graph`, `domain`, `llm`
+**Leaf packages** (zero aat imports): `config`, `graph`, `domain`, `llm`, `internal/sandbox/shop`
 **Mid-tier**: `adapter` → config; `plan` → graph, config; `archive` → plan; `validate` → llm
 **Orchestrators**: `engine` → graph, adapter, plan, domain, llm, validate, archive, config
 **Entry points**: `intent` → graph, domain, plan, llm; `mcp` → all packages; `server` → engine, archive, plan, config
-**Binaries**: `cmd/aat` → engine, server, intent, mcp, archive, config
+**Binaries**: `cmd/aat` → engine, server, intent, mcp, archive, config; `cmd/aat-sandbox` → internal/sandbox/shop, root embed
 
 Data flows down, decisions flow up. No business logic in `cmd/`.
 

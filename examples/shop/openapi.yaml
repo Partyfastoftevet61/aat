@@ -1,0 +1,915 @@
+openapi: 3.0.3
+info:
+  title: AAT Shop Sandbox API
+  version: 1.0.0
+  description: |
+    Contract for the offline e-commerce sandbox served by `aat-sandbox serve`.
+    Two listeners: the shop API (catalog, carts, orders, shipments; OAuth2
+    bearer token) and the payments API (charges, refunds; `X-API-Key`).
+    Every path is prefixed by a region (`/us/v1`, `/eu/v1`) with independent
+    data, currency, tax rules, shipping tiers, and coupons.
+
+    Amounts are integers in minor currency units (cents); `*Display` fields
+    carry the formatted value. Errors use one envelope:
+    `{"error": {"code": "...", "message": "..."}}`.
+
+    Token endpoint (outside the versioned prefix): `POST /oauth/token` with
+    `grant_type=password&username=demo&password=demo&client_id=aat-shop&client_secret=aat-shop-secret`
+    (or `grant_type=client_credentials`).
+  license:
+    name: Apache-2.0
+servers:
+  - url: http://localhost:8765/{region}/v1
+    description: Shop API (bearer token)
+    variables:
+      region:
+        enum: [us, eu]
+        default: us
+        description: us = USD with sales tax added; eu = EUR with VAT included and no overnight tier
+tags:
+  - name: catalog
+  - name: carts
+  - name: orders
+  - name: shipments
+  - name: payments
+security:
+  - shopToken: []
+
+paths:
+  /products:
+    get:
+      operationId: listProducts
+      summary: List catalog products
+      description: Six fixed SKUs. `SKU-1005` is out of stock. Prices are region-specific.
+      tags: [catalog]
+      parameters:
+        - name: category
+          in: query
+          required: false
+          description: Filter by category
+          schema:
+            type: string
+            enum: [gear, apparel, footwear]
+      responses:
+        '200':
+          description: Products, optionally filtered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductList'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /inventory/{sku}:
+    get:
+      operationId: checkInventory
+      summary: Check inventory for a SKU
+      description: |
+        Always answers HTTP 200 with a status envelope. The first read of
+        `SKU-1004` per bearer token reports `status: ERROR` /
+        `errorCode: STALE_READ`; a retry succeeds.
+      tags: [catalog]
+      parameters:
+        - $ref: '#/components/parameters/sku'
+      responses:
+        '200':
+          description: Inventory status envelope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryStatus'
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /carts:
+    post:
+      operationId: createCart
+      summary: Create a cart
+      tags: [carts]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCartRequest'
+      responses:
+        '201':
+          description: The new cart
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /carts/{cartId}:
+    parameters:
+      - $ref: '#/components/parameters/cartId'
+    get:
+      operationId: getCart
+      summary: Get a cart
+      description: Lines carry only `sku` and `quantity`; join them with the top-level `products` array.
+      tags: [carts]
+      responses:
+        '200':
+          description: The cart
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteCart
+      summary: Delete a cart
+      tags: [carts]
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /carts/{cartId}/items:
+    parameters:
+      - $ref: '#/components/parameters/cartId'
+    post:
+      operationId: addItem
+      summary: Add an item to a cart
+      description: |
+        Validation errors (400) are checked before the cart lookup (404),
+        the cart state (409 `CART_NOT_OPEN`), the product lookup (404), and
+        stock (409 `OUT_OF_STOCK`). Adding the same SKU twice merges quantities.
+      tags: [carts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddItemRequest'
+      responses:
+        '201':
+          description: The updated cart
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /carts/{cartId}/coupon:
+    parameters:
+      - $ref: '#/components/parameters/cartId'
+    post:
+      operationId: applyCoupon
+      summary: Apply a coupon to a cart
+      description: '`SAVE10` (10% off), `FREESHIP` (free shipping), `EU-ONLY` (eu region only; 422 elsewhere). Unknown codes are 404.'
+      tags: [carts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyCouponRequest'
+      responses:
+        '200':
+          description: The cart with the coupon applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /carts/{cartId}/checkout:
+    parameters:
+      - $ref: '#/components/parameters/cartId'
+    post:
+      operationId: checkoutCart
+      summary: Check out a cart into an order
+      description: |
+        Prices the cart for the region and shipping tier and creates an order
+        in state `created` (payment status `unpaid`). The cart becomes
+        `checked_out`. `overnight` is not offered in `eu` (422).
+      tags: [carts, orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '201':
+          description: The new order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /orders/{orderId}:
+    parameters:
+      - $ref: '#/components/parameters/orderId'
+    get:
+      operationId: getOrder
+      summary: Get an order
+      tags: [orders]
+      responses:
+        '200':
+          description: The order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteOrder
+      summary: Delete an order (any state)
+      description: Cleanup hook for test runs; succeeds in every order state.
+      tags: [orders]
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /orders/{orderId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/orderId'
+    post:
+      operationId: cancelOrder
+      summary: Cancel an order
+      description: Allowed from `created` or `paid`; otherwise 409 `INVALID_TRANSITION`.
+      tags: [orders]
+      responses:
+        '200':
+          description: The cancelled order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /orders/{orderId}/ship:
+    parameters:
+      - $ref: '#/components/parameters/orderId'
+    post:
+      operationId: shipOrder
+      summary: Ship a paid order
+      description: Allowed from `paid` only. Takes about 600 ms.
+      tags: [orders, shipments]
+      responses:
+        '201':
+          description: The new shipment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shipment'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /orders/{orderId}/returns:
+    parameters:
+      - $ref: '#/components/parameters/orderId'
+    post:
+      operationId: createReturn
+      summary: Return a delivered order
+      description: Allowed from `delivered` only; the order becomes `returned`.
+      tags: [orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReturnRequest'
+      responses:
+        '201':
+          description: The return authorization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Return'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /shipments/{shipmentId}:
+    parameters:
+      - $ref: '#/components/parameters/shipmentId'
+    get:
+      operationId: getShipment
+      summary: Track a shipment
+      description: The first two reads of each shipment answer 503 with `Retry-After`; later reads succeed.
+      tags: [shipments]
+      responses:
+        '200':
+          description: The shipment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shipment'
+        '404':
+          $ref: '#/components/responses/Error'
+        '503':
+          description: Tracking data not ready yet
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /shipments/{shipmentId}/deliver:
+    parameters:
+      - $ref: '#/components/parameters/shipmentId'
+    post:
+      operationId: deliverShipment
+      summary: Mark a shipment delivered
+      description: Moves the order from `shipped` to `delivered`.
+      tags: [shipments]
+      responses:
+        '200':
+          description: The delivered shipment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shipment'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /payments/charges:
+    servers:
+      - $ref: '#/components/x-servers/payments'
+    post:
+      operationId: paymentCharge
+      summary: Charge an order
+      description: |
+        Served by the payments listener (default port 8766) and authenticated
+        with `X-API-Key`. The amount must equal the order total; the order
+        moves `created` to `paid`. Card `4000000000000002` is declined (402);
+        gift card `GC-10-DEMO` has insufficient funds (402) while
+        `GC-100-DEMO` and `GC-500-DEMO` succeed. Takes about 350 ms.
+      tags: [payments]
+      security:
+        - paymentsKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChargeRequest'
+      responses:
+        '201':
+          description: The captured payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '400':
+          $ref: '#/components/responses/Error'
+        '402':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /payments/refunds:
+    servers:
+      - $ref: '#/components/x-servers/payments'
+    post:
+      operationId: paymentRefund
+      summary: Refund an order's captured payment
+      description: Keyed by order id. Full refund unless `amount` is given. 409 when nothing is refundable.
+      tags: [payments]
+      security:
+        - paymentsKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundRequest'
+      responses:
+        '201':
+          description: The refund
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refund'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  x-servers:
+    payments:
+      url: http://localhost:8766/{region}/v1
+      description: Payments API (X-API-Key)
+      variables:
+        region:
+          enum: [us, eu]
+          default: us
+
+  securitySchemes:
+    shopToken:
+      type: oauth2
+      description: Demo credentials demo/demo, client aat-shop/aat-shop-secret
+      flows:
+        password:
+          tokenUrl: http://localhost:8765/oauth/token
+          scopes:
+            shop: Full access to the shop API
+        clientCredentials:
+          tokenUrl: http://localhost:8765/oauth/token
+          scopes:
+            shop: Full access to the shop API
+    paymentsKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Demo key pay-demo-key
+
+  parameters:
+    sku:
+      name: sku
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^SKU-[0-9]{4}$'
+    cartId:
+      name: cartId
+      in: path
+      required: true
+      schema:
+        type: string
+    orderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: string
+    shipmentId:
+      name: shipmentId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    Error:
+      description: Error envelope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Money:
+      type: integer
+      format: int64
+      description: Amount in minor currency units (cents)
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable code (for example INVALID_TRANSITION)
+            message:
+              type: string
+
+    Product:
+      type: object
+      required: [sku, name, category, price, priceDisplay, currency, inStock]
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+          enum: [gear, apparel, footwear]
+        price:
+          $ref: '#/components/schemas/Money'
+        priceDisplay:
+          type: string
+        currency:
+          type: string
+        inStock:
+          type: boolean
+
+    ProductList:
+      type: object
+      required: [region, currency, products]
+      properties:
+        region:
+          type: string
+        currency:
+          type: string
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+
+    InventoryStatus:
+      type: object
+      required: [status, sku, available]
+      properties:
+        status:
+          type: string
+          enum: [OK, ERROR]
+        sku:
+          type: string
+        available:
+          type: integer
+        errorCode:
+          type: string
+          description: Present when status is ERROR (for example STALE_READ)
+        errorMessage:
+          type: string
+
+    CreateCartRequest:
+      type: object
+      properties:
+        customerEmail:
+          type: string
+          format: email
+          description: Omit for a guest cart
+
+    AddItemRequest:
+      type: object
+      required: [sku, quantity]
+      properties:
+        sku:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+
+    ApplyCouponRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+
+    CheckoutRequest:
+      type: object
+      required: [shippingTier, postalCode]
+      properties:
+        shippingTier:
+          type: string
+          enum: [standard, express, overnight]
+        postalCode:
+          type: string
+        customerEmail:
+          type: string
+          format: email
+        deliveryDate:
+          type: string
+          format: date
+        notes:
+          type: string
+
+    CartLine:
+      type: object
+      required: [sku, quantity]
+      properties:
+        sku:
+          type: string
+        quantity:
+          type: integer
+
+    CartProduct:
+      type: object
+      required: [sku, name, price, priceDisplay]
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        priceDisplay:
+          type: string
+
+    Cart:
+      type: object
+      required: [cartId, status, currency, lineCount, subtotal, subtotalDisplay, discount, discountDisplay, lines, products, createdAt]
+      properties:
+        cartId:
+          type: string
+        status:
+          type: string
+          enum: [open, checked_out]
+        currency:
+          type: string
+        customerEmail:
+          type: string
+        couponCode:
+          type: string
+        lineCount:
+          type: integer
+        subtotal:
+          $ref: '#/components/schemas/Money'
+        subtotalDisplay:
+          type: string
+        discount:
+          $ref: '#/components/schemas/Money'
+        discountDisplay:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartLine'
+        products:
+          type: array
+          description: Catalog entries referenced by lines; join on sku
+          items:
+            $ref: '#/components/schemas/CartProduct'
+        createdAt:
+          type: string
+          format: date-time
+
+    OrderLine:
+      type: object
+      required: [sku, name, quantity, unitPrice, lineTotal]
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          $ref: '#/components/schemas/Money'
+        lineTotal:
+          $ref: '#/components/schemas/Money'
+
+    Order:
+      type: object
+      required: [orderId, receiptNumber, status, paymentStatus, currency, shippingTier, postalCode, subtotal, subtotalDisplay, discount, discountDisplay, shipping, shippingDisplay, tax, taxDisplay, taxLabel, total, totalDisplay, lines, createdAt]
+      properties:
+        orderId:
+          type: string
+        receiptNumber:
+          type: string
+        status:
+          type: string
+          enum: [created, paid, shipped, delivered, returned, cancelled]
+        paymentStatus:
+          type: string
+          enum: [unpaid, captured, refunded]
+        currency:
+          type: string
+        shippingTier:
+          type: string
+          enum: [standard, express, overnight]
+        postalCode:
+          type: string
+        customerEmail:
+          type: string
+        deliveryDate:
+          type: string
+        notes:
+          type: string
+        couponCode:
+          type: string
+        subtotal:
+          $ref: '#/components/schemas/Money'
+        subtotalDisplay:
+          type: string
+        discount:
+          $ref: '#/components/schemas/Money'
+        discountDisplay:
+          type: string
+        shipping:
+          $ref: '#/components/schemas/Money'
+        shippingDisplay:
+          type: string
+        tax:
+          $ref: '#/components/schemas/Money'
+        taxDisplay:
+          type: string
+        taxLabel:
+          type: string
+          description: '"Sales tax 8.25%" (us, added) or "VAT 20% (included)" (eu)'
+        total:
+          $ref: '#/components/schemas/Money'
+        totalDisplay:
+          type: string
+        shipmentId:
+          type: string
+        paymentId:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderLine'
+        createdAt:
+          type: string
+          format: date-time
+
+    Shipment:
+      type: object
+      required: [shipmentId, orderId, orderStatus, status, carrier, trackingNumber, eta, createdAt]
+      properties:
+        shipmentId:
+          type: string
+        orderId:
+          type: string
+        orderStatus:
+          type: string
+          enum: [shipped, delivered]
+        status:
+          type: string
+          enum: [in_transit, delivered]
+        carrier:
+          type: string
+        trackingNumber:
+          type: string
+        eta:
+          type: string
+          format: date
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateReturnRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+
+    Return:
+      type: object
+      required: [returnId, rmaNumber, orderId, orderStatus, reason, createdAt]
+      properties:
+        returnId:
+          type: string
+        rmaNumber:
+          type: string
+        orderId:
+          type: string
+        orderStatus:
+          type: string
+          enum: [returned]
+        reason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    ChargeRequest:
+      type: object
+      required: [orderId, amount, currency, method]
+      properties:
+        orderId:
+          type: string
+        amount:
+          $ref: '#/components/schemas/Money'
+        currency:
+          type: string
+        method:
+          type: string
+          enum: [card, gift_card, paypal]
+        cardNumber:
+          type: string
+          description: Required for method card; 4000000000000002 is declined
+        giftCardCode:
+          type: string
+          description: Required for method gift_card; GC-10-DEMO, GC-100-DEMO, GC-500-DEMO
+        paypalEmail:
+          type: string
+          description: Required for method paypal
+
+    Payment:
+      type: object
+      required: [paymentId, orderId, orderStatus, status, method, amount, amountDisplay, currency, createdAt]
+      properties:
+        paymentId:
+          type: string
+        orderId:
+          type: string
+        orderStatus:
+          type: string
+        status:
+          type: string
+          enum: [captured, refunded]
+        method:
+          type: string
+          enum: [card, gift_card, paypal]
+        amount:
+          $ref: '#/components/schemas/Money'
+        amountDisplay:
+          type: string
+        currency:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    RefundRequest:
+      type: object
+      required: [orderId]
+      properties:
+        orderId:
+          type: string
+        amount:
+          $ref: '#/components/schemas/Money'
+
+    Refund:
+      type: object
+      required: [refundId, paymentId, orderId, status, amount, amountDisplay, currency, createdAt]
+      properties:
+        refundId:
+          type: string
+        paymentId:
+          type: string
+        orderId:
+          type: string
+        status:
+          type: string
+          enum: [refunded]
+        amount:
+          $ref: '#/components/schemas/Money'
+        amountDisplay:
+          type: string
+        currency:
+          type: string
+        createdAt:
+          type: string
+          format: date-time

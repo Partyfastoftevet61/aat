@@ -1,5 +1,6 @@
 # Built binaries
 /aat
+/aat-sandbox
 /aat-gateway
 *.exe
 

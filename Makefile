@@ -1,5 +1,7 @@
 BINARY    := aat
 CMD       := ./cmd/aat
+SANDBOX   := aat-sandbox
+SANDBOX_CMD := ./cmd/aat-sandbox
 VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT    := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE      := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -7,10 +9,14 @@ LDFLAGS   := -X github.com/gburgyan/aat/internal/version.Version=$(VERSION) \
              -X github.com/gburgyan/aat/internal/version.GitCommit=$(COMMIT) \
              -X github.com/gburgyan/aat/internal/version.BuildDate=$(DATE)
 
-.PHONY: build test test-race lint fmt check clean frontend
+.PHONY: build sandbox test test-race lint fmt check clean frontend
 
-build: frontend
+build: frontend sandbox
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD)
+
+# The demo API server; no frontend needed.
+sandbox:
+	go build -ldflags "$(LDFLAGS)" -o $(SANDBOX) $(SANDBOX_CMD)
 
 frontend:
 	cd server/web && npm install && npm run build
@@ -30,5 +36,5 @@ fmt:
 check: fmt test-race lint
 
 clean:
-	rm -f $(BINARY)
+	rm -f $(BINARY) $(SANDBOX)
 	rm -rf server/web/dist server/web/node_modules

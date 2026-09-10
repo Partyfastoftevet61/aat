@@ -7,6 +7,12 @@ the graph and plan formats may still change before 1.0.
 ## [Unreleased]
 
 ### Added
+- `aat-sandbox`, a second binary that serves an offline e-commerce demo API (`aat-sandbox serve`:
+  shop API on :8765 with OAuth2 tokens, payments API on :8766 with an API key, `us`/`eu` regions
+  with their own currency, tax, tiers, and coupons, an order state machine, simulated latency, and
+  two chaos hooks for retry demos) and extracts the `examples/shop` project (`aat-sandbox init`).
+  The contract lives in `examples/shop/openapi.yaml`; the server tests validate every response
+  against it. `make build` builds both binaries; `make sandbox` builds only the demo server.
 - Plan-level `execution.cleanup` steps now execute after the main flow, in declaration order and
   honoring `runOn: always|success|failure`, before graph-level cleanup pairings.
 - Plan `execution.verification` steps now execute after the main flow and before cleanup, with their
