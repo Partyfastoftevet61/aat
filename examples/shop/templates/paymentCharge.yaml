@@ -1,0 +1,26 @@
+adapter: paymentCharge
+protocol: http
+
+# Served by the payments API; env.yaml routes payment* to its host and API key.
+request:
+  method: POST
+  path: /payments/charges
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "orderId": "{{orderId}}",
+      "amount": {{amount}},
+      "currency": "{{currency}}",
+      "method": "{{method}}"{{?cardNumber}},
+      "cardNumber": "{{cardNumber}}"{{/cardNumber}}{{?giftCardCode}},
+      "giftCardCode": "{{giftCardCode}}"{{/giftCardCode}}{{?paypalEmail}},
+      "paypalEmail": "{{paypalEmail}}"{{/paypalEmail}}
+    }
+
+response:
+  extract:
+    paymentId: paymentId
+    status: status
+    orderStatus: orderStatus
+    amountDisplay: amountDisplay

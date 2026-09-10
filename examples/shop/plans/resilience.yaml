@@ -1,0 +1,53 @@
+# Retries only: one response_error retry (the stale inventory read) and two transient
+# retries (carrier tracking warm-up). Every layered input is pinned, so a layer matrix
+# collapses this plan to a single run.
+intent:
+  goal: getShipment
+  description: Recover from an in-body error and from 503s with retry rules
+
+execution:
+  steps:
+    - node: listProducts
+      description: Browse the whole catalog
+      values:
+        category: {}
+
+    - node: checkInventory
+      dependsOn: [listProducts]
+      description: The first read is a 200 with status ERROR; errorDetection makes it retryable
+      values:
+        sku: SKU-1004
+      retry:
+        max: 2
+        on: [response_error]
+
+    - node: createCart
+      dependsOn: [checkInventory]
+
+    - node: addItem
+      dependsOn: [createCart]
+      values:
+        sku: SKU-1001
+
+    - id: checkout
+      node: checkoutCart
+      dependsOn: [addItem]
+      values:
+        shippingTier: standard
+        deliveryDate: {}
+
+    - node: paymentCharge
+      dependsOn: [checkout]
+      values:
+        cardNumber: "4242424242424242"
+
+    - node: shipOrder
+      dependsOn: [paymentCharge]
+
+    - node: getShipment
+      dependsOn: [shipOrder]
+      isGoal: true
+      description: The first two reads answer 503; the third returns tracking data
+      retry:
+        max: 3
+        on: [transient]

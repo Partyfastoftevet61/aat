@@ -1,0 +1,11 @@
+kind: recipe
+metadata:
+  prompt: A guest pays with a gift card, ships express, and tracks the shipment
+  graphVersion: "1.0.0"
+selection:
+  workflow: Checkout
+  description: Guest, gift card, express shipping, and shipment tracking through the carrier warm-up
+  layers: [shipping-express]
+  choices:
+    payment: Gift Card
+  addons: [Track Shipment]

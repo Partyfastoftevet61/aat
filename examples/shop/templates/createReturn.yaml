@@ -1,0 +1,16 @@
+adapter: createReturn
+protocol: http
+
+request:
+  method: POST
+  path: /orders/{{orderId}}/returns
+  headers:
+    Content-Type: application/json
+  body: |
+    { "reason": "{{reason}}" }
+
+response:
+  extract:
+    returnId: returnId
+    rmaNumber: rmaNumber
+    orderStatus: orderStatus

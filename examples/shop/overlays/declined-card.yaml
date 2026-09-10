@@ -1,0 +1,13 @@
+# Turns the card payment of any plan into a negative test without editing the plan:
+#
+#   aat run plan smoke --overlay overlays/declined-card.yaml
+#
+# Values-only overrides keep the node on its env.yaml route (payment* → payments host).
+overrides:
+  - match: paymentCharge
+    values:
+      method: card
+      cardNumber: "4000000000000002"
+    expectFailure:
+      status: [402]
+      description: The issuer declines test card 4000000000000002

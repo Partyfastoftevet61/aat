@@ -98,8 +98,8 @@ func Generate(model *v3high.Document, specFile string) (*GenerateResult, error) 
 				continue
 			}
 
-			node := generateNode(c.method, pathStr, c.op)
-			tmpl := generateTemplate(c.method, pathStr, c.op)
+			node := generateNode(pathItem, c.op)
+			tmpl := generateTemplate(c.method, pathStr, pathItem, c.op)
 
 			result.Graph.Nodes[c.op.OperationId] = node
 			result.Templates = append(result.Templates, tmpl)
@@ -114,12 +114,12 @@ func Generate(model *v3high.Document, specFile string) (*GenerateResult, error) 
 }
 
 // generateNode builds a graph.Node from one OAS operation.
-func generateNode(method, path string, op *v3high.Operation) *graph.Node {
+func generateNode(pathItem *v3high.PathItem, op *v3high.Operation) *graph.Node {
 	node := &graph.Node{
 		Name:        op.OperationId,
 		Description: op.Summary,
 		Adapter:     op.OperationId,
-		Inputs:      collectNodeInputs(op),
+		Inputs:      collectNodeInputs(pathItem, op),
 		Outputs:     collectNodeOutputs(op),
 		OAS: &graph.OASRef{
 			OperationID: op.OperationId,
@@ -129,7 +129,8 @@ func generateNode(method, path string, op *v3high.Operation) *graph.Node {
 }
 
 // generateTemplate builds a ScaffoldTemplate from one OAS operation.
-func generateTemplate(method, path string, op *v3high.Operation) *ScaffoldTemplate {
+func generateTemplate(method, path string, pathItem *v3high.PathItem, op *v3high.Operation) *ScaffoldTemplate {
+	params := OperationParameters(pathItem, op)
 	tmpl := &ScaffoldTemplate{
 		Adapter:  op.OperationId,
 		Protocol: "http",
@@ -144,8 +145,8 @@ func generateTemplate(method, path string, op *v3high.Operation) *ScaffoldTempla
 
 	// Collect query params for the URL
 	var queryParams []string
-	for _, param := range op.Parameters {
-		if param != nil && param.In == "query" {
+	for _, param := range params {
+		if param.In == "query" {
 			queryParams = append(queryParams, fmt.Sprintf("%s={{%s}}", param.Name, param.Name))
 		}
 	}
@@ -160,8 +161,8 @@ func generateTemplate(method, path string, op *v3high.Operation) *ScaffoldTempla
 	if hasRequestBody {
 		headers["Content-Type"] = "application/json"
 	}
-	for _, param := range op.Parameters {
-		if param != nil && param.In == "header" {
+	for _, param := range params {
+		if param.In == "header" {
 			headers[param.Name] = fmt.Sprintf("{{%s}}", param.Name)
 		}
 	}
@@ -181,15 +182,13 @@ func generateTemplate(method, path string, op *v3high.Operation) *ScaffoldTempla
 	return tmpl
 }
 
-// collectNodeInputs gathers inputs from OAS parameters and request body.
-func collectNodeInputs(op *v3high.Operation) []graph.Input {
+// collectNodeInputs gathers inputs from OAS parameters (path-item and
+// operation level) and the request body.
+func collectNodeInputs(pathItem *v3high.PathItem, op *v3high.Operation) []graph.Input {
 	var inputs []graph.Input
 
 	// Parameters (query, header, path, cookie)
-	for _, param := range op.Parameters {
-		if param == nil {
-			continue
-		}
+	for _, param := range OperationParameters(pathItem, op) {
 		inp := graph.Input{
 			Name: param.Name,
 		}

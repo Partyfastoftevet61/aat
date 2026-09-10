@@ -805,15 +805,17 @@ func formatOperationDetail(method, path string, op *v3high.Operation, doc *v3hig
 		fmt.Fprintf(&b, "%s\n\n", op.Description)
 	}
 
-	// Parameters
-	if len(op.Parameters) > 0 {
+	// Parameters, including those declared once on the path item (such as a
+	// shared {cartId}) that every operation on the path inherits.
+	var pathItem *v3high.PathItem
+	if doc != nil && doc.Paths != nil {
+		pathItem = doc.Paths.PathItems.GetOrZero(path)
+	}
+	if params := oas.OperationParameters(pathItem, op); len(params) > 0 {
 		b.WriteString("## Parameters\n\n")
 		b.WriteString("| Name | In | Type | Required | Description |\n")
 		b.WriteString("|------|-----|------|----------|-------------|\n")
-		for _, param := range op.Parameters {
-			if param == nil {
-				continue
-			}
+		for _, param := range params {
 			req := "no"
 			if param.Required != nil && *param.Required {
 				req = "yes"

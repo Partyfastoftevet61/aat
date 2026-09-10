@@ -77,11 +77,14 @@ func (o *BatchStreamObserver) OnStepComplete(index, total int, result engine.Ste
 		if color {
 			durStr = colorDim + durStr + colorReset
 		}
-		validMark := ""
-		if result.Validation != nil && !result.Validation.Passed {
-			validMark = "  " + colorize("ASSERTIONS FAILED", colorYellow, color)
+		marks := ""
+		if note := retryNote(result); note != "" {
+			marks += "  " + colorize(note, colorYellow, color)
 		}
-		_, _ = fmt.Fprintf(o.out, "%s %s  %s%s\n", prefix, status, durStr, validMark)
+		if result.Validation != nil && !result.Validation.Passed {
+			marks += "  " + colorize("ASSERTIONS FAILED", colorYellow, color)
+		}
+		_, _ = fmt.Fprintf(o.out, "%s %s  %s%s\n", prefix, status, durStr, marks)
 		for _, do := range result.DisplayOutputs {
 			_, _ = fmt.Fprintf(o.out, "%*s  %s: %v\n", indent, "", do.Label, do.Value)
 		}

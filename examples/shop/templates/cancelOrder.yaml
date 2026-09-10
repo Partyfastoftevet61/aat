@@ -1,0 +1,11 @@
+adapter: cancelOrder
+protocol: http
+
+request:
+  method: POST
+  path: /orders/{{orderId}}/cancel
+
+response:
+  extract:
+    status: status
+    paymentStatus: paymentStatus

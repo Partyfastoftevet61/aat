@@ -104,3 +104,39 @@ Sandbox (Phase A review):
 
 **Open questions:** none new; verified-but-deferred engine issues are listed under "Follow-ups
 found during M1" in `LAUNCH-PLAN.md`.
+
+## 2026-09-10 — Phase B: the `examples/shop` project
+
+**What:** The AAT project for the sandbox: manifest, 17-node graph, 17 templates, domain, Quick Purchase
+and Checkout workflows (customer and payment slots, four addons), 12 layers, 7 plans, the declined-card
+overlay, a receipt visualizer, `us`/`eu` environments, MCP configuration, and a README. `aat validate
+--strict` is clean; the plans pass 7/7 with `--oas-validate strict` in both regions; the two-group matrix
+runs 63 permutations with 36 deduplicated.
+
+**Decisions:**
+
+- **Names come from the contract.** Nodes are named by operationId and outputs by response property
+  (`status`, not `cartStatus`): the static validator warns on output names the 2xx schema lacks, and
+  `--strict` turns warnings into failures. The Lua join in `getCart` therefore enriches `lines` in place
+  instead of adding an `items` output.
+- **Data flow lives in the graph.** `cartId`, `orderId`, `amount`, `currency`, and `shipmentId` default
+  to `from:` references, and `addItem.sku` selects the first in-stock product. Plans that skip
+  `listProducts` pin `sku`, because a graph default that references a missing step fails validation.
+- **AUTOWIRE only where it shows something.** Apply Coupon wires `cartId` explicitly (the cart comes
+  from a slot, which compatibility checks cannot see) and Track Shipment/Return After Delivery
+  AUTOWIRE `shipmentId`; `orderId` for return and refund comes from graph defaults.
+- **The negative state machine is region-neutral.** It uses an unknown coupon (404) rather than
+  `EU-ONLY` in us (422), because the CI job also runs every plan with `--env eu`, where `EU-ONLY` succeeds.
+- **Mutations assume nothing about order.** The over-stock mutation asks for 43 of a 42-unit SKU, which
+  fails whether or not the parent step's unit is already in the cart.
+- **Postal codes come from the environment.** `checkoutCart.postalCode` defaults to `{{env.postalCode}}`,
+  and each environment sets it through `vars` and `values`.
+- **Two more root causes, not workarounds.** The validator, scaffolder, and MCP operation details read only
+  operation-level OAS parameters, so every path with a shared `{cartId}` warned; they now merge path-item
+  parameters. Successful retries were invisible (the engine discarded the failed attempt's category), so
+  the resilience demo looked like it never retried; steps now carry `RetriedOn`, archives `retriedOn`, and
+  run output `retried Nx: <category>`.
+
+**Open questions:** none for Phase B. Phase C adds the Go e2e test, the CI job, the goreleaser build, and
+the root README/CLAUDE.md quick start. The web UI visual pass (timeline bars, matrix, receipt tab) and a
+Claude Code MCP session are author checks.

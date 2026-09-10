@@ -1,0 +1,5 @@
+name: shipping-overnight
+description: Overnight shipping (US $29.99); the eu region rejects it with 422
+selectionHint: US-only tier; use it for region negative tests in eu
+inputs:
+  shippingTier: overnight

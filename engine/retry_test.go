@@ -91,6 +91,8 @@ func TestRetryOnTransientStatus(t *testing.T) {
 	assert.Equal(t, 200, result.Steps[0].StatusCode)
 	assert.Equal(t, 2, result.Steps[0].RetryCount)
 	assert.Nil(t, result.Steps[0].ErrorClass) // nil on final success
+	assert.Equal(t, []ErrorCategory{CategoryTransient, CategoryTransient}, result.Steps[0].RetriedOn,
+		"a step that recovers still records why it retried")
 	assert.Equal(t, int32(3), callCount.Load())
 }
 

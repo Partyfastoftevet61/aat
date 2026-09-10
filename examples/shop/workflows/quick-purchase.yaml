@@ -1,0 +1,26 @@
+intent:
+  goal: paymentCharge
+  description: Browse the catalog, buy the first in-stock product as a guest, and pay by card
+
+execution:
+  steps:
+    - node: listProducts
+      description: Browse the catalog
+
+    - node: createCart
+      dependsOn: [listProducts]
+      description: Open a guest cart
+
+    - node: addItem
+      dependsOn: [createCart]
+      description: Add the first in-stock product
+
+    - id: checkout
+      node: checkoutCart
+      dependsOn: [addItem]
+      description: Price the cart and create the order
+
+    - node: paymentCharge
+      dependsOn: [checkout]
+      isGoal: true
+      description: Charge the order total on the payments API

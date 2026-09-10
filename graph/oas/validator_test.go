@@ -42,6 +42,48 @@ func TestValidate_ValidGraph(t *testing.T) {
 	assert.False(t, result.HasErrors())
 }
 
+func TestValidate_PathItemParameters(t *testing.T) {
+	v := NewValidator()
+	require.NoError(t, v.LoadSpec("carts.yaml", "testdata/path_item_params.yaml"))
+
+	graphWithInputs := func(names ...string) *graph.Graph {
+		inputs := make([]graph.Input, 0, len(names))
+		for _, n := range names {
+			inputs = append(inputs, graph.Input{Name: n, Type: "string"})
+		}
+		return &graph.Graph{
+			Version: "1.0.0",
+			OAS:     "carts.yaml",
+			Nodes: map[string]*graph.Node{
+				"getCart": {
+					Name:    "getCart",
+					Adapter: "getCart",
+					OAS:     &graph.OASRef{OperationID: "getCart"},
+					Inputs:  inputs,
+					Outputs: []graph.Output{{Name: "cartId", Type: "string"}},
+				},
+			},
+		}
+	}
+
+	t.Run("path-item parameters are known inputs", func(t *testing.T) {
+		result := v.Validate(graphWithInputs("cartId", "X-Trace"))
+		assert.False(t, result.HasIssues(), result.Format())
+	})
+
+	t.Run("a required path-item parameter must be a graph input", func(t *testing.T) {
+		result := v.Validate(graphWithInputs("X-Trace"))
+		require.True(t, result.HasIssues())
+		assert.Contains(t, result.Format(), `OAS required parameter "cartId" missing`)
+	})
+
+	t.Run("an operation parameter overrides the path-item declaration", func(t *testing.T) {
+		result := v.Validate(graphWithInputs("cartId"))
+		require.True(t, result.HasIssues())
+		assert.Contains(t, result.Format(), `OAS required parameter "X-Trace" missing`)
+	})
+}
+
 func TestValidate_Rule1_EmptyOperationID(t *testing.T) {
 	v := NewValidator()
 	g := &graph.Graph{

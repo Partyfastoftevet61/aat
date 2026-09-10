@@ -1,0 +1,5 @@
+name: shipping-express
+description: Express shipping (US $14.99, EU €12.99)
+selectionHint: A faster tier offered in every region
+inputs:
+  shippingTier: express

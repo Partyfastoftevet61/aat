@@ -1,0 +1,9 @@
+execution:
+  steps:
+    - node: checkInventory
+      description: Check stock for the rain shell; its first read in a session is stale
+      values:
+        sku: SKU-1004
+      retry:
+        max: 2
+        on: [response_error]

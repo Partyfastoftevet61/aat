@@ -1,0 +1,93 @@
+concepts:
+  regionalPricing:
+    description: >-
+      Prices, tax, shipping tiers, and coupons depend on the region in the base URL. US prices
+      are USD with 8.25% sales tax added at checkout; EU prices are EUR (USD × 0.92) with 20% VAT
+      already included, and EU offers no overnight shipping.
+    applies_to: [shippingTier, postalCode, code, currency]
+    constraint: shippingTier overnight is only valid in the us region
+    examples:
+      us: [standard, express, overnight]
+      eu: [standard, express]
+
+  orderLifecycle:
+    description: >-
+      Orders move created → paid → shipped → delivered → returned. Cancel is allowed from
+      created or paid, and a refund while captured money remains; anything else answers
+      409 INVALID_TRANSITION.
+    applies_to: [orderId, shipmentId]
+
+  minorUnits:
+    description: >-
+      Money is an integer in minor units (cents); the matching *Display field holds the
+      formatted amount. A charge must equal the order total exactly.
+    applies_to: [amount, total, subtotal, discount, price]
+
+types:
+  sku:
+    description: Catalog SKU
+    format: string
+    validation: "^SKU-[0-9]{4}$"
+    pool: skus
+
+  postalCode:
+    description: Delivery postal code for the region
+    format: string
+    pool: postalCodes
+
+  couponCode:
+    description: Cart coupon code
+    format: string
+    validation: "^[A-Z0-9-]+$"
+    pool: couponCodes
+
+valuePools:
+  skus:
+    description: The fixed six-SKU catalog
+    type: string
+    values:
+      - SKU-1001  # Trail Backpack (gear, 42 in stock)
+      - SKU-1002  # Camp Stove (gear)
+      - SKU-1003  # Merino Tee (apparel)
+      - SKU-1004  # Rain Shell (apparel; first inventory read per session is stale)
+      - SKU-1005  # Trail Runners (footwear; always out of stock)
+      - SKU-1006  # Wool Socks (footwear)
+
+  postalCodes:
+    description: Postal codes by region
+    type: string
+    groups:
+      us: ["78701", "94110", "10001"]
+      eu: ["10115", "75001", "1017"]
+
+  couponCodes:
+    description: Coupons the sandbox knows
+    type: string
+    values:
+      - SAVE10    # 10% off the subtotal, every region
+      - FREESHIP  # free shipping, every region
+      - EU-ONLY   # 10% off, eu only (422 in us)
+
+  shippingTiers:
+    description: Shipping tiers
+    type: string
+    values:
+      - standard
+      - express
+      - overnight  # us only
+
+  testCards:
+    description: Card numbers for paymentCharge
+    type: string
+    values:
+      - "4242424242424242"  # Visa, approved
+      - "378282246310005"   # Amex, approved
+      - "4000000000000002"  # declined (402 CARD_DECLINED)
+
+  giftCards:
+    description: Demo gift cards and their balances
+    type: string
+    values:
+      - GC-10-DEMO   # $10, too small for any order (402 INSUFFICIENT_FUNDS)
+      - GC-100-DEMO  # $100
+      - GC-500-DEMO  # $500, covers any demo order

@@ -1,0 +1,20 @@
+adapter: paymentRefund
+protocol: http
+
+# Served by the payments API; env.yaml routes payment* to its host and API key.
+request:
+  method: POST
+  path: /payments/refunds
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "orderId": "{{orderId}}"{{?amount}},
+      "amount": {{amount}}{{/amount}}
+    }
+
+response:
+  extract:
+    refundId: refundId
+    amount: amount
+    amountDisplay: amountDisplay

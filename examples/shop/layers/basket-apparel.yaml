@@ -1,0 +1,5 @@
+name: basket-apparel
+description: Browse apparel; the first in-stock product is the Merino Tee
+selectionHint: Pick for a mid-value basket
+inputs:
+  listProducts.category: apparel

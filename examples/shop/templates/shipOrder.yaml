@@ -1,0 +1,14 @@
+adapter: shipOrder
+protocol: http
+
+request:
+  method: POST
+  path: /orders/{{orderId}}/ship
+
+response:
+  extract:
+    shipmentId: shipmentId
+    status: status
+    orderStatus: orderStatus
+    trackingNumber: trackingNumber
+    eta: eta

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "shop-api": {
+      "command": "aat",
+      "args": ["mcp", "serve", "--manifest", "aat-project.yaml", "--persona", "api"]
+    },
+    "shop-test": {
+      "command": "aat",
+      "args": ["mcp", "serve", "--manifest", "aat-project.yaml", "--persona", "test"]
+    }
+  }
+}

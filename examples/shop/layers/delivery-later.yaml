@@ -1,0 +1,5 @@
+name: delivery-later
+description: Request delivery two weeks from the run date
+selectionHint: A far delivery date
+inputs:
+  checkoutCart.deliveryDate: "{{today + 14 days}}"

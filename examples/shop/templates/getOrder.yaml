@@ -1,0 +1,14 @@
+adapter: getOrder
+protocol: http
+
+request:
+  method: GET
+  path: /orders/{{orderId}}
+
+response:
+  extract:
+    orderId: orderId
+    status: status
+    paymentStatus: paymentStatus
+    total: total
+    totalDisplay: totalDisplay

@@ -1,0 +1,9 @@
+kind: recipe
+metadata:
+  prompt: Buy one in-stock product and pay by card
+  graphVersion: "1.0.0"
+selection:
+  workflow: Quick Purchase
+  description: >-
+    The smallest end-to-end purchase. overlays/declined-card.yaml turns its payment into a
+    negative test without editing this file.

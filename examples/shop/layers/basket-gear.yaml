@@ -1,0 +1,5 @@
+name: basket-gear
+description: Browse gear; the first in-stock product is the Trail Backpack
+selectionHint: Pick for a high-value basket
+inputs:
+  listProducts.category: gear

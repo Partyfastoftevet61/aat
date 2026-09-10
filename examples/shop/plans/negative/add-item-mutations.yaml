@@ -1,0 +1,41 @@
+# One happy-path addItem call plus a mutation for each way the API must reject it.
+# Mutations become sibling steps (addItem--<name>) that share the parent's cart.
+intent:
+  goal: addItem
+  description: addItem rejects bad input, unknown SKUs, and stock it does not have
+
+execution:
+  steps:
+    - node: createCart
+      description: Open the cart every mutation reuses
+
+    - node: addItem
+      dependsOn: [createCart]
+      description: Add one Trail Backpack (42 in stock)
+      mutationScope: shared
+      values:
+        sku: SKU-1001
+        quantity: 1
+      mutations:
+        - name: zero-quantity
+          description: quantity must be at least 1
+          set:
+            quantity: 0
+          expectStatus: [400]
+        - name: unknown-sku
+          set:
+            sku: SKU-9999
+          expectStatus: [404]
+        - name: out-of-stock
+          description: Trail Runners are never in stock
+          set:
+            sku: SKU-1005
+          expectStatus: [409]
+        - name: more-than-in-stock
+          description: 43 exceeds the 42 in stock no matter what the cart already holds
+          set:
+            quantity: 43
+          expectStatus: [409]
+        - name: malformed-body
+          rawBody: '{"sku": "SKU-1001", "quantity": '
+          expectStatus: [400]

@@ -1,0 +1,5 @@
+name: card-visa
+description: Pay with a Visa test card
+selectionHint: The default card brand
+inputs:
+  cardNumber: "4242424242424242"

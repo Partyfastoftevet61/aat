@@ -1,0 +1,9 @@
+execution:
+  steps:
+    - node: paymentCharge
+      description: Pay with PayPal
+      values:
+        method: paypal
+        paypalEmail: demo@example.com
+        # Explicitly absent, so neither the graph default nor a card layer adds one.
+        cardNumber: {}

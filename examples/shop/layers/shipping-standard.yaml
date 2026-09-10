@@ -1,0 +1,5 @@
+name: shipping-standard
+description: Standard shipping (US $5.99, EU €4.99)
+selectionHint: The default, cheapest delivery speed in every region
+inputs:
+  shippingTier: standard

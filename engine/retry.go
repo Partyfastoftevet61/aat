@@ -40,7 +40,9 @@ func (e *Engine) executeStepWithRetry(ctx context.Context, step plan.Step, node 
 		return result // success on first try
 	}
 
-	// Retry loop
+	// Retry loop. retriedOn keeps the category of every failed attempt that was
+	// retried, so a step that eventually succeeds still reports why it retried.
+	var retriedOn []ErrorCategory
 	for attempt := 1; attempt <= step.Retry.Max; attempt++ {
 		select {
 		case <-ctx.Done():
@@ -67,6 +69,7 @@ func (e *Engine) executeStepWithRetry(ctx context.Context, step plan.Step, node 
 		// Mark the classification as retried
 		cls.Action = "retried"
 		cls.RetryAttempt = attempt - 1
+		retriedOn = append(retriedOn, cls.Category)
 
 		// Wait with backoff, respecting context cancellation
 		backoff := retryBackoff(attempt)
@@ -87,6 +90,7 @@ func (e *Engine) executeStepWithRetry(ctx context.Context, step plan.Step, node 
 		// Retry the step
 		result = e.executeStep(ctx, step, node, state)
 		result.RetryCount = attempt
+		result.RetriedOn = append([]ErrorCategory(nil), retriedOn...)
 
 		cls = classifyStepResult(&result)
 		if cls == nil {

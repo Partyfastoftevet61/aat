@@ -52,6 +52,9 @@ func convertStepResult(s StepResult, baseURL string, secrets map[string]bool) ar
 		Error:           errString(s.Error),
 		RetryCount:      s.RetryCount,
 	}
+	for _, c := range s.RetriedOn {
+		rec.RetriedOn = append(rec.RetriedOn, c.String())
+	}
 
 	if s.Request != nil {
 		rec.Request = convertRequest(s.Request, s.ActualBaseURL, baseURL, s.OriginalPath)

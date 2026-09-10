@@ -1,0 +1,119 @@
+# Walks an order through every transition the API must refuse, next to the ones it
+# must allow. Each refusal is an expectFailure step, which passes when the listed
+# status comes back and lets the plan continue. Layered inputs are pinned, so a
+# layer matrix collapses this plan to a single run.
+intent:
+  goal: refundTwice
+  description: The order state machine refuses out-of-order transitions
+
+execution:
+  steps:
+    - node: createCart
+
+    - node: addItem
+      dependsOn: [createCart]
+      values:
+        sku: SKU-1001
+
+    - id: unknownCoupon
+      node: applyCoupon
+      dependsOn: [addItem]
+      description: Unknown coupon codes are rejected
+      values:
+        code: NOT-A-COUPON
+      expectFailure:
+        status: [404]
+
+    - id: checkout
+      node: checkoutCart
+      dependsOn: [unknownCoupon]
+      values:
+        shippingTier: standard
+        deliveryDate: {}
+
+    - id: addAfterCheckout
+      node: addItem
+      dependsOn: [checkout]
+      description: A checked-out cart is closed
+      values:
+        sku: SKU-1002
+      expectFailure:
+        status: [409]
+        description: CART_NOT_OPEN
+
+    - id: shipBeforePay
+      node: shipOrder
+      dependsOn: [addAfterCheckout]
+      expectFailure:
+        status: [409]
+        description: INVALID_TRANSITION (created → shipped)
+
+    - id: returnBeforeDelivery
+      node: createReturn
+      dependsOn: [shipBeforePay]
+      expectFailure:
+        status: [409]
+        description: INVALID_TRANSITION (created → returned)
+
+    - id: refundBeforePay
+      node: paymentRefund
+      dependsOn: [returnBeforeDelivery]
+      expectFailure:
+        status: [409]
+        description: PAYMENT_NOT_REFUNDABLE (nothing captured)
+
+    - id: declinedCard
+      node: paymentCharge
+      dependsOn: [refundBeforePay]
+      values:
+        cardNumber: "4000000000000002"
+      expectFailure:
+        status: [402]
+        description: CARD_DECLINED; the order stays unpaid
+
+    - id: pay
+      node: paymentCharge
+      dependsOn: [declinedCard]
+      values:
+        cardNumber: "4242424242424242"
+
+    - id: payTwice
+      node: paymentCharge
+      dependsOn: [pay]
+      values:
+        cardNumber: "4242424242424242"
+      expectFailure:
+        status: [409]
+        description: INVALID_TRANSITION (paid → paid)
+
+    - node: cancelOrder
+      dependsOn: [payTwice]
+      description: A paid order can still be cancelled
+
+    - id: shipCancelled
+      node: shipOrder
+      dependsOn: [cancelOrder]
+      expectFailure:
+        status: [409]
+        description: INVALID_TRANSITION (cancelled → shipped)
+
+    - id: refund
+      node: paymentRefund
+      dependsOn: [shipCancelled]
+      description: Refund the cancelled order's captured payment
+
+    - id: refundTwice
+      node: paymentRefund
+      dependsOn: [refund]
+      isGoal: true
+      expectFailure:
+        status: [409]
+        description: PAYMENT_NOT_REFUNDABLE (fully refunded)
+
+  verification:
+    - node: getOrder
+      purpose: The order ends cancelled and refunded
+      assertions:
+        mechanical:
+          - type: predicate
+            expr: 'status == "cancelled" && paymentStatus == "refunded"'

@@ -1,0 +1,36 @@
+openapi: 3.0.3
+info:
+  title: Path-item parameters
+  version: 1.0.0
+paths:
+  /carts/{cartId}:
+    parameters:
+      - name: cartId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Trace
+        in: header
+        required: false
+        schema:
+          type: string
+    get:
+      operationId: getCart
+      parameters:
+        # Overrides the path-item declaration: required for this operation.
+        - name: X-Trace
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The cart
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cartId:
+                    type: string

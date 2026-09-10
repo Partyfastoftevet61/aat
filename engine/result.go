@@ -75,6 +75,7 @@ type StepResult struct {
 	Duration          time.Duration
 	ErrorClass        *ErrorClassification       // nil on success
 	RetryCount        int                        // number of retries performed (0 = no retries)
+	RetriedOn         []ErrorCategory            // category of each failed attempt that was retried, in order
 	Validation        *validate.MechanicalResult // nil if no assertions configured
 	OASValidation     *oas.ValidationResult      // nil when OAS validation not configured or node has no OAS ref
 	DisplayOutputs    []DisplayOutput            // outputs tagged with display labels

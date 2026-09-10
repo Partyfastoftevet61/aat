@@ -1,0 +1,10 @@
+# Copy to .aat-overrides.yaml (git-ignored) to send single operations to a local
+# build while everything else keeps using the sandbox. AAT discovers the file
+# automatically; --no-auto-overrides turns it off.
+#
+# Match exact node names: an exact name always beats a glob such as env.yaml's
+# payment*, while a glob here would replace that route for every payment call.
+environment: us
+overrides:
+  - match: shipOrder
+    baseUrl: http://localhost:9765/us/v1

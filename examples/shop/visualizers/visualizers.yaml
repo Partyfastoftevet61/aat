@@ -1,0 +1,6 @@
+visualizers:
+  - id: order-receipt
+    name: Receipt
+    file: order-receipt.html
+    match:
+      bodyContains: receiptNumber

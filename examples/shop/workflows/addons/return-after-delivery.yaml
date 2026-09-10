@@ -1,0 +1,14 @@
+execution:
+  steps:
+    - node: deliverShipment
+      description: Mark the shipment delivered
+      values:
+        shipmentId: AUTOWIRE
+
+    - node: createReturn
+      dependsOn: [deliverShipment]
+      description: Return the delivered order
+
+    - node: paymentRefund
+      dependsOn: [createReturn]
+      description: Refund the whole payment

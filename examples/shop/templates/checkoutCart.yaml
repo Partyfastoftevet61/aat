@@ -1,0 +1,31 @@
+adapter: checkoutCart
+protocol: http
+
+request:
+  method: POST
+  path: /carts/{{cartId}}/checkout
+  headers:
+    Content-Type: application/json
+  # Optional fields are sent only when a value resolves.
+  body: |
+    {
+      "shippingTier": "{{shippingTier}}",
+      "postalCode": "{{postalCode}}"{{?customerEmail}},
+      "customerEmail": "{{customerEmail}}"{{/customerEmail}}{{?deliveryDate}},
+      "deliveryDate": "{{deliveryDate}}"{{/deliveryDate}}{{?notes}},
+      "notes": "{{notes}}"{{/notes}}
+    }
+
+response:
+  extract:
+    orderId: orderId
+    receiptNumber: receiptNumber
+    status: status
+    currency: currency
+    subtotal: subtotal
+    discount: discount
+    shipping: shipping
+    tax: tax
+    taxLabel: taxLabel
+    total: total
+    totalDisplay: totalDisplay

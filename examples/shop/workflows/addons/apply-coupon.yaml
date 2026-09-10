@@ -1,0 +1,6 @@
+execution:
+  steps:
+    - node: applyCoupon
+      description: Apply a coupon to the cart
+      values:
+        cartId: AUTOWIRE

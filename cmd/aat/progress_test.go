@@ -63,6 +63,24 @@ func TestCLIProgressObserver_StepComplete_WithRetries(t *testing.T) {
 	assert.Contains(t, output, "after 2 retries")
 }
 
+func TestCLIProgressObserver_StepComplete_RecoveredAfterRetries(t *testing.T) {
+	var buf bytes.Buffer
+	obs := &CLIProgressObserver{out: &buf, term: noColorTerm}
+
+	obs.OnStepComplete(0, 1, engine.StepResult{
+		Node:       "getShipment",
+		StatusCode: 200,
+		Response:   &adapter.Response{StatusCode: 200},
+		RetryCount: 2,
+		RetriedOn:  []engine.ErrorCategory{engine.CategoryTransient, engine.CategoryTransient},
+	})
+
+	output := buf.String()
+	assert.Contains(t, output, "200")
+	assert.Contains(t, output, "retried 2x: transient")
+	assert.NotContains(t, output, "ERROR")
+}
+
 func TestCLIProgressObserver_StepComplete_DisplayOutputs(t *testing.T) {
 	var buf bytes.Buffer
 	obs := &CLIProgressObserver{out: &buf, term: noColorTerm}

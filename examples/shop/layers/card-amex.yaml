@@ -1,0 +1,5 @@
+name: card-amex
+description: Pay with an American Express test card
+selectionHint: A 15-digit card number
+inputs:
+  cardNumber: "378282246310005"

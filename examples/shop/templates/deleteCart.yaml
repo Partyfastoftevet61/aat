@@ -1,0 +1,8 @@
+adapter: deleteCart
+protocol: http
+
+request:
+  method: DELETE
+  path: /carts/{{cartId}}
+
+response: {}

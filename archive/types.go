@@ -51,6 +51,7 @@ type StepRecord struct {
 	OASValidation     *OASValidationRecord     `json:"oasValidation,omitempty"`
 	Error             string                   `json:"error,omitempty"`
 	RetryCount        int                      `json:"retryCount,omitempty"`
+	RetriedOn         []string                 `json:"retriedOn,omitempty"` // error category of each retried attempt, in order
 }
 
 // DisplayOutputRecord captures an output value tagged for display.

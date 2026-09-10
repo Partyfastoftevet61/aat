@@ -1,0 +1,18 @@
+adapter: listProducts
+protocol: http
+
+request:
+  method: GET
+  path: /products{{?category}}?category={{category}}{{/category}}
+
+response:
+  extract:
+    currency: currency
+    products:
+      path: products
+      fields:
+        sku: sku
+        name: name
+        category: category
+        price: price
+        inStock: inStock

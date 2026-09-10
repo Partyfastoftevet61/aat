@@ -1,0 +1,15 @@
+name: shop
+description: Offline e-commerce sandbox (aat-sandbox), AAT's primary quick start
+tags: [quickstart, e-commerce, sandbox, offline]
+graph: graph.yaml
+templates: templates/
+domain: domain.yaml
+workflows: workflows/
+layers: layers/
+plans: plans/
+visualizers: visualizers/
+oas: openapi.yaml
+environment: env.yaml
+defaultEnvironment: us
+archives: _output/runs
+traces: _output/traces

@@ -1,0 +1,5 @@
+name: delivery-soon
+description: Request delivery three days from the run date
+selectionHint: A near delivery date
+inputs:
+  checkoutCart.deliveryDate: "{{today + 3 days}}"

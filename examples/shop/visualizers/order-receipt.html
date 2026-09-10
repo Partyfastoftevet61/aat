@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Order receipt</title>
+<style>
+  body {
+    margin: 0;
+    padding: 12px;
+    background: var(--color-bg, #0f1117);
+    color: var(--color-text, #e4e4e7);
+    font-family: var(--font-sans, system-ui, sans-serif);
+    font-size: 14px;
+  }
+  .receipt {
+    max-width: 560px;
+    padding: 16px 20px;
+    border: 1px solid var(--color-border, #2a2d3a);
+    border-radius: 8px;
+    background: var(--color-surface, #171a23);
+  }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  h1 { margin: 0; font-size: 16px; }
+  .meta, .muted { color: var(--color-text-secondary, #a1a1aa); }
+  .meta { font-size: 12px; margin-top: 2px; }
+  .badge {
+    padding: 2px 8px;
+    border: 1px solid var(--color-border, #2a2d3a);
+    border-radius: 999px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 6px 0; text-align: left; }
+  th { border-bottom: 1px solid var(--color-border, #2a2d3a); color: var(--color-text-secondary, #a1a1aa); font-size: 12px; font-weight: 500; }
+  .num { text-align: right; font-family: var(--font-mono, ui-monospace, monospace); }
+  tfoot td { padding: 3px 0; }
+  tfoot tr:first-child td { padding-top: 10px; }
+  tr.total td { padding-top: 8px; border-top: 1px solid var(--color-border, #2a2d3a); font-size: 15px; font-weight: 600; }
+  .discount { color: var(--color-success, #4ade80); }
+</style>
+</head>
+<body>
+<div id="root" class="receipt"><p class="muted">Waiting for data…</p></div>
+<script>
+(function () {
+  'use strict';
+
+  // Build nodes with textContent only: the body comes from the API under test.
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (key) {
+      if (key === 'text') {
+        node.textContent = attrs[key];
+      } else {
+        node.setAttribute(key, attrs[key]);
+      }
+    });
+    (children || []).forEach(function (child) {
+      if (child) node.appendChild(child);
+    });
+    return node;
+  }
+
+  function money(minor, currency) {
+    try {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency }).format(minor / 100);
+    } catch (e) {
+      return (minor / 100).toFixed(2) + ' ' + currency;
+    }
+  }
+
+  function totalRow(label, value, cls) {
+    return el('tr', cls ? { 'class': cls } : null, [
+      el('td', { colspan: '3', text: label }),
+      el('td', { 'class': 'num', text: value })
+    ]);
+  }
+
+  function render(order) {
+    var root = document.getElementById('root');
+    root.textContent = '';
+    if (!order || !order.receiptNumber) {
+      root.appendChild(el('p', { 'class': 'muted', text: 'This response is not an order.' }));
+      return;
+    }
+    var currency = order.currency || 'USD';
+
+    var meta = [order.orderId, order.shippingTier && order.shippingTier + ' shipping', order.postalCode, order.customerEmail]
+      .filter(Boolean).join(' · ');
+    var state = [order.status, order.paymentStatus].filter(Boolean).join(' · ').replace(/_/g, ' ');
+    root.appendChild(el('header', null, [
+      el('div', null, [el('h1', { text: 'Receipt ' + order.receiptNumber }), el('div', { 'class': 'meta', text: meta })]),
+      el('span', { 'class': 'badge', text: state })
+    ]));
+
+    var lines = el('tbody');
+    (order.lines || []).forEach(function (line) {
+      lines.appendChild(el('tr', null, [
+        el('td', { text: line.name || line.sku }),
+        el('td', { 'class': 'num', text: '×' + line.quantity }),
+        el('td', { 'class': 'num muted', text: money(line.unitPrice, currency) }),
+        el('td', { 'class': 'num', text: money(line.lineTotal, currency) })
+      ]));
+    });
+
+    var discountLabel = 'Discount' + (order.couponCode ? ' (' + order.couponCode + ')' : '');
+    var totals = el('tfoot', null, [
+      totalRow('Subtotal', order.subtotalDisplay),
+      order.discount ? totalRow(discountLabel, '−' + order.discountDisplay, 'discount') : null,
+      totalRow('Shipping', order.shippingDisplay),
+      totalRow(order.taxLabel || 'Tax', order.taxDisplay, 'muted'),
+      totalRow('Total', order.totalDisplay, 'total')
+    ]);
+
+    root.appendChild(el('table', null, [
+      el('thead', null, [el('tr', null, [
+        el('th', { text: 'Item' }),
+        el('th', { 'class': 'num', text: 'Qty' }),
+        el('th', { 'class': 'num', text: 'Unit' }),
+        el('th', { 'class': 'num', text: 'Amount' })
+      ])]),
+      lines,
+      totals
+    ]));
+  }
+
+  window.addEventListener('message', function (event) {
+    var msg = event.data;
+    if (!msg || msg.type !== 'aat-visualizer-data') return;
+    Object.keys(msg.theme || {}).forEach(function (name) {
+      document.documentElement.style.setProperty(name, msg.theme[name]);
+    });
+    render(msg.body);
+    requestAnimationFrame(function () {
+      parent.postMessage({ type: 'aat-visualizer-resize', height: document.documentElement.scrollHeight }, '*');
+    });
+  });
+
+  parent.postMessage({ type: 'aat-visualizer-ready' }, '*');
+})();
+</script>
+</body>
+</html>

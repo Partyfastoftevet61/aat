@@ -1,0 +1,9 @@
+execution:
+  steps:
+    - node: paymentCharge
+      description: Pay with the $500 demo gift card
+      values:
+        method: gift_card
+        giftCardCode: GC-500-DEMO
+        # Explicitly absent, so neither the graph default nor a card layer adds one.
+        cardNumber: {}

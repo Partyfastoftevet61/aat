@@ -1,0 +1,42 @@
+intent:
+  goal: shipOrder
+  description: Check out a cart as a chosen kind of customer, pay by a chosen method, and ship
+
+execution:
+  steps:
+    - node: listProducts
+      description: Browse the catalog
+
+    - slot: customer
+      dependsOn: [listProducts]
+
+    - node: addItem
+      dependsOn: [customer]
+      description: Add the first in-stock product
+
+    - node: getCart
+      dependsOn: [addItem]
+      description: Read the cart back with names and prices joined in
+
+    - id: checkout
+      node: checkoutCart
+      dependsOn: [getCart]
+      description: Price the cart and create the order
+
+    - slot: payment
+      dependsOn: [checkout]
+
+    - node: shipOrder
+      dependsOn: [payment]
+      isGoal: true
+      description: Ship the paid order
+
+  # Verification lives in the base template: slot and addon verification is not
+  # composed. Returned covers the Return After Delivery addon.
+  verification:
+    - node: getOrder
+      purpose: The order reached fulfilment (shipped, or returned when the return addon runs)
+      assertions:
+        mechanical:
+          - type: predicate
+            expr: 'status == "shipped" || status == "returned"'

@@ -1,0 +1,5 @@
+name: coupon-freeship
+description: The FREESHIP coupon (free shipping on any tier)
+selectionHint: A shipping discount; the subtotal is unchanged
+inputs:
+  applyCoupon.code: FREESHIP

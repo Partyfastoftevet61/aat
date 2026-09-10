@@ -1,0 +1,13 @@
+adapter: getShipment
+protocol: http
+
+request:
+  method: GET
+  path: /shipments/{{shipmentId}}
+
+response:
+  extract:
+    shipmentId: shipmentId
+    status: status
+    trackingNumber: trackingNumber
+    eta: eta

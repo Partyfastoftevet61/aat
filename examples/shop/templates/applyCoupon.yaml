@@ -1,0 +1,16 @@
+adapter: applyCoupon
+protocol: http
+
+request:
+  method: POST
+  path: /carts/{{cartId}}/coupon
+  headers:
+    Content-Type: application/json
+  body: |
+    { "code": "{{code}}" }
+
+response:
+  extract:
+    couponCode: couponCode
+    discount: discount
+    discountDisplay: discountDisplay

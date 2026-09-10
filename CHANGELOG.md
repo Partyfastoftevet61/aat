@@ -14,6 +14,13 @@ the graph and plan formats may still change before 1.0.
   The contract lives in `examples/shop/openapi.yaml`; the server tests validate every response
   against it. `make build` builds both binaries; `make sandbox` builds only the demo server.
   The sandbox binds `127.0.0.1` unless `--host` says otherwise.
+- `examples/shop`, the offline quick-start project for `aat-sandbox`: a 17-operation graph, Quick
+  Purchase and Checkout workflows with slots and addons, 12 layers, 7 plans (full order lifecycle,
+  retries, a negative state-machine walk, `addItem` mutations), a declined-card overlay, a receipt
+  visualizer, `us`/`eu` environments with payments routed to their own host and credential, and MCP
+  configuration for AI coding tools.
+- A step that succeeds after retrying shows `retried Nx: <category>` in run output, and archives record
+  the category of each retried attempt in `retriedOn`.
 - `status` assertions accept a status class such as `expect: 2xx` or `expect: 4xx`.
 - `aat validate` checks the layers directory: parse errors, duplicate layer names, and layer input keys
   that match no node input (which layers silently ignored).
@@ -71,6 +78,8 @@ the graph and plan formats may still change before 1.0.
 - MCP `execute_plan` applies override values, `expectFailure`, and recipe layers like `aat run plan`.
 - `aat plan list` summarizes recipes instead of reporting a parse error for each.
 - `--verbose-auth` no longer prints the full access token in the logged token response.
+- `aat validate`, `aat generate --oas`, and the MCP OpenAPI operation details include parameters
+  declared on an OpenAPI path item (such as a shared `{cartId}`), not only those on the operation.
 
 ## [0.0.4] - 2026-03-04
 

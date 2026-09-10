@@ -1,0 +1,583 @@
+version: "1.0.0"
+title: AAT Shop
+description: >-
+  The offline e-commerce API served by aat-sandbox: catalog, carts, orders, and shipments on
+  the shop API (OAuth2 bearer token), charges and refunds on a separately hosted payments API
+  (API key). Every call runs in the region (us or eu) that the environment's base URL selects.
+
+# Contract for static checks (aat validate) and runtime validation (--oas-validate).
+oas: openapi.yaml
+
+nodes:
+  # --- Catalog -------------------------------------------------------------
+
+  listProducts:
+    description: List the catalog with region prices, optionally filtered by category
+    adapter: listProducts
+    tags: [catalog]
+    oas:
+      operationId: listProducts
+    inputs:
+      - name: category
+        type: enum[gear, apparel, footwear]
+        description: Only list products in this category
+        optional: true
+    outputs:
+      - name: currency
+        type: string
+        description: Currency of every price in the region
+      - name: products
+        type: product[]
+        description: Catalog entries; SKU-1005 is always out of stock
+        elementFields:
+          - name: sku
+            type: string
+          - name: name
+            type: string
+          - name: category
+            type: string
+          - name: price
+            type: integer
+          - name: inStock
+            type: boolean
+    satisfies: [catalogBrowsed]
+
+  checkInventory:
+    description: >-
+      Check stock for one SKU. Answers 200 with status OK or ERROR; the first read of SKU-1004
+      in each session is a stale ERROR that a retry clears.
+    adapter: checkInventory
+    tags: [catalog]
+    oas:
+      operationId: checkInventory
+    inputs:
+      - name: sku
+        type: string
+        description: Product SKU
+        default: SKU-1004
+    outputs:
+      - name: status
+        type: string
+        description: OK, or ERROR when the read failed
+      - name: sku
+        type: string
+      - name: available
+        type: integer
+        description: Units in stock
+    # The API reports this failure inside a 200 response; surface it as a
+    # response_error so retry rules can act on it.
+    errorDetection:
+      - path: status
+        rule: equals
+        value: ERROR
+        details:
+          code: errorCode
+          message: errorMessage
+    requires: [catalogBrowsed]
+
+  # --- Carts ---------------------------------------------------------------
+
+  createCart:
+    description: Open a cart; a customer email makes it a registered customer's cart
+    adapter: createCart
+    tags: [carts]
+    oas:
+      operationId: createCart
+    inputs:
+      - name: customerEmail
+        type: string
+        description: Registered customer's email; omit for a guest cart
+        optional: true
+    outputs:
+      - name: cartId
+        type: string
+      - name: status
+        type: string
+    cleanup: deleteCart
+    satisfies: [cartOpen]
+
+  addItem:
+    description: >-
+      Add a product to a cart; adding a SKU again merges quantities. Rejects bad input (400),
+      an unknown cart (404), a checked-out cart (409 CART_NOT_OPEN), an unknown SKU (404), and
+      more than is in stock (409 OUT_OF_STOCK).
+    adapter: addItem
+    tags: [carts]
+    oas:
+      operationId: addItem
+    inputs:
+      - name: cartId
+        type: string
+        default:
+          from: createCart.cartId
+      - name: sku
+        type: string
+        description: SKU to add; defaults to the first in-stock product listed by listProducts
+        default:
+          from: listProducts.products
+          select:
+            strategy: match
+            field: sku
+            filter: inStock == true
+      - name: quantity
+        type: integer
+        default: 1
+    outputs:
+      - name: cartId
+        type: string
+      - name: lineCount
+        type: integer
+      - name: subtotal
+        type: integer
+        description: Minor units
+    requires: [cartOpen]
+    satisfies: [cartPopulated]
+
+  getCart:
+    description: >-
+      Read a cart. The API returns lines as SKU and quantity only, with names and prices in a
+      separate products array; the template's Lua transform joins them into each line.
+    adapter: getCart
+    tags: [carts]
+    oas:
+      operationId: getCart
+    inputs:
+      - name: cartId
+        type: string
+        default:
+          from: createCart.cartId
+    outputs:
+      - name: cartId
+        type: string
+      - name: status
+        type: string
+      - name: lineCount
+        type: integer
+      - name: subtotal
+        type: integer
+      - name: subtotalDisplay
+        type: string
+      - name: lines
+        type: cartLine[]
+        description: Cart lines joined with product name and unit price
+        elementFields:
+          - name: sku
+            type: string
+          - name: quantity
+            type: integer
+          - name: name
+            type: string
+          - name: price
+            type: integer
+    requires: [cartOpen]
+
+  applyCoupon:
+    description: >-
+      Apply a coupon to an open cart. SAVE10 (10% off) and FREESHIP work in every region,
+      EU-ONLY only in eu (422 elsewhere); unknown codes are 404.
+    adapter: applyCoupon
+    tags: [carts]
+    oas:
+      operationId: applyCoupon
+    inputs:
+      - name: cartId
+        type: string
+        default:
+          from: createCart.cartId
+      - name: code
+        type: string
+        description: Coupon code
+        default: SAVE10
+    outputs:
+      - name: couponCode
+        type: string
+      - name: discount
+        type: integer
+      - name: discountDisplay
+        type: string
+    requires: [cartOpen]
+
+  checkoutCart:
+    description: >-
+      Price a cart for the region and shipping tier and create an order (created, unpaid).
+      US adds 8.25% sales tax; EU prices include 20% VAT and have no overnight tier
+      (422 TIER_NOT_AVAILABLE).
+    adapter: checkoutCart
+    tags: [carts, orders]
+    oas:
+      operationId: checkoutCart
+    inputs:
+      - name: cartId
+        type: string
+        default:
+          from: createCart.cartId
+      - name: shippingTier
+        type: enum[standard, express, overnight]
+        default: standard
+      - name: postalCode
+        type: string
+        description: Delivery postal code; each environment supplies one for its region
+        default: "{{env.postalCode}}"
+      - name: customerEmail
+        type: string
+        description: Overrides the cart's customer email on the order
+        optional: true
+      - name: deliveryDate
+        type: date
+        description: Requested delivery date
+        optional: true
+      - name: notes
+        type: string
+        optional: true
+    outputs:
+      - name: orderId
+        type: string
+        display: Order
+      - name: receiptNumber
+        type: string
+        display: Receipt
+      - name: status
+        type: string
+      - name: currency
+        type: string
+      - name: subtotal
+        type: integer
+      - name: discount
+        type: integer
+      - name: shipping
+        type: integer
+      - name: tax
+        type: integer
+      - name: taxLabel
+        type: string
+        display: Tax
+      - name: total
+        type: integer
+        description: Amount to charge, in minor units
+      - name: totalDisplay
+        type: string
+        display: Total
+    cleanup: deleteOrder
+    requires: [cartPopulated]
+    satisfies: [orderCreated]
+
+  deleteCart:
+    description: Delete a cart in any state (the cleanup for createCart)
+    adapter: deleteCart
+    tags: [carts, cleanup]
+    oas:
+      operationId: deleteCart
+    inputs:
+      - name: cartId
+        type: string
+    outputs: []
+
+  # --- Orders and shipments ------------------------------------------------
+
+  getOrder:
+    description: Read an order with its status and payment status
+    adapter: getOrder
+    tags: [orders]
+    oas:
+      operationId: getOrder
+    inputs:
+      - name: orderId
+        type: string
+        default:
+          from: checkoutCart.orderId
+    outputs:
+      - name: orderId
+        type: string
+      - name: status
+        type: string
+        description: created, paid, shipped, delivered, returned, or cancelled
+      - name: paymentStatus
+        type: string
+        description: unpaid, captured, partially_refunded, or refunded
+      - name: total
+        type: integer
+      - name: totalDisplay
+        type: string
+    requires: [orderCreated]
+
+  cancelOrder:
+    description: Cancel a created or paid order; later states answer 409 INVALID_TRANSITION
+    adapter: cancelOrder
+    tags: [orders]
+    oas:
+      operationId: cancelOrder
+    inputs:
+      - name: orderId
+        type: string
+        default:
+          from: checkoutCart.orderId
+    outputs:
+      - name: status
+        type: string
+      - name: paymentStatus
+        type: string
+    requires: [orderCreated]
+
+  shipOrder:
+    description: Ship a paid order (takes about 600 ms); other states answer 409 INVALID_TRANSITION
+    adapter: shipOrder
+    tags: [orders, shipments]
+    oas:
+      operationId: shipOrder
+    inputs:
+      - name: orderId
+        type: string
+        default:
+          from: checkoutCart.orderId
+    outputs:
+      - name: shipmentId
+        type: string
+      - name: status
+        type: string
+      - name: orderStatus
+        type: string
+      - name: trackingNumber
+        type: string
+        display: Tracking
+      - name: eta
+        type: string
+    requires: [orderPaid]
+    satisfies: [orderShipped]
+
+  getShipment:
+    description: >-
+      Track a shipment. The carrier answers 503 with Retry-After for the first two reads of
+      every shipment, then returns tracking data.
+    adapter: getShipment
+    tags: [shipments]
+    oas:
+      operationId: getShipment
+    inputs:
+      - name: shipmentId
+        type: string
+        default:
+          from: shipOrder.shipmentId
+    outputs:
+      - name: shipmentId
+        type: string
+      - name: status
+        type: string
+      - name: trackingNumber
+        type: string
+      - name: eta
+        type: string
+    requires: [orderShipped]
+
+  deliverShipment:
+    description: Mark a shipment delivered, moving its order from shipped to delivered
+    adapter: deliverShipment
+    tags: [shipments]
+    oas:
+      operationId: deliverShipment
+    inputs:
+      - name: shipmentId
+        type: string
+        default:
+          from: shipOrder.shipmentId
+    outputs:
+      - name: status
+        type: string
+      - name: orderStatus
+        type: string
+    requires: [orderShipped]
+    satisfies: [orderDelivered]
+
+  createReturn:
+    description: Return a delivered order; other states answer 409 INVALID_TRANSITION
+    adapter: createReturn
+    tags: [orders]
+    oas:
+      operationId: createReturn
+    inputs:
+      - name: orderId
+        type: string
+        default:
+          from: checkoutCart.orderId
+      - name: reason
+        type: string
+        default: Did not fit
+    outputs:
+      - name: returnId
+        type: string
+      - name: rmaNumber
+        type: string
+        display: RMA
+      - name: orderStatus
+        type: string
+    requires: [orderDelivered]
+
+  deleteOrder:
+    description: Delete an order in any state (the cleanup for checkoutCart)
+    adapter: deleteOrder
+    tags: [orders, cleanup]
+    oas:
+      operationId: deleteOrder
+    inputs:
+      - name: orderId
+        type: string
+    outputs: []
+
+  # --- Payments (separate host and credential; see env.yaml overrides) ------
+
+  paymentCharge:
+    description: >-
+      Charge an order on the payments API (takes about 350 ms). Amount and currency must match
+      the order (422). Card 4000000000000002 is declined (402); gift card GC-10-DEMO is short
+      (402); GC-500-DEMO covers any demo order.
+    adapter: paymentCharge
+    tags: [payments]
+    oas:
+      operationId: paymentCharge
+    inputs:
+      - name: orderId
+        type: string
+        default:
+          from: checkoutCart.orderId
+      - name: amount
+        type: integer
+        description: Order total in minor units
+        default:
+          from: checkoutCart.total
+      - name: currency
+        type: string
+        default:
+          from: checkoutCart.currency
+      - name: method
+        type: enum[card, gift_card, paypal]
+        default: card
+      - name: cardNumber
+        type: string
+        optional: true
+        default: "4242424242424242"
+      - name: giftCardCode
+        type: string
+        optional: true
+      - name: paypalEmail
+        type: string
+        optional: true
+    outputs:
+      - name: paymentId
+        type: string
+      - name: status
+        type: string
+      - name: orderStatus
+        type: string
+      - name: amountDisplay
+        type: string
+        display: Charged
+    requires: [orderCreated]
+    satisfies: [orderPaid]
+
+  paymentRefund:
+    description: >-
+      Refund an order's payment on the payments API. Omit amount to refund the remaining
+      balance; a partial refund leaves the payment partially_refunded; 409 when nothing is left.
+    adapter: paymentRefund
+    tags: [payments]
+    oas:
+      operationId: paymentRefund
+    inputs:
+      - name: orderId
+        type: string
+        default:
+          from: checkoutCart.orderId
+      - name: amount
+        type: integer
+        description: Minor units; omit to refund the remaining balance
+        optional: true
+    outputs:
+      - name: refundId
+        type: string
+      - name: amount
+        type: integer
+      - name: amountDisplay
+        type: string
+        display: Refunded
+    requires: [orderPaid]
+
+workflows:
+  # --- Base workflows ------------------------------------------------------
+
+  - name: Quick Purchase
+    description: Browse, add the first in-stock product to a guest cart, check out, and pay by card
+    template: workflows/quick-purchase.yaml
+    selectionHint: The shortest end-to-end purchase; ends at payment, so payment negative tests fit here
+
+  - name: Checkout
+    description: Buy as a guest or registered customer, pay by card, gift card, or PayPal, and ship
+    template: workflows/checkout.yaml
+    selectionHint: Use when the customer type or payment method matters, or with coupon, tracking, or return addons
+    slots:
+      - name: customer
+        description: Who is buying
+        options: [Guest, Registered]
+        default: Guest
+      - name: payment
+        description: How the order is paid
+        options: [Card, Gift Card, PayPal]
+        default: Card
+
+  # --- Slot options --------------------------------------------------------
+
+  - name: Guest
+    kind: slot
+    description: A guest cart with no customer email
+    template: workflows/slots/customer-cart.yaml
+
+  - name: Registered
+    kind: slot
+    description: A registered customer's cart; the email is injected into every step that accepts it
+    template: workflows/slots/customer-cart.yaml
+    inject:
+      customerEmail: demo@example.com
+
+  - name: Card
+    kind: slot
+    description: Pay by card (the number comes from the graph default or a card layer)
+    template: workflows/slots/payment-card.yaml
+
+  - name: Gift Card
+    kind: slot
+    description: Pay with the $500 demo gift card
+    template: workflows/slots/payment-gift-card.yaml
+
+  - name: PayPal
+    kind: slot
+    description: Pay with PayPal
+    template: workflows/slots/payment-paypal.yaml
+
+  # --- Addons --------------------------------------------------------------
+
+  - name: Inventory Check
+    kind: addon
+    description: Check stock for the rain shell after browsing, retrying its stale first read
+    template: workflows/addons/inventory-check.yaml
+    after: listProducts
+
+  - name: Apply Coupon
+    kind: addon
+    description: Apply a coupon (SAVE10 unless a coupon layer picks another) after adding items
+    template: workflows/addons/apply-coupon.yaml
+    after: addItem
+    # The cart comes from a slot, which addon compatibility checks cannot see,
+    # so name its producer explicitly.
+    wire:
+      cartId: createCart.cartId
+
+  - name: Track Shipment
+    kind: addon
+    description: Track the shipment after it ships, retrying while the carrier warms up
+    template: workflows/addons/track-shipment.yaml
+    after: shipOrder
+
+  - name: Return After Delivery
+    kind: addon
+    description: Deliver the shipment, return the order, and refund the payment
+    template: workflows/addons/return-after-delivery.yaml
+    after: shipOrder
+    priority: 90

@@ -1,0 +1,11 @@
+adapter: deliverShipment
+protocol: http
+
+request:
+  method: POST
+  path: /shipments/{{shipmentId}}/deliver
+
+response:
+  extract:
+    status: status
+    orderStatus: orderStatus

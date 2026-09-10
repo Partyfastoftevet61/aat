@@ -1,0 +1,9 @@
+execution:
+  steps:
+    - node: getShipment
+      description: Track the shipment; the carrier answers 503 until tracking data is ready
+      values:
+        shipmentId: AUTOWIRE
+      retry:
+        max: 3
+        on: [transient]

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/gburgyan/aat/engine"
@@ -56,11 +57,14 @@ func (o *CLIProgressObserver) OnStepComplete(index, total int, result engine.Ste
 		if color {
 			durStr = colorDim + durStr + colorReset
 		}
-		validMark := ""
-		if result.Validation != nil && !result.Validation.Passed {
-			validMark = "  " + colorize("ASSERTIONS FAILED", colorYellow, color)
+		marks := ""
+		if note := retryNote(result); note != "" {
+			marks += "  " + colorize(note, colorYellow, color)
 		}
-		_, _ = fmt.Fprintf(o.out, "%s %s  %s%s\n", prefix, status, durStr, validMark)
+		if result.Validation != nil && !result.Validation.Passed {
+			marks += "  " + colorize("ASSERTIONS FAILED", colorYellow, color)
+		}
+		_, _ = fmt.Fprintf(o.out, "%s %s  %s%s\n", prefix, status, durStr, marks)
 		for _, do := range result.DisplayOutputs {
 			_, _ = fmt.Fprintf(o.out, "%*s%s: %v\n", indent, "", do.Label, do.Value)
 		}
@@ -124,6 +128,27 @@ func (o *CLIProgressObserver) OnRetryStart(attempt, maxAttempts int) {
 		label = colorYellow + label + colorReset
 	}
 	_, _ = fmt.Fprintf(o.out, "\n%s\n", label)
+}
+
+// retryNote summarizes the retries behind a step that got a response, such as
+// "retried 2x: transient". It is empty when the step did not retry.
+func retryNote(result engine.StepResult) string {
+	if result.RetryCount == 0 {
+		return ""
+	}
+	var categories []string
+	seen := make(map[string]bool)
+	for _, c := range result.RetriedOn {
+		if name := c.String(); !seen[name] {
+			seen[name] = true
+			categories = append(categories, name)
+		}
+	}
+	note := fmt.Sprintf("retried %dx", result.RetryCount)
+	if len(categories) > 0 {
+		note += ": " + strings.Join(categories, ", ")
+	}
+	return note
 }
 
 // observerTotalDuration sums the duration of all steps and cleanup.

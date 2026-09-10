@@ -1,0 +1,6 @@
+execution:
+  steps:
+    - node: paymentCharge
+      description: Pay by card
+      values:
+        method: card

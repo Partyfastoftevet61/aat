@@ -1,0 +1,12 @@
+adapter: checkInventory
+protocol: http
+
+request:
+  method: GET
+  path: /inventory/{{sku}}
+
+response:
+  extract:
+    status: status
+    sku: sku
+    available: available

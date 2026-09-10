@@ -1,0 +1,106 @@
+# The whole order lifecycle in one plan: browse, check stock (retrying a stale read),
+# build a two-item cart, apply a coupon, check out, pay on the payments host, ship,
+# track (retrying while the carrier warms up), deliver, return, and refund.
+intent:
+  goal: paymentRefund
+  description: Every order state from browsing to a refunded return
+
+execution:
+  steps:
+    - node: listProducts
+      description: Browse the catalog
+
+    - node: checkInventory
+      dependsOn: [listProducts]
+      description: Check stock for the rain shell; its first read in a session is stale
+      values:
+        sku: SKU-1004
+      retry:
+        max: 2
+        on: [response_error]
+
+    - node: createCart
+      dependsOn: [checkInventory]
+      description: Open a registered customer's cart
+      values:
+        customerEmail: demo@example.com
+
+    - id: addProduct
+      node: addItem
+      dependsOn: [createCart]
+      description: Add the first in-stock product from the catalog
+
+    - id: addSocks
+      node: addItem
+      dependsOn: [addProduct]
+      description: Add two pairs of wool socks
+      values:
+        sku: SKU-1006
+        quantity: 2
+
+    - node: getCart
+      dependsOn: [addSocks]
+      description: Read the cart back; the Lua transform joins names and prices into the lines
+      assertions:
+        mechanical:
+          - type: predicate
+            expr: lineCount == 2
+
+    - node: applyCoupon
+      dependsOn: [getCart]
+      description: Apply a coupon (SAVE10 unless a coupon layer picks another)
+
+    - id: checkout
+      node: checkoutCart
+      dependsOn: [applyCoupon]
+      description: Price the cart for the region and create the order
+      values:
+        notes: Leave with the concierge
+      assertions:
+        mechanical:
+          - type: predicate
+            expr: total > 0 && tax > 0
+
+    - node: paymentCharge
+      dependsOn: [checkout]
+      description: Charge the order total on the payments host
+
+    - node: shipOrder
+      dependsOn: [paymentCharge]
+      description: Ship the paid order
+
+    - node: getShipment
+      dependsOn: [shipOrder]
+      description: Track the shipment; the carrier answers 503 twice before tracking is ready
+      retry:
+        max: 3
+        on: [transient]
+
+    - node: deliverShipment
+      dependsOn: [getShipment]
+      description: Mark the shipment delivered
+
+    - node: createReturn
+      dependsOn: [deliverShipment]
+      description: Return the delivered order
+      values:
+        reason: Wrong size
+
+    - node: paymentRefund
+      dependsOn: [createReturn]
+      isGoal: true
+      description: Refund the whole payment
+
+  verification:
+    - node: getOrder
+      purpose: The order ends returned with its payment fully refunded
+      assertions:
+        mechanical:
+          - type: predicate
+            expr: 'status == "returned" && paymentStatus == "refunded"'
+
+  cleanup:
+    - node: deleteOrder
+      runOn: always
+    - node: deleteCart
+      runOn: always

@@ -1,0 +1,34 @@
+adapter: getCart
+protocol: http
+
+request:
+  method: GET
+  path: /carts/{{cartId}}
+
+response:
+  extract:
+    cartId: cartId
+    status: status
+    lineCount: lineCount
+    subtotal: subtotal
+    subtotalDisplay: subtotalDisplay
+    lines:
+      path: lines
+      fields:
+        sku: sku
+        quantity: quantity
+  # Cart lines carry only a SKU and a quantity; names and prices sit in the
+  # top-level products array. Join them so every line reads on its own.
+  transform: |
+    local catalog = {}
+    for _, product in ipairs(json_path("products") or {}) do
+      catalog[product.sku] = product
+    end
+    for _, line in ipairs(outputs.lines or {}) do
+      local product = catalog[line.sku]
+      if product then
+        line.name = product.name
+        line.price = product.price
+      end
+    end
+    return outputs

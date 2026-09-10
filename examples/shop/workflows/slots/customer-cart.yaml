@@ -1,0 +1,6 @@
+# Shared by the Guest and Registered slot options; Registered differs only by
+# the customerEmail its graph entry injects.
+execution:
+  steps:
+    - node: createCart
+      description: Open a cart

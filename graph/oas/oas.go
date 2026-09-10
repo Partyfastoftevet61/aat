@@ -124,6 +124,39 @@ func FindOperation(model *v3high.Document, operationID string) (method string, p
 	return "", "", nil, nil, fmt.Errorf("operationId %q not found in spec", operationID)
 }
 
+// OperationParameters returns the parameters that apply to an operation: the
+// ones declared on its path item followed by the operation's own, where an
+// operation parameter replaces a path-item parameter with the same name and
+// location (OAS 3.0 §4.7.9). Path-item parameters are how most specs declare
+// shared path variables such as /carts/{cartId}.
+func OperationParameters(pathItem *v3high.PathItem, op *v3high.Operation) []*v3high.Parameter {
+	var params []*v3high.Parameter
+	index := make(map[string]int)
+	add := func(p *v3high.Parameter) {
+		if p == nil {
+			return
+		}
+		key := p.In + ":" + p.Name
+		if i, ok := index[key]; ok {
+			params[i] = p
+			return
+		}
+		index[key] = len(params)
+		params = append(params, p)
+	}
+	if pathItem != nil {
+		for _, p := range pathItem.Parameters {
+			add(p)
+		}
+	}
+	if op != nil {
+		for _, p := range op.Parameters {
+			add(p)
+		}
+	}
+	return params
+}
+
 // ResolveNodeSpec returns the effective OAS spec path for a node.
 // The node-level spec overrides the graph-level default. Returns empty string if neither is set.
 func ResolveNodeSpec(node *graph.Node, graphOAS string) string {

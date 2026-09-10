@@ -98,7 +98,7 @@ func (v *Validator) Validate(g *graph.Graph) *graph.SpecValidationResult {
 		}
 
 		// Rule 4: operationId must exist in spec
-		_, _, _, op, err := FindOperation(model, node.OAS.OperationID)
+		_, _, pathItem, op, err := FindOperation(model, node.OAS.OperationID)
 		if err != nil {
 			result.Issues = append(result.Issues, graph.SpecValidationIssue{
 				Severity: graph.SpecError,
@@ -109,7 +109,7 @@ func (v *Validator) Validate(g *graph.Graph) *graph.SpecValidationResult {
 		}
 
 		// Rule 5: graph inputs should exist in OAS parameters or request body
-		oasParamNames := collectInputNames(op)
+		oasParamNames := collectInputNames(pathItem, op)
 		for _, inp := range node.Inputs {
 			if _, exists := oasParamNames[inp.Name]; !exists {
 				result.Issues = append(result.Issues, graph.SpecValidationIssue{
@@ -125,7 +125,7 @@ func (v *Validator) Validate(g *graph.Graph) *graph.SpecValidationResult {
 		for _, inp := range node.Inputs {
 			graphInputNames[inp.Name] = true
 		}
-		for name := range collectRequiredInputs(op) {
+		for name := range collectRequiredInputs(pathItem, op) {
 			if !graphInputNames[name] {
 				result.Issues = append(result.Issues, graph.SpecValidationIssue{
 					Severity: graph.SpecWarning,
@@ -158,15 +158,14 @@ func (v *Validator) GetSpec(refPath string) *v3high.Document {
 	return v.specs[refPath]
 }
 
-// collectInputNames returns all parameter names and request body property names for an operation.
-func collectInputNames(op *v3high.Operation) map[string]bool {
+// collectInputNames returns all parameter names (path-item and operation level)
+// and request body property names for an operation.
+func collectInputNames(pathItem *v3high.PathItem, op *v3high.Operation) map[string]bool {
 	names := make(map[string]bool)
 
 	// Parameters (query, header, path, cookie)
-	for _, param := range op.Parameters {
-		if param != nil {
-			names[param.Name] = true
-		}
+	for _, param := range OperationParameters(pathItem, op) {
+		names[param.Name] = true
 	}
 
 	// Request body properties
@@ -186,13 +185,14 @@ func collectInputNames(op *v3high.Operation) map[string]bool {
 	return names
 }
 
-// collectRequiredInputs returns names of required parameters and required request body properties.
-func collectRequiredInputs(op *v3high.Operation) map[string]bool {
+// collectRequiredInputs returns names of required parameters (path-item and
+// operation level) and required request body properties.
+func collectRequiredInputs(pathItem *v3high.PathItem, op *v3high.Operation) map[string]bool {
 	names := make(map[string]bool)
 
 	// Required parameters
-	for _, param := range op.Parameters {
-		if param != nil && param.Required != nil && *param.Required {
+	for _, param := range OperationParameters(pathItem, op) {
+		if param.Required != nil && *param.Required {
 			names[param.Name] = true
 		}
 	}

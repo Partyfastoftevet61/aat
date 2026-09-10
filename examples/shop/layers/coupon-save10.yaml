@@ -1,0 +1,5 @@
+name: coupon-save10
+description: The SAVE10 coupon (10% off the subtotal)
+selectionHint: A percentage discount
+inputs:
+  applyCoupon.code: SAVE10

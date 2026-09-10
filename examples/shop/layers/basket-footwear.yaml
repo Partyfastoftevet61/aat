@@ -1,0 +1,5 @@
+name: basket-footwear
+description: Browse footwear; Trail Runners are out of stock, so the Wool Socks are picked
+selectionHint: Pick to exercise the in-stock filter
+inputs:
+  listProducts.category: footwear
