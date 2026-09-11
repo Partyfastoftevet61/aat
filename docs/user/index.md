@@ -15,7 +15,7 @@ aat run plan full-lifecycle
 ## Start Here
 
 - **[Shop example](examples/shop.md)** — watch AAT drive a realistic API in a minute, offline: an order through every state, a layer matrix, two regions, negative tests
-- **[Quickstart](quickstart.md)** — go from an OpenAPI spec to a passing, self-cleaning test in five minutes
+- **[Petstore Quickstart](quickstart.md)** — go from an OpenAPI spec to a passing, self-cleaning test in five minutes
 - **[MCP Server](mcp-server.md)** — give Claude Code or another MCP client your graph and the tools to write and run tests
 - **[Share your API with integrators](integration-kit.md)** — package part of the project your tests use, so your integrators' AI tools learn the API from it
 
@@ -27,7 +27,7 @@ Before v0.1.0 is released, build from source: see [Install](install.md).
 |-------|------|--------------|
 | [Install](install.md) | 2 minutes | `aat` and `aat-sandbox` from a release, Homebrew, Docker, or source |
 | [Shop example](examples/shop.md) | 1 minute | A complete project running against the offline sandbox |
-| [Quickstart](quickstart.md) | 5 minutes | Your first graph, templates, and plan, scaffolded from the Petstore spec |
+| [Petstore Quickstart](quickstart.md) | 5 minutes | Your first graph, templates, and plan, scaffolded from the Petstore spec |
 | [Petstore Walkthrough](petstore-walkthrough.md) | 15 minutes | Every file of a small working project, explained |
 | [Tutorial](tutorial.md) | 45 minutes | A project built by hand: environments, plans, workflows, recipes, layers |
 
@@ -68,6 +68,7 @@ Progressive reading order — each builds on the previous.
 | Document | What you'll learn |
 |----------|-------------------|
 | [MCP Server](mcp-server.md) | IDE AI integration: transports, tools, resources, and personas |
+| [Share Your API with Integrators](integration-kit.md) | Packaging part of your test project as a kit that integrators' AI tools learn the API from |
 | [AI Assistant Primer](llms.md) | Structural reference for AI coding assistants working with AAT projects |
 | [Scaffolding from OpenAPI](generate.md) | What `aat generate` writes from a spec, and what to add by hand |
 | [Generating API Docs](docs-generate.md) | Markdown documentation from the graph with `aat docs generate` |

@@ -117,12 +117,12 @@ An addon is a workflow with `kind: addon`. It declares where to insert (`after`)
 
   - name: Cancel Booking
     kind: addon
-    after: confirmItinerary
+    after: confirmBooking
     priority: 90
     description: "Cancel the reservation after booking"
     template: workflows/addons/cancel-addon.yaml
     wire:
-      locator: confirmItinerary.locator
+      locator: confirmBooking.locator
 ```
 
 ### Workflow Field Reference
@@ -235,7 +235,7 @@ Steps in workflow templates often need inputs that come from the base workflow's
 ```yaml
     - node: addSeatOffer
       values:
-        itineraryId: AUTOWIRE
+        bookingId: AUTOWIRE
         seatOfferingId: {fromSelection: seat.seatIdentifierValue}
 ```
 
@@ -320,7 +320,7 @@ The `wire` map provides explicit input wiring for addon steps that can't be auto
 ```yaml
 wire:
   offerListIdentifier: $after.offerRef
-  locator: confirmItinerary.locator
+  locator: confirmBooking.locator
 ```
 
 Wire map entries take the form `inputName: stepId.outputName`. Two special syntaxes:
@@ -349,20 +349,20 @@ Priority matters when addons modify shared state:
 ```yaml
   - name: Retrieve Booking
     kind: addon
-    after: confirmItinerary
+    after: confirmBooking
     priority: 10          # composes first — retrieves the reservation
     wire:
-      identifier: confirmItinerary.locator
+      identifier: confirmBooking.locator
 
   - name: Cancel Booking
     kind: addon
-    after: confirmItinerary
+    after: confirmBooking
     priority: 90          # composes last — cancels the reservation
     wire:
-      locator: confirmItinerary.locator
+      locator: confirmBooking.locator
 ```
 
-Here, "Retrieve Booking" runs before "Cancel Booking" because it has a lower priority value — even though both attach after `confirmItinerary`.
+Here, "Retrieve Booking" runs before "Cancel Booking" because it has a lower priority value — even though both attach after `confirmBooking`.
 
 ### Step ID Prefixing
 
@@ -385,8 +385,8 @@ Here is how a recipe becomes an executable plan, illustrated with a booking exam
 The base workflow's template file is loaded. The result is a plan with slot markers:
 
 ```
-createItinerary → [slot: trip-search] → addTraveler → [slot: payment] →
-  addPayment → confirmItinerary
+createBooking → [slot: trip-search] → addTraveler → [slot: payment] →
+  addPayment → confirmBooking
 ```
 
 ### Step 2: Fill Slots
@@ -394,15 +394,15 @@ createItinerary → [slot: trip-search] → addTraveler → [slot: payment] →
 Each slot marker is replaced by its chosen option's steps:
 
 - `[slot: trip-search]` with `choices: {trip-search: Round-Trip}` becomes:
-  `searchFlights2Leg → searchOnwardLeg2 → priceOfferByRef → addOfferByRef`
+  `searchRoundTrip → searchReturnLeg → priceOfferByRef → addOfferByRef`
 - `[slot: payment]` with `choices: {payment: Cash}` becomes:
-  `addPaymentMethodCash`
+  `addCashPayment`
 
 Downstream `dependsOn` references to `trip-search` are rewritten to `addOfferByRef` (the last step of the Round-Trip option). Each option's `cleanup:` is merged into the base's, and so is its `verification:`: a node the option verifies replaces the base's verification of that node.
 
 ### Step 3: Resolve AUTOWIRE (Slots)
 
-After slot insertion, AUTOWIRE resolution runs across the entire plan. Inputs like `itineraryId: AUTOWIRE` on slot option steps are resolved to `createItinerary.itineraryId` by matching the output name.
+After slot insertion, AUTOWIRE resolution runs across the entire plan. Inputs like `bookingId: AUTOWIRE` on slot option steps are resolved to `createBooking.bookingId` by matching the output name.
 
 ### Step 4: Splice Addons
 
@@ -464,13 +464,13 @@ execution:
     - id: addTraveler1
       node: addTraveler
       values:
-        itineraryId: AUTOWIRE
+        bookingId: AUTOWIRE
 
     - id: addTraveler2
       node: addTraveler
       dependsOn: [addTraveler1]
       values:
-        itineraryId: AUTOWIRE
+        bookingId: AUTOWIRE
 ```
 
 A recipe selects the option with `choices: {travelers: Two Travelers}`. Steps that depended on the `travelers` slot now depend on `addTraveler2`, the option's last step, and an addon declared `after: addTraveler` attaches after `addTraveler2`. Each copy's other inputs come from graph default pools, or a recipe can set them per copy (`addTraveler2.surname: Jones`).
@@ -567,27 +567,27 @@ The base template uses slot markers that downstream steps depend on:
 # workflows/booking-base.yaml
 execution:
   steps:
-    - node: createItinerary
+    - node: createBooking
     - slot: trip-search
     - node: addTraveler
       dependsOn: [trip-search]
       values:
-        itineraryId: {from: createItinerary.itineraryId}
+        bookingId: {from: createBooking.bookingId}
     - slot: payment
       dependsOn: [trip-search]
     - node: addPayment
       dependsOn: [trip-search, payment, addTraveler]
       values:
-        itineraryId: {from: createItinerary.itineraryId}
+        bookingId: {from: createBooking.bookingId}
         totalPrice: AUTOWIRE
         currencyCode: AUTOWIRE
-    - node: confirmItinerary
+    - node: confirmBooking
       dependsOn: [addPayment]
       isGoal: true
       values:
-        itineraryId: {from: createItinerary.itineraryId}
+        bookingId: {from: createBooking.bookingId}
   cleanup:
-    - node: ignoreItinerary
+    - node: discardBooking
       runOn: always
 ```
 
@@ -599,9 +599,9 @@ The Cash slot option is a single step:
 # workflows/slots/payment/cash.yaml
 execution:
   steps:
-    - node: addPaymentMethodCash
+    - node: addCashPayment
       values:
-        itineraryId: {from: createItinerary.itineraryId}
+        bookingId: {from: createBooking.bookingId}
 ```
 
 The Card slot option is also a single step but with different inputs:
@@ -610,12 +610,12 @@ The Card slot option is also a single step but with different inputs:
 # workflows/slots/payment/card.yaml
 execution:
   steps:
-    - node: addPaymentMethodCard
+    - node: addCardPayment
       values:
-        itineraryId: {from: createItinerary.itineraryId}
+        bookingId: {from: createBooking.bookingId}
 ```
 
-When the recipe specifies `choices: {payment: Card}`, the `[slot: payment]` marker is replaced by the Card option's step. Downstream steps that depended on `payment` now depend on `addPaymentMethodCard`.
+When the recipe specifies `choices: {payment: Card}`, the `[slot: payment]` marker is replaced by the Card option's step. Downstream steps that depended on `payment` now depend on `addCardPayment`.
 
 ### Addon Composition: Seat Selection
 
@@ -651,13 +651,13 @@ execution:
           from: searchSeatMap.seatOfferings
           strategy: first
       values:
-        itineraryId: AUTOWIRE
+        bookingId: AUTOWIRE
         catalogOfferingsIdentifierValue: {from: searchSeatMap.catalogOfferingsIdentifierValue}
         seatOfferingIdentifierValue: {fromSelection: seat.seatIdentifierValue}
         seatAssignment: {fromSelection: seat.seatAssignment}
 ```
 
-When composed with a Round-Trip booking, `$after.offerRef` resolves to `priceOfferByRef.offerRef`, the AUTOWIRE `itineraryId` resolves to `createItinerary.itineraryId`, and step IDs become `inc0_searchSeatMap` and `inc0_addSeatOffer`.
+When composed with a Round-Trip booking, `$after.offerRef` resolves to `priceOfferByRef.offerRef`, the AUTOWIRE `bookingId` resolves to `createBooking.bookingId`, and step IDs become `inc0_searchSeatMap` and `inc0_addSeatOffer`.
 
 ---
 

@@ -1,4 +1,4 @@
-# Quickstart
+# Petstore Quickstart
 
 Get from an OpenAPI spec to a passing, self-cleaning API test in about five minutes. This guide uses the public [Swagger Petstore](https://petstore.swagger.io/) API, which needs no account; substitute your own spec and base URL to make it real.
 
@@ -162,7 +162,7 @@ The scaffolded `templates/deletePet.yaml` is already right. See [API Graphs](gra
 
 ## Step 4: Write a Plan
 
-A plan is the test itself. Create `plans/create-and-verify.yaml`:
+A plan is the test itself. Create a `plans` directory (`mkdir plans`) and `plans/create-and-verify.yaml` in it:
 
 ```yaml
 intent:
@@ -247,10 +247,14 @@ AAT ordered the steps, resolved each input (the literal `Buddy`, the `status` de
 
 ## Let an AI Assistant Take It from Here
 
-AAT's MCP server gives AI coding assistants such as Claude Code the graph, the templates, and tools to validate and run plans, so you can ask for tests in plain language and review the YAML they write:
+AAT's MCP server gives AI coding assistants such as Claude Code the graph, the templates, and tools to validate and run plans, so you can ask for tests in plain language and review the YAML they write. For Claude Code, register it in a `.mcp.json` in the project directory:
 
-```bash
-aat mcp serve
+```json
+{
+  "mcpServers": {
+    "petstore": {"command": "aat", "args": ["mcp", "serve", "--persona", "test"]}
+  }
+}
 ```
 
 Try prompts such as "add a test that finds pets by status and reads one back" or "write a negative test for getting a pet that does not exist". [MCP Server](mcp-server.md) shows how to register the server with your assistant, and the [AI Assistant Primer](llms.md) is the reference it reads.

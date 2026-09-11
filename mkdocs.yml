@@ -71,7 +71,7 @@ nav:
   - Home: index.md
   - Getting started:
       - Install: install.md
-      - Quickstart: quickstart.md
+      - Petstore Quickstart: quickstart.md
       - Petstore walkthrough: petstore-walkthrough.md
       - Tutorial: tutorial.md
   - Examples:

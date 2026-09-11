@@ -12,9 +12,10 @@ tests, a response visualizer, and MCP configuration for AI coding tools.
 aat-sandbox init shop && cd shop   # extract this project (in a source checkout: cd examples/shop)
 aat-sandbox serve &                # shop API on :8765, payments API on :8766
 aat run plan full-lifecycle
-aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --parallel 4
-aat web view latest                # open the newest run in the browser
 aat run plan smoke --env eu
+aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --parallel 4
+aat web view latest                # open the batch in the browser; press Ctrl+C when done
+kill %1                            # stop the sandbox
 ```
 
 In a source checkout, `make build` at the repository root builds both binaries; run them from this
@@ -22,7 +23,7 @@ directory as `../../aat` and `../../aat-sandbox`.
 
 ## What just happened
 
-`full-lifecycle` takes one order through every state in 14 steps, verifies the result, and cleans up
+`full-lifecycle` takes one order through every state in 14 steps, verifies the result in a 15th, and cleans up
 (output trimmed):
 
 ```

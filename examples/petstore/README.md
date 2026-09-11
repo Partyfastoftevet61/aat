@@ -19,7 +19,7 @@ The commands below run that build from this directory as `../../aat`; with `aat`
 
 ## Run the example
 
-From the `examples/petstore/` directory, the project manifest (`aat-project.yaml`) auto-discovers all config files — no extra flags needed:
+From the repository root, change into `examples/petstore/`; there the project manifest (`aat-project.yaml`) auto-discovers all config files, so no extra flags are needed:
 
 ```bash
 cd examples/petstore
@@ -125,7 +125,7 @@ The workflow template defines the structural complexity (array selection with `s
 
 ## Running without a manifest
 
-If you prefer explicit flags (or are running from a different directory):
+If you prefer explicit flags, from the repository root:
 
 ```bash
 ./aat run plan examples/petstore/plans/create-and-verify.yaml \

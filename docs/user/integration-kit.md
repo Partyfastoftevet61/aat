@@ -177,7 +177,7 @@ Then:
 
 ## Reproduce the Single-Prompt Test
 
-The shop's kit went through the test the airline project passed: one prompt, only the kit, a working client. The setup and the prompt below are the ones that were used, so you can run the test yourself.
+The airline project passed a simple test: one prompt, a working client. The shop's kit went through it with less to go on: the packaged kit alone, without the rest of the project. The setup and the prompt below are the ones that were used, so you can run the test yourself.
 
 **Set up an integrator's directory** that holds nothing but the packaged kit:
 

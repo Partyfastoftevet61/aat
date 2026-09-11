@@ -61,7 +61,7 @@ The seven OpenAPI tools register only when an OAS spec is loaded (from the manif
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--manifest` | path | auto-discovered | Explicit path to `aat-project.yaml` |
-| `--persona` | string | *(all)* | Server persona: `api`, `test`, or omit for all tools |
+| `--persona` | string | *(all)* | Server persona: `api`, `test`, or `all` (the same as omitting the flag) |
 | `--env` | string | from manifest | Environment name to load (for multi-environment files) |
 | `--http` | bool | false | Serve over Streamable HTTP instead of stdio |
 | `--host` | string | `127.0.0.1` | Interface to bind with `--http`; `0.0.0.0` for all interfaces. `AAT_HOST` sets it when the flag is absent |
@@ -145,7 +145,7 @@ HTTP mode serves the MCP protocol over Streamable HTTP, enabling remote access w
 
 ### Behavior
 
-- **Persona**: HTTP mode always uses the Integration (`api`) persona. The `--persona` flag is ignored (with a warning if a non-api value was passed).
+- **Persona**: HTTP mode always uses a remote variant of the Integration (`api`) persona: the same tools except `get_sample_response` (23 with OAS specs loaded, 16 without). `--persona test` is ignored with a warning, `--persona all` is ignored silently, and an unknown value is an error.
 - **Stateless**: Each request is independent — no session state is maintained. All Integration tools are pure reads, so no session tracking is needed.
 - **Excluded tools**: `get_sample_response` is excluded from HTTP mode because it exposes raw API response bodies from run archives.
 - **Shutdown**: The server shuts down gracefully on SIGINT/SIGTERM, draining in-flight requests with a 5-second timeout.
@@ -265,7 +265,7 @@ The test persona registers 26 tools focused on test plan lifecycle, execution, a
 | Tool | Description |
 |------|-------------|
 | `list_nodes` | List all nodes in the API graph with descriptions and input/output counts |
-| `describe_node` | Show full details for a node: inputs, outputs, edges, adapter, and OAS reference |
+| `describe_node` | Show full details for a node: inputs, outputs, ordering (`requires`/`satisfies`), adapter, and OAS reference |
 | `trace_workflow` | Trace the dependency chain for a goal node using backward chaining |
 | `find_workflows` | Search for nodes by keyword across names, descriptions, and input/output names |
 
@@ -374,7 +374,7 @@ When no persona is specified, the server registers the original resources includ
 
 | URI | Name | Description |
 |-----|------|-------------|
-| `aat://graph` | API Graph | Full graph showing all nodes, edges, and conditions |
+| `aat://graph` | API Graph | Full graph showing all nodes, their ordering tokens, and conditions |
 | `aat://templates` | Templates | HTTP templates for all registered adapters |
 | `aat://domain` | Domain Knowledge | Domain concepts, types, and value pools |
 | `aat://metadata` | Project Metadata | Project manifest and graph statistics |
@@ -443,9 +443,9 @@ The MCP tools include several features designed to reduce friction when AI assis
 
 ### Step IDs vs Operation Names
 
-Workflow templates assign step IDs that may differ from the underlying graph node (operation) name. For example, a round-trip booking workflow might use step IDs like `searchOnwardLeg2` while the graph node is `searchReturnFlights`.
+Workflow templates assign step IDs that may differ from the underlying graph node (operation) name. For example, the shop's Checkout workflow uses the step ID `checkout` for the graph node `checkoutCart`.
 
-- **`get_integration_flow` / `get_workflow_detail`** shows the operation name under each step when the step ID differs: `**Operation:** searchReturnFlights`. This makes the mapping visible so you know which name to use in other tools.
+- **`get_integration_flow` / `get_workflow_detail`** shows the operation name under each step when the step ID differs: `**Operation:** checkoutCart`. This makes the mapping visible so you know which name to use in other tools.
 - **Error messages** across `describe_operation`, `get_data_flow`, `get_response_shape`, `explain_field`, `inspect_request_template`, and `get_sample_response` suggest checking the workflow detail if the name looks like a step ID.
 
 ### Lua Transform Indicators
@@ -458,7 +458,7 @@ Only some templates have Lua transforms, but they contain critical post-processi
 
 ### Data Flow Guidance
 
-When `get_data_flow` finds no direct graph connection between two operations, it suggests using `get_integration_flow` or `get_workflow_detail` to see step-level data flow within workflows — since many connections are established through workflow composition rather than direct graph edges.
+When `get_data_flow` finds no direct graph connection between two operations, it suggests using `get_integration_flow` or `get_workflow_detail` to see step-level data flow within workflows — since many connections are established through workflow composition rather than a direct output-to-input match in the graph.
 
 ## Server Context
 

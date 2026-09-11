@@ -56,10 +56,10 @@ selection:
     trip-search: Round-Trip
 overrides:
   values:
-    searchFlights2Leg.leg1Destination: SEA
-    searchFlights2Leg.leg1Origin: BNA
-    searchFlights2Leg.leg2Destination: BNA
-    searchFlights2Leg.leg2Origin: SEA
+    searchRoundTrip.leg1Destination: SEA
+    searchRoundTrip.leg1Origin: BNA
+    searchRoundTrip.leg2Destination: BNA
+    searchRoundTrip.leg2Origin: SEA
 ```
 
 ### Workflow and Choices
@@ -876,7 +876,7 @@ shares the prereq chain:
 execution:
   steps:
     - id: setup
-      node: createItinerary
+      node: createBooking
 
     - id: happy
       node: addTraveler

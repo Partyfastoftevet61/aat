@@ -5,7 +5,7 @@ Thanks for your interest in contributing to Adaptive API Toolkit!
 ## Getting started
 
 1. Fork the repository and clone your fork
-2. Install prerequisites: Go 1.25+, Node.js 18+, Make
+2. Install prerequisites: Go 1.25.7+, Node.js 18+, Make
 3. Build: `make build`
 4. Run tests: `make test`
 

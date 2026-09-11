@@ -86,6 +86,11 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- Docs: the README and shop quick starts run `aat web view latest` last, since it holds the terminal until
+  Ctrl+C, and then stop the sandbox. The Petstore page is now *Petstore Quickstart*, so "quick start" means
+  the offline shop. The MCP server page describes `--persona` with `--http` as the code behaves, and the
+  workflow and plan guides use generic airline operation names in their examples. The README, roadmap,
+  and airline case study say AAT was built and proven against the airline API.
 - MCP operation details and `explain_field` label a graph input's default "Test default": it is data AAT
   sends in tests, not a value the API fills in. Read as a plain default, the shop's `quantity: 1` and
   `method: card` made required fields look optional.

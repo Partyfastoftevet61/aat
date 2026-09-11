@@ -20,19 +20,20 @@ Real integrations are not one call. Buying something means browse, cart, checkou
 
 Request runners test one call at a time and leave the chaining to scripts. Test code welds the intent ("a registered customer pays with PayPal and returns the order") to HTTP details, so every variation is another copy of the same calls.
 
-AAT keeps three things apart. **API knowledge** is a graph of operations and request templates, written once. **Test intent** is a plan that lists steps, not wiring. **Variation** is layers and environments that turn one plan into a matrix. The API knowledge that runs your tests also teaches AI coding tools, yours and your integrators', how to use the API.
+AAT keeps three things apart. **API knowledge** is a graph of operations and request templates, written once. **Test intent** is a plan that lists steps, not wiring. **Variation** is layers (named sets of test data) and environments that turn one plan into a matrix. The API knowledge that runs your tests also teaches AI coding tools, yours and your integrators', how to use the API.
 
 ## 60-second quick start
 
-With `aat` and `aat-sandbox` [installed](#install), the offline shop example runs with no signup and no network:
+With `aat` and `aat-sandbox` [installed](#install) and on your `PATH`, the offline shop example runs with no signup and no network:
 
 ```bash
 aat-sandbox init shop && cd shop   # extract the example project
 aat-sandbox serve &                # shop API on :8765, payments API on :8766
 aat run plan full-lifecycle        # one order through every state, verified and cleaned up
-aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --parallel 4
-aat web view latest                # browse the newest run in the web UI
 aat run plan smoke --env eu        # the same purchase with EU prices and VAT
+aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --parallel 4
+aat web view latest                # the batch in the web UI; press Ctrl+C when done
+kill %1                            # stop the sandbox
 ```
 
 ```
@@ -75,8 +76,8 @@ Examples against real APIs (Duffel flight booking, GitHub, Stripe) are next on t
 | **Graph, not scripts.** Operations, data flow, ordering, and cleanup live in YAML once; plans list steps. | **Long chains.** Values flow between steps, retries follow error categories, verification runs after the flow, and cleanup unwinds what was created. |
 | **Layers → matrix.** `--layer-group` runs every plan across every layer permutation and skips permutations that would send identical requests. | **Multi-environment.** Named environments share a base through `extends` and `vars`, and single operations can route to another host with other credentials. |
 | **Archives with a decision trail.** Every request, response, resolved value, retry, and assertion is recorded, with secrets redacted, and browsable in the web UI. | **CI-native.** Exit codes 0/1/2/130, `--json`, JUnit XML via `tools/aat-to-junit.py`, and a Docker image. |
-| **Checkpoints.** `--stop-after` keeps resources alive and `--dump-state` hands their IDs and credentials to another tool. | **Depth testing.** `expectFailure`, `mutations`, `rawBody`, and overlays turn happy paths into negative tests. |
-| **From OpenAPI and back.** `aat generate` scaffolds from a spec; `aat validate --strict` and `--oas-validate strict` hold the graph and every exchange to it; `aat docs generate` writes Markdown. | **AI where it helps.** The MCP server teaches AI coding tools your API; `aat prompt` can draft a plan. Execution never calls an LLM. |
+| **Checkpoints.** `--stop-after` keeps resources alive and `--dump-state` hands their IDs and credentials to another tool. | **Depth testing.** `expectFailure`, `mutations`, `rawBody`, and overlay files (per-run input values and expected failures) turn happy paths into negative tests. |
+| **From OpenAPI and back.** `aat generate` scaffolds from a spec; `aat validate --strict` and `--oas-validate strict` hold the graph and every exchange to it; `aat docs generate` writes Markdown. | **AI where it helps.** The MCP server teaches AI coding tools your API, and `aat prompt` can draft a plan; see [AI tools and MCP](#ai-tools-and-mcp). |
 
 <img src="https://raw.githubusercontent.com/gburgyan/aat/main/docs/user/assets/demo-batch.gif" alt="aat run batch with two layer groups and --parallel 4: the dedup list, four progress bars updating in place, and Batch: 27/63 PASSED, 36 SKIPPED" width="820">
 
@@ -85,6 +86,7 @@ Examples against real APIs (Duffel flight booking, GitHub, Stripe) are next on t
 An environment file holds as many named environments as you need. The shop's two regions share everything through `_base` and differ only in variables; payments go to their own host with their own API key:
 
 ```yaml
+# abridged: auth, headers, and the apiHost/payHost vars are left out
 environments:
   _base:
     apiBaseUrl: http://${apiHost}/${region}/v1
@@ -148,7 +150,7 @@ selection:
 
 ## One framework, two wins
 
-An OpenAPI spec describes calls one at a time. The project you build to test your API describes how they work together: which calls reach a goal and in what order, where each input comes from, which fields of a large schema matter, what a failure looks like, and what undoes what. Your test runs keep all of it true, and it is what integrators need, in a form a machine can act on. A second manifest names the part you share, and a short CI step packages it as a kit. Your integrators' AI coding tools read the kit through `aat mcp serve` and write a working client in whatever language they use. Negative tests, internal environments, and archives stay with you.
+An OpenAPI spec describes calls one at a time. The project you build to test your API describes how they work together: which calls reach a goal and in what order, where each input comes from, which fields of a large schema matter, what a failure looks like, and what undoes what. Your test runs keep all of it true, and it is what integrators need, in a form a machine can act on. A second manifest names the part you share, and a short CI step packages it as a kit. Your integrators' AI coding tools read the kit through `aat mcp serve` and write a working client in their own language. Negative tests, internal environments, and archives stay with you.
 
 ```
 my-api-tests/
@@ -163,7 +165,7 @@ The shop is laid out this way. See [Share your API with integrators](https://gbu
 
 ## AI tools and MCP
 
-`aat mcp serve` gives an AI coding tool the whole workflow as tools rather than prose: each operation's exact request, the order calls must run in, what each call needs from the calls before it, composed integration flows, the domain's rules and values, OpenAPI schemas, and sample responses from real runs. The `api` persona has 24 read-only tools (17 without an OpenAPI spec); the `test` persona has 26 for writing, running, and debugging plans. The shop ships this `.mcp.json`:
+`aat mcp serve` gives an AI coding tool the whole workflow as tools rather than prose: each operation's exact request, the order calls must run in, what each call needs from the calls before it, composed integration flows, the domain's rules and values, OpenAPI schemas, and sample responses from real runs. The `api` persona, the tool set for integrators, has 24 read-only tools (17 without an OpenAPI spec); the `test` persona, for your own team, has 26 for writing, running, and debugging plans. The shop ships this `.mcp.json`:
 
 ```json
 {
@@ -174,13 +176,13 @@ The shop is laid out this way. See [Share your API with integrators](https://gbu
 }
 ```
 
-With that much machine-readable detail, a working client in any language is a single prompt. On a 74-node airline API, AI coding tools built search-and-booking clients this way in Java, C#, Go, Python, Perl, and Lisp. That project is private, but the same test on the shop is reproducible: [Reproduce the single-prompt test](https://gburgyan.github.io/aat/integration-kit/#reproduce-the-single-prompt-test) has the exact prompt, the setup, and the results of a Python run and a Go run.
+With that much machine-readable detail, a working client has taken a single prompt in every language tried: on a 74-node airline API, AI coding tools built search-and-booking clients this way in Java, C#, Go, Python, Perl, and Lisp. That project is private, but the same test on the shop is reproducible: [Reproduce the single-prompt test](https://gburgyan.github.io/aat/integration-kit/#reproduce-the-single-prompt-test) has the exact prompt, the setup, and the results of a Python run and a Go run.
 
 LLMs are optional and authoring-time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API. Execution never calls an LLM.
 
 ## Install
 
-> **Before v0.1.0:** the release archives, Homebrew cask, and Docker image below are published with v0.1.0, which is not out yet. Until then, [build from source](#from-source).
+> **Before v0.1.0:** the release archives, Homebrew cask, and Docker image below are published with v0.1.0, which is not out yet, and `go install …@latest` still installs v0.0.4, which has no `aat-sandbox`. Until then, [build from source](#from-source).
 
 Homebrew (macOS) installs `aat` and `aat-sandbox`:
 
@@ -224,6 +226,7 @@ Requires Go 1.25.7+, Node.js 18+, and `make`:
 ```bash
 git clone https://github.com/gburgyan/aat.git && cd aat
 make build   # the web UI, then ./aat and ./aat-sandbox
+export PATH="$PWD:$PATH"   # so the quick start finds both
 ```
 
 Release binaries are not notarized. If macOS blocks one you downloaded with a browser, run `xattr -d com.apple.quarantine aat aat-sandbox`; the Homebrew cask removes the attribute for you. The [install guide](https://gburgyan.github.io/aat/install/) covers checksums, Docker ports, and what each method includes.
@@ -263,7 +266,7 @@ The full documentation is at **[gburgyan.github.io/aat](https://gburgyan.github.
 
 ## Status
 
-Pre-1.0, with one maintainer. AAT is used daily against a 74-node airline API with 63 workflows, 38 addons, and 6 layers. The graph and plan formats may still change before 1.0; breaking changes are listed in the [changelog](CHANGELOG.md), and the [roadmap](ROADMAP.md) says what's next.
+Pre-1.0, with one maintainer. AAT was built and proven against a 74-node airline API with 63 workflows, 38 addons, and 6 layers. The graph and plan formats may still change before 1.0; breaking changes are listed in the [changelog](CHANGELOG.md), and the [roadmap](ROADMAP.md) says what's next.
 
 ## Contributing
 

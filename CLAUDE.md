@@ -4,7 +4,7 @@ AAT is a Go CLI that models an API as a graph and executes long, multi-step test
 
 ## Module
 
-`github.com/gburgyan/aat` — Go 1.25+
+`github.com/gburgyan/aat` — Go 1.25.7+
 
 `docs/go.mod` declares an empty module so the docs site's images (`docs/user/assets`, from `make demos`) stay out of the module zip that `go install` downloads. Keep Go code out of `docs/`.
 
@@ -204,7 +204,7 @@ cd examples/petstore/
 #   --yes              skip interactive confirmation (auto-execute)
 #   --save FILE        save generated plan to a YAML file
 #   --trace            capture planning pipeline trace for debugging
-#   --trace-dir DIR    trace output directory (default: traces/)
+#   --trace-dir DIR    trace output directory (default: _output/traces; traces/ beside a manifest)
 #   --output DIR       archive output directory (default: _output/runs/)
 
 # Shared run flags (apply to both plan and batch):
@@ -219,6 +219,7 @@ cd examples/petstore/
 #   --no-auto-overrides  disable auto-discovery of .aat-overrides.yaml
 #   --retries N        max plan-level retries on failure (0 = no retries)
 #   --oas-validate MODE  runtime OpenAPI validation: auto|strict|off
+# run plan only:
 #   --stop-after STEP  stop after a step, skip cleanup, keep resources alive
 #   --dump-state FILE  write live state (per-step base URLs and headers, outputs) for external harnesses
 ```
@@ -234,7 +235,7 @@ AAT has two layers of observability: **run archives** capture execution, **plan 
 
 ### Run Archives (`archive/`)
 
-Every execution writes a JSON archive to the output directory (default `runs/`). Archives contain per-step request/response pairs, timing, status codes, and overall outcome. Sensitive headers are redacted.
+Every execution writes a JSON archive to the output directory (default `_output/runs/`). Archives contain per-step request/response pairs, timing, status codes, and overall outcome. Sensitive headers are redacted.
 
 ```bash
 aat run plan plan.yaml --output runs/

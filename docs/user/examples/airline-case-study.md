@@ -1,6 +1,6 @@
 # Airline Case Study
 
-AAT was built to test a production airline booking API, and that project remains its largest user. The project is private, so this page gives only its size and the AAT features that size relies on.
+AAT was built and proven against a production airline booking API. The project is private, so this page gives only its size and the AAT features that size relies on.
 
 ## The Project at a Glance
 

@@ -1,10 +1,10 @@
 # Roadmap
 
-## Where v0.1.0 stands
+## Status
 
-v0.1.0 is the first public release of AAT. It is used daily to test a 74-node airline API, so the
-core loop — graph, templates, plans, engine, archives, web UI, MCP server — sees real traffic every
-day. It is maintained by one person.
+AAT is heading for its first public release, v0.1.0. It was built and proven against a 74-node
+airline API, so the core loop — graph, templates, plans, engine, archives, web UI, MCP server — has
+carried real traffic. It is maintained by one person.
 
 The graph and plan YAML formats may still change before 1.0. Breaking changes will be listed in
 `CHANGELOG.md` with migration notes.
