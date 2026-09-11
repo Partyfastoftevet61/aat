@@ -1,0 +1,9 @@
+{
+  "name": "aat-demos",
+  "private": true,
+  "type": "module",
+  "description": "Records the terminal GIFs and web UI screenshots in docs/user/assets; run `make demos` from the repository root",
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

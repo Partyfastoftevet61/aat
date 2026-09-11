@@ -18,6 +18,7 @@ make frontend      # cd server/web && npm install && npm run build
 make test          # go test ./...
 make check         # fmt + test-race + lint — mirrors the CI test and lint jobs
 make example-shop  # examples/shop against a local sandbox — mirrors the CI example-shop job
+make demos         # regenerate docs/user/assets (VHS GIFs, Playwright screenshots) against a fresh sandbox
 make docs          # mkdocs build --strict in .venv-docs — mirrors the Docs workflow
 make docs-serve    # live-reloading docs site on :8000
 make clean         # Remove binaries and frontend artifacts (node_modules, dist)

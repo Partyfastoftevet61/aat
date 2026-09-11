@@ -9,7 +9,7 @@ LDFLAGS   := -X github.com/gburgyan/aat/internal/version.Version=$(VERSION) \
              -X github.com/gburgyan/aat/internal/version.GitCommit=$(COMMIT) \
              -X github.com/gburgyan/aat/internal/version.BuildDate=$(DATE)
 
-.PHONY: build cli sandbox example-shop test test-race lint fmt check clean frontend docs docs-serve
+.PHONY: build cli sandbox example-shop demos test test-race lint fmt check clean frontend docs docs-serve
 
 build: frontend sandbox
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD)
@@ -27,6 +27,13 @@ sandbox:
 # Needs curl, jq, and free ports 8765 and 8766.
 example-shop: cli sandbox
 	scripts/example-shop.sh
+
+# Regenerates the recordings and screenshots in docs/user/assets (and the MP4 and
+# social preview in demos/out) against a fresh sandbox. Needs ttyd, ffmpeg,
+# gifsicle, jq, nc, and the JetBrains Mono font, plus free ports 8765, 8766, and
+# 9129; demos/run.sh installs the pinned VHS and Playwright itself.
+demos: build
+	demos/run.sh
 
 frontend:
 	cd server/web && npm install && npm run build

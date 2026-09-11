@@ -7,6 +7,11 @@ the graph and plan formats may still change before 1.0.
 ## [Unreleased]
 
 ### Added
+- `make demos` regenerates the docs site's recordings and screenshots against a fresh `aat-sandbox`: VHS
+  recordings of `aat run plan full-lifecycle` and a parallel layer-group batch, Playwright screenshots of
+  the run timeline, a step's request with Copy as cURL, and the batch matrix, plus an MP4 of the plan run
+  and the repository's social preview (`demos/`). It checks that both recorded runs passed and that each
+  GIF stays within its size budget before writing anything.
 - A documentation site built from `docs/user` with Material for MkDocs (`mkdocs.yml`), deployed to GitHub
   Pages by a new Docs workflow that fails on broken links, broken anchors, and pages missing from the
   navigation. `make docs` runs the same strict build locally.

@@ -53,5 +53,10 @@ environments/
 /graph.yaml
 /package-lock.json
 
+# make demos: pinned tools and the assets that are not committed
+/demos/node_modules/
+/demos/.bin/
+/demos/out/
+
 # goreleaser output
 dist/

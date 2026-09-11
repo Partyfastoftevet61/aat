@@ -1,0 +1,94 @@
+<!doctype html>
+<!--
+  The social preview GitHub shows for links to the repository, rendered to
+  1280x640 by demos/screenshots.mjs. Everything sits inside the central
+  1200x600, which GitHub never crops. The terminal lines are copied from the
+  batch recording (demos/batch.tape); update them if that output changes.
+  Colours are the web UI's (server/web/src/app.css).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>aat social preview</title>
+<style>
+  html, body {
+    margin: 0;
+    width: 1280px;
+    height: 640px;
+    background: #0f1117;
+    color: #e4e4e7;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+  }
+  .frame {
+    position: absolute;
+    left: 40px;
+    top: 20px;
+    width: 1200px;
+    height: 600px;
+    box-sizing: border-box;
+    padding: 56px 64px 48px;
+    display: flex;
+    flex-direction: column;
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 22px;
+  }
+  .wordmark {
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-weight: 800;
+    font-size: 96px;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    color: #818cf8;
+  }
+  .name {
+    font-size: 30px;
+    font-weight: 600;
+    color: #9ca3af;
+  }
+  .tagline {
+    margin-top: 30px;
+    max-width: 1040px;
+    font-size: 33px;
+    line-height: 1.32;
+    font-weight: 500;
+  }
+  .terminal {
+    margin-top: auto;
+    padding: 20px 26px;
+    border: 1px solid #2a2d3a;
+    border-radius: 12px;
+    background: #1a1d27;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 19px;
+    line-height: 1.6;
+    white-space: pre;
+    color: #e4e4e7;
+  }
+  .muted { color: #9ca3af; }
+  .passed { color: #22c55e; font-weight: 700; }
+  .url {
+    margin-top: 22px;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 21px;
+    color: #9ca3af;
+  }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="brand">
+    <div class="wordmark">aat</div>
+    <div class="name">Adaptive API Toolkit</div>
+  </div>
+  <div class="tagline">Model your API as a graph once. Get long-chain integration tests, layer&nbsp;×&nbsp;environment matrices, CI-ready runs, and an MCP server for AI&nbsp;coding&nbsp;tools — all from the same YAML.</div>
+  <div class="terminal"><span class="muted">aat: batch run — 7 plans x 9 permutations = 63 total runs (parallel=4)</span>
+<span class="muted">aat: dedup — 36 duplicate permutations detected</span>
+Batch: <span class="passed">27/63 PASSED</span>, 36 SKIPPED (11.4s)</div>
+  <div class="url">github.com/gburgyan/aat</div>
+</div>
+</body>
+</html>
