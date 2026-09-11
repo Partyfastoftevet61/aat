@@ -16,8 +16,9 @@ import (
 // The baseURL is prepended to request paths to produce full URLs.
 // Credential headers and the archived plans' literal credentials are always
 // redacted. Every known secret in secrets is then redacted wherever it appears
-// (see archive.Redact); the result shares nothing with the run result.
-func ToArchive(result *RunResult, meta archive.ArchiveMetadata, baseURL string, secrets map[string]bool) *archive.Archive {
+// (see archive.Redact); the result shares nothing with the run result. An error
+// means the archive could not be redacted and must not be written.
+func ToArchive(result *RunResult, meta archive.ArchiveMetadata, baseURL string, secrets map[string]bool) (*archive.Archive, error) {
 	meta.Plan = redactPlan(meta.Plan)
 	a := &archive.Archive{
 		Metadata: meta,
@@ -32,12 +33,10 @@ func ToArchive(result *RunResult, meta archive.ArchiveMetadata, baseURL string, 
 	a.Cleanup = convertStepResults(result.CleanupResults, baseURL)
 	a.Metadata.InstantiatedPlan = redactPlan(result.InstantiatedPlan)
 
-	// Redact only fails on a value encoding/json cannot marshal, in which
-	// case archive.Write fails the same way and nothing is written.
-	if redacted, err := archive.Redact(a, secrets); err == nil {
-		a = redacted
-	}
-	return a
+	// Redact fails only on a value encoding/json cannot marshal. The archive is
+	// withheld then: returned unredacted, it would carry the secrets redaction
+	// exists to remove.
+	return archive.Redact(a, secrets)
 }
 
 func convertStepResults(steps []StepResult, baseURL string) []archive.StepRecord {

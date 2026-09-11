@@ -88,8 +88,14 @@ func buildPersonaTestContext() *ServerContext {
 func TestNewServer_AllPersona_RegistersAllTools(t *testing.T) {
 	srv := NewServer(buildPersonaTestContext())
 	tools := srv.mcp.ListTools()
-	// Without OAS specs: all original tools minus 7 OAS tools (28+)
-	assert.GreaterOrEqual(t, len(tools), 28, "all-persona (no OAS) should have at least 28 tools, got %d", len(tools))
+	// Every tool except the 7 OpenAPI tools, which need a loaded spec.
+	assert.Equal(t, 32, len(tools), "all-tools server (no OAS) should have 32 tools, got %d: %v",
+		len(tools), collectToolNames(tools))
+	// The data-flow tools the api persona has belong to "all tools" too.
+	toolNames := collectToolNames(tools)
+	assert.Contains(t, toolNames, "get_data_flow")
+	assert.Contains(t, toolNames, "get_response_shape")
+	assert.Contains(t, toolNames, "explain_field")
 }
 
 func TestNewServer_AllPersona_WithOAS_RegistersOASTools(t *testing.T) {

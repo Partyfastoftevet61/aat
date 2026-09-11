@@ -154,7 +154,10 @@ func (s *Server) handleExecutePlan(ctx context.Context, req mcp.CallToolRequest)
 		ToolVersion:  version.Effective(),
 	}
 	secrets := config.RunSecrets(s.ctx.Environment, p.Auth)
-	arc := engine.ToArchive(result, meta, s.ctx.Environment.APIBaseURL, secrets)
+	arc, err := engine.ToArchive(result, meta, s.ctx.Environment.APIBaseURL, secrets)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("writing archive: %v", err)), nil
+	}
 	archivePath := filepath.Join(s.ctx.ArchiveDir, runID, "archive.json")
 	if err := archive.Write(arc, archivePath); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("writing archive: %v", err)), nil

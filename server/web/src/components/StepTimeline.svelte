@@ -71,9 +71,11 @@
             <span class="step-status step-status-{httpStatusCategory(step.status)}">{step.status}</span>
           {/if}
           <span class="step-duration">{formatDuration(step.durationMs)}</span>
-          <span class="step-assertions">
-            <span class="steps-passed">{step.assertionPassedCount}</span><span class="steps-separator"> / </span>{step.assertionCount}
-          </span>
+          {#if step.assertionCount}
+            <span class="step-assertions">
+              <span class="steps-passed">{step.assertionPassedCount}</span><span class="steps-separator"> / </span>{step.assertionCount}
+            </span>
+          {/if}
           {#if step.retryCount && step.retryCount > 0}
             <span class="step-retry-badge">{retryLabel(step.retryCount, step.retriedOn)}</span>
           {/if}

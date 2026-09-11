@@ -369,7 +369,10 @@ func writeRunArchive(result *engine.RunResult, p *plan.Plan, env *config.Environ
 		ToolVersion:  version.Effective(),
 		Layers:       layers,
 	}
-	arc := engine.ToArchive(result, meta, env.APIBaseURL, secrets)
+	arc, err := engine.ToArchive(result, meta, env.APIBaseURL, secrets)
+	if err != nil {
+		return "", fmt.Errorf("writing archive: %w", err)
+	}
 	archivePath := filepath.Join(outputDir, runID, "archive.json")
 	if err := archive.Write(arc, archivePath); err != nil {
 		return "", fmt.Errorf("writing archive: %w", err)
@@ -926,10 +929,13 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 		TotalAttempts: totalAttempts,
 		Layers:        effectiveLayers,
 	}
-	arc := engine.ToArchive(result, meta, rctx.Env.APIBaseURL, secrets)
 	archivePath := filepath.Join(runDir, "archive.json")
-	if archiveErr := archive.Write(arc, archivePath); archiveErr != nil {
-		logf("aat: warning: %s\n", archiveErr)
+	arc, archiveErr := engine.ToArchive(result, meta, rctx.Env.APIBaseURL, secrets)
+	if archiveErr == nil {
+		archiveErr = archive.Write(arc, archivePath)
+	}
+	if archiveErr != nil {
+		logf("aat: warning: archive not written: %s\n", archiveErr)
 		archivePath = ""
 	} else {
 		logf("Archive: %s\n", archivePath)

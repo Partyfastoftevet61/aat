@@ -37,7 +37,7 @@ HTTP mode automatically uses the `api` persona (read-only Integration tools) and
 The MCP server supports **personas** that tailor the tool set for different workflows. Instead of exposing all tools to every user, personas filter to what's relevant — reducing context window usage and keeping the AI focused.
 
 ```
-aat mcp serve                   # all tools (36 with OAS specs loaded, 29 without)
+aat mcp serve                   # all tools (39 with OAS specs loaded, 32 without)
 aat mcp serve --persona api     # API knowledge tools (24 with OAS specs loaded, 17 without)
 aat mcp serve --persona test    # test lifecycle tools (26)
 ```

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"testing"
 	"time"
@@ -16,6 +17,32 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// mustToArchive calls ToArchive and fails the test on an error.
+func mustToArchive(t *testing.T, result *RunResult, meta archive.ArchiveMetadata, baseURL string, secrets map[string]bool) *archive.Archive {
+	t.Helper()
+	a, err := ToArchive(result, meta, baseURL, secrets)
+	require.NoError(t, err)
+	return a
+}
+
+// TestToArchive_UnredactableIsAnError checks that an archive redaction cannot
+// process is withheld rather than returned with its secrets in place.
+func TestToArchive_UnredactableIsAnError(t *testing.T) {
+	result := &RunResult{
+		Outcome: OutcomePassed,
+		Steps: []StepResult{{
+			StepID:  "getQuote",
+			Node:    "getQuote",
+			Inputs:  map[string]any{"apiKey": "sk-test-0123456789"},
+			Outputs: map[string]any{"rate": math.NaN()},
+		}},
+	}
+	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-nan"}
+	a, err := ToArchive(result, meta, "", map[string]bool{"sk-test-0123456789": true})
+	require.Error(t, err)
+	assert.Nil(t, a)
+}
 
 func TestToArchive_BasicConversion(t *testing.T) {
 	start := time.Date(2026, 2, 7, 14, 30, 0, 0, time.UTC)
@@ -51,7 +78,7 @@ func TestToArchive_BasicConversion(t *testing.T) {
 		Environment: "test",
 	}
 
-	a := ToArchive(result, meta, "https://api.example.com", nil)
+	a := mustToArchive(t, result, meta, "https://api.example.com", nil)
 
 	assert.Equal(t, "passed", a.Result.Outcome)
 	assert.Empty(t, a.Result.Error)
@@ -88,7 +115,7 @@ func TestToArchive_NilRequestResponse(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-nil-test"}
-	a := ToArchive(result, meta, "https://api.example.com", nil)
+	a := mustToArchive(t, result, meta, "https://api.example.com", nil)
 
 	assert.Equal(t, "error", a.Result.Outcome)
 	assert.Equal(t, "step failed", a.Result.Error)
@@ -125,7 +152,7 @@ func TestToArchive_HeaderRedaction(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-redact"}
-	a := ToArchive(result, meta, "https://api.example.com", nil)
+	a := mustToArchive(t, result, meta, "https://api.example.com", nil)
 
 	assert.Equal(t, "[REDACTED]", a.Steps[0].Request.Headers["Authorization"])
 	assert.Equal(t, "application/json", a.Steps[0].Request.Headers["Content-Type"])
@@ -153,7 +180,7 @@ func TestToArchive_DurationConversion(t *testing.T) {
 				Steps:   []StepResult{{Node: "s", Duration: tt.duration}},
 			}
 			meta := archive.ArchiveMetadata{Version: "1", RunID: "run-dur"}
-			a := ToArchive(result, meta, "", nil)
+			a := mustToArchive(t, result, meta, "", nil)
 			assert.Equal(t, tt.wantMs, a.Steps[0].DurationMs)
 		})
 	}
@@ -190,7 +217,7 @@ func TestToArchive_BodyHandling(t *testing.T) {
 				}},
 			}
 			meta := archive.ArchiveMetadata{Version: "1", RunID: "run-body"}
-			a := ToArchive(result, meta, "", nil)
+			a := mustToArchive(t, result, meta, "", nil)
 
 			if tt.wantNil {
 				assert.Nil(t, a.Steps[0].Request.Body)
@@ -222,7 +249,7 @@ func TestToArchive_ValidationConversion(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-val"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	require.NotNil(t, a.Steps[0].Validation)
 	assert.False(t, a.Steps[0].Validation.Passed)
@@ -257,7 +284,7 @@ func TestToArchive_ValidationSkippedPassthrough(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-skipped"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	require.NotNil(t, a.Steps[0].Validation)
 	require.Len(t, a.Steps[0].Validation.Results, 2)
@@ -303,7 +330,7 @@ func TestToArchive_SelectionConversion(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-sel"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	require.Len(t, a.Steps[0].Selections, 1)
 	sel := a.Steps[0].Selections[0]
@@ -335,7 +362,7 @@ func TestToArchive_ErrorClassConversion(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-err"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	require.NotNil(t, a.Steps[0].ErrorClass)
 	assert.Equal(t, "transient", a.Steps[0].ErrorClass.Category)
@@ -357,7 +384,7 @@ func TestToArchive_CleanupSteps(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-cleanup"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	require.Len(t, a.Steps, 1)
 	require.Len(t, a.Cleanup, 1)
@@ -372,7 +399,7 @@ func TestToArchive_EmptyResult(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-empty"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	assert.Nil(t, a.Steps)
 	assert.Nil(t, a.Cleanup)
@@ -400,7 +427,7 @@ func TestToArchive_FlattenHeaders(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-flatten"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	assert.Equal(t, "val1, val2", a.Steps[0].Response.Headers["X-Custom"])
 }
@@ -414,7 +441,7 @@ func TestToArchive_NilNilError(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-noerr"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	assert.Empty(t, a.Result.Error)
 	assert.Empty(t, a.Steps[0].Error)
@@ -506,7 +533,7 @@ func TestToArchive_FullRoundTrip(t *testing.T) {
 		Timestamp: start,
 	}
 
-	a := ToArchive(result, meta, "https://api.example.com", nil)
+	a := mustToArchive(t, result, meta, "https://api.example.com", nil)
 
 	data, err := json.MarshalIndent(a, "", "  ")
 	require.NoError(t, err)
@@ -568,7 +595,7 @@ func TestToArchive_ResolutionConversion(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-res"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	require.Len(t, a.Steps[0].Resolutions, 4)
 
@@ -632,7 +659,7 @@ func TestToArchive_SecretRedaction(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-secrets"}
-	a := ToArchive(result, meta, "", secrets)
+	a := mustToArchive(t, result, meta, "", secrets)
 
 	// Inputs should be redacted
 	assert.Equal(t, "[REDACTED]", a.Steps[0].Inputs["apiKey"])
@@ -667,7 +694,7 @@ func TestToArchive_ResponseBodyErrorConversion(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-body-err"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	require.NotNil(t, a.Steps[0].ResponseBodyError)
 	assert.Equal(t, "ErrorResponse.Result.Error", a.Steps[0].ResponseBodyError.RulePath)
@@ -695,7 +722,7 @@ func TestToArchive_NoResponseBodyError(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-no-body-err"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	assert.Nil(t, a.Steps[0].ResponseBodyError)
 
@@ -720,7 +747,7 @@ func TestToArchive_DisplayOutputConversion(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-display"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	require.Len(t, a.Steps[0].DisplayOutputs, 2)
 	assert.Equal(t, "PNR", a.Steps[0].DisplayOutputs[0].Label)
@@ -748,7 +775,7 @@ func TestToArchive_NoDisplayOutputs(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-no-display"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	assert.Nil(t, a.Steps[0].DisplayOutputs)
 
@@ -777,7 +804,7 @@ func TestToArchive_OverrideURLTracking(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-override"}
-	a := ToArchive(result, meta, "https://api.example.com", nil)
+	a := mustToArchive(t, result, meta, "https://api.example.com", nil)
 
 	require.NotNil(t, a.Steps[0].Request)
 	assert.Equal(t, "https://override.example.com/v2/search", a.Steps[0].Request.URL)
@@ -803,7 +830,7 @@ func TestToArchive_NoOverride(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-no-override"}
-	a := ToArchive(result, meta, "https://api.example.com", nil)
+	a := mustToArchive(t, result, meta, "https://api.example.com", nil)
 
 	require.NotNil(t, a.Steps[0].Request)
 	assert.Equal(t, "https://api.example.com/v2/search", a.Steps[0].Request.URL)
@@ -835,7 +862,7 @@ func TestToArchive_PathRewriteOnly(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-rewrite"}
-	a := ToArchive(result, meta, "https://api.example.com", nil)
+	a := mustToArchive(t, result, meta, "https://api.example.com", nil)
 
 	require.NotNil(t, a.Steps[0].Request)
 	assert.Equal(t, "https://api.example.com/v3/search", a.Steps[0].Request.URL)
@@ -862,7 +889,7 @@ func TestToArchive_OverridePlusPathRewrite(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-both"}
-	a := ToArchive(result, meta, "https://api.example.com", nil)
+	a := mustToArchive(t, result, meta, "https://api.example.com", nil)
 
 	require.NotNil(t, a.Steps[0].Request)
 	// URL shows what was actually hit
@@ -891,7 +918,7 @@ func TestToArchive_EmptyActualBaseURL(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-compat"}
-	a := ToArchive(result, meta, "https://api.example.com", nil)
+	a := mustToArchive(t, result, meta, "https://api.example.com", nil)
 
 	require.NotNil(t, a.Steps[0].Request)
 	// Falls back to defaultBaseURL
@@ -911,7 +938,7 @@ func TestToArchive_NilSecretsNoRedaction(t *testing.T) {
 	}
 
 	meta := archive.ArchiveMetadata{Version: "1", RunID: "run-nosecrets"}
-	a := ToArchive(result, meta, "", nil)
+	a := mustToArchive(t, result, meta, "", nil)
 
 	// Without secrets, values pass through unchanged
 	assert.Equal(t, "secret-value", a.Steps[0].Inputs["apiKey"])
@@ -943,7 +970,7 @@ func TestToArchive_RedactsCredentialsEverywhere(t *testing.T) {
 		}},
 	}
 
-	a := ToArchive(result, archive.ArchiveMetadata{Version: "1", RunID: "run-creds", Plan: p}, "https://api.example.com", secrets)
+	a := mustToArchive(t, result, archive.ArchiveMetadata{Version: "1", RunID: "run-creds", Plan: p}, "https://api.example.com", secrets)
 
 	assert.Equal(t, "[REDACTED]", a.Steps[0].Request.Headers["X-Shop-Token"])
 	assert.Equal(t, "application/json", a.Steps[0].Request.Headers["Accept"])
@@ -1000,7 +1027,7 @@ func TestToArchive_RedactsSecretsFromRequestData(t *testing.T) {
 		}},
 	}
 
-	a := ToArchive(result, archive.ArchiveMetadata{Version: "1", RunID: "run-data", Plan: p}, "https://api.example.com", secrets)
+	a := mustToArchive(t, result, archive.ArchiveMetadata{Version: "1", RunID: "run-data", Plan: p}, "https://api.example.com", secrets)
 
 	data, err := json.Marshal(a)
 	require.NoError(t, err)

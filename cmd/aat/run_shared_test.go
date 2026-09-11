@@ -1,14 +1,46 @@
 package main
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/gburgyan/aat/config"
+	"github.com/gburgyan/aat/engine"
+	"github.com/gburgyan/aat/graph"
+	"github.com/gburgyan/aat/plan"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestWriteRunArchive_UnredactableWritesNothing checks that a run whose archive
+// cannot be redacted leaves no archive behind instead of an unredacted one.
+func TestWriteRunArchive_UnredactableWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	env := &config.Environment{
+		Name: "test",
+		Auth: config.AuthConfig{Type: "apikey", HeaderName: "X-API-Key", Credentials: map[string]config.SecretRef{
+			"key": {Source: "literal", Value: "sk-test-0123456789"},
+		}},
+	}
+	result := &engine.RunResult{
+		Outcome: engine.OutcomePassed,
+		Steps: []engine.StepResult{{
+			StepID:  "getQuote",
+			Node:    "getQuote",
+			Inputs:  map[string]any{"key": "sk-test-0123456789"},
+			Outputs: map[string]any{"rate": math.NaN()},
+		}},
+	}
+
+	path, err := writeRunArchive(result, &plan.Plan{}, env, &graph.Graph{Version: "1"}, dir, nil)
+	require.Error(t, err)
+	assert.Empty(t, path)
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "no run directory is created")
+}
 
 func writeOverlay(t *testing.T, dir, name, contents string) string {
 	t.Helper()

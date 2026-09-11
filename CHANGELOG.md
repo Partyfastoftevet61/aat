@@ -156,6 +156,13 @@ the graph and plan formats may still change before 1.0.
   empty Airline case-study stub).
 
 ### Fixed
+- A run archive that cannot be redacted is not written. `aat run`, batch runs, and the MCP `execute_plan`
+  tool report the error; before, the error was ignored and the archive was written with its secrets in
+  place. Redaction fails only on a value JSON cannot hold, such as a NaN from a Lua transform.
+- `aat mcp serve` without `--persona` registers `get_data_flow`, `get_response_shape`, and `explain_field`,
+  which only the `api` persona had, so it has every tool: 39 with an OpenAPI spec, 32 without.
+- The web UI's run timeline shows a step's assertion count only when the step has assertions, not
+  `0 / 0` on every step.
 - Run archives redact known secrets from every string they hold: request URLs and query parameters,
   request and response bodies, outputs and display outputs, error, assertion, and OpenAPI messages,
   and plan step values, as well as headers, inputs, and resolved values; `batch.json` entries too. In

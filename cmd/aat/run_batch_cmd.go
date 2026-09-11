@@ -805,8 +805,11 @@ func buildPlanResult(planName, permutation string, res *runResult) (BatchRunResu
 	}
 
 	// batch.json is an archive too: redact the run's secrets from its entry,
-	// such as an error message quoting a request.
-	if redacted, err := archive.Redact(&be, res.secrets); err == nil {
+	// such as an error message quoting a request. If that fails, the error
+	// message, the entry's only free text, is withheld rather than written.
+	if redacted, err := archive.Redact(&be, res.secrets); err != nil {
+		be.Error = fmt.Sprintf("%s (redaction failed: %v)", archive.Redacted, err)
+	} else {
 		be = *redacted
 	}
 

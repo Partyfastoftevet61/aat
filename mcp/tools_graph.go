@@ -94,6 +94,13 @@ func (s *Server) registerIntegrationGraphTools() {
 		s.handleFindWorkflows,
 	)
 
+	s.registerFieldFlowTools()
+}
+
+// registerFieldFlowTools adds the tools that explain how data moves through the
+// API: between two operations, out of one operation, and for a single field.
+// The api personas and the all-tools server register them.
+func (s *Server) registerFieldFlowTools() {
 	s.mcp.AddTool(
 		mcp.NewTool("get_data_flow",
 			mcp.WithDescription("Show how data flows between two API operations: which outputs of the first map to which inputs of the second."),

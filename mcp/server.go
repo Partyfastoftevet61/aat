@@ -165,6 +165,7 @@ func (s *Server) registerTestServer() {
 // registerAllServer registers everything for backward compatibility.
 func (s *Server) registerAllServer() {
 	s.registerGraphTools()
+	s.registerFieldFlowTools()
 	s.registerTemplateTools()
 	s.registerDomainTools()
 	if len(s.ctx.OASSpecs) > 0 {
