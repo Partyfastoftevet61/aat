@@ -86,6 +86,7 @@ type StepSummary struct {
 	OASRespErrorCount    int             `json:"oasRespErrorCount,omitempty"`
 	OASWarningCount      int             `json:"oasWarningCount,omitempty"`
 	RetryCount           int             `json:"retryCount,omitempty"`
+	RetriedOn            []string        `json:"retriedOn,omitempty"` // error category of each retried attempt, in order
 	OffsetMs             int64           `json:"offsetMs,omitempty"`
 }
 
@@ -105,6 +106,7 @@ type StepDetail struct {
 	HasSelections        bool                     `json:"hasSelections,omitempty"`
 	HasResolutions       bool                     `json:"hasResolutions,omitempty"`
 	RetryCount           int                      `json:"retryCount,omitempty"`
+	RetriedOn            []string                 `json:"retriedOn,omitempty"` // error category of each retried attempt, in order
 	StartTime            time.Time                `json:"startTime,omitempty"`
 	Inputs               map[string]any           `json:"inputs,omitempty"`
 	Outputs              map[string]any           `json:"outputs,omitempty"`

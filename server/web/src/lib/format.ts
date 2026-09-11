@@ -12,6 +12,16 @@ export function formatDuration(ms: number): string {
   return `${mins}m ${secs}s`;
 }
 
+/**
+ * Summarize a step's retries as the CLI does: "retried 2x: transient", with
+ * each category listed once, in the order the retries happened.
+ */
+export function retryLabel(retryCount: number, retriedOn?: string[]): string {
+  const categories = [...new Set(retriedOn ?? [])];
+  const label = `retried ${retryCount}x`;
+  return categories.length > 0 ? `${label}: ${categories.join(', ')}` : label;
+}
+
 /** Relative time label: "just now", "N minutes ago", etc. */
 export function timeAgo(date: string): string {
   const now = Date.now();

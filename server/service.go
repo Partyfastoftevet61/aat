@@ -963,6 +963,7 @@ func toStepSummary(s archive.StepRecord, isCleanup bool, runStart time.Time) Ste
 		OASRespErrorCount:    oasRespErrorCount(s.OASValidation),
 		OASWarningCount:      oasWarningCount(s.OASValidation),
 		RetryCount:           s.RetryCount,
+		RetriedOn:            s.RetriedOn,
 		OffsetMs:             offsetMs,
 	}
 }
@@ -1002,6 +1003,7 @@ func toStepDetail(s archive.StepRecord, isCleanup bool, nodeSteps map[string]str
 		HasSelections:        len(s.Selections) > 0,
 		HasResolutions:       len(s.Resolutions) > 0,
 		RetryCount:           s.RetryCount,
+		RetriedOn:            s.RetriedOn,
 		StartTime:            s.StartTime,
 		Inputs:               s.Inputs,
 		Outputs:              s.Outputs,

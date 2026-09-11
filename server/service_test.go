@@ -713,6 +713,29 @@ func TestGetRun_DurationDisplay(t *testing.T) {
 	assert.Equal(t, "1.5s", run.Steps[0].DurationDisplay)
 }
 
+// TestStepRetriedOn checks that the retry categories an archive records reach
+// the run and step views.
+func TestStepRetriedOn(t *testing.T) {
+	dir := t.TempDir()
+
+	step := makeStep("getShipment", 200, 1600)
+	step.RetryCount = 2
+	step.RetriedOn = []string{"transient", "transient"}
+	writeArchive(t, dir, makeArchive("run-20260101-100000-aaaa0001", "passed", step))
+
+	svc := NewArchiveService(dir)
+	run, err := svc.GetRun("run-20260101-100000-aaaa0001")
+	require.NoError(t, err)
+	require.Len(t, run.Steps, 1)
+	assert.Equal(t, 2, run.Steps[0].RetryCount)
+	assert.Equal(t, []string{"transient", "transient"}, run.Steps[0].RetriedOn)
+
+	detail, err := svc.GetStep("run-20260101-100000-aaaa0001", "getShipment")
+	require.NoError(t, err)
+	assert.Equal(t, 2, detail.RetryCount)
+	assert.Equal(t, []string{"transient", "transient"}, detail.RetriedOn)
+}
+
 // TestRunDuration_PrefersRecordedWallClock checks that the run list and run
 // detail show the wall-clock time the archive records, which includes retry
 // waits, rather than the sum of step durations.

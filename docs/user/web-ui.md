@@ -91,7 +91,7 @@ Clicking a run opens the detail view:
 
 - **Header**: outcome, plan name, **Save**/**Export** controls, a link to the batch the run belongs to, and the run's error
 - **Metadata**: duration, when it ran, step counts, environment, AAT version, and layers applied
-- **Step timeline**: each step's ID, node, status, duration, assertion count, retry and OAS badges, display outputs, and a duration bar placed on the run's time span, so slow steps and ordering stand out; cleanup steps follow in their own section
+- **Step timeline**: each step's ID, node, status, duration, assertion count, retry and OAS badges, display outputs, and a duration bar placed on the run's time span, so slow steps and ordering stand out; cleanup steps follow in their own section. A step that retried carries a badge naming why, as run output does (`retried 2x: transient`), and its bar covers every attempt
 - **Prior attempts**: for a run retried with `--retries`, a table of the failed attempts, each opening that attempt's archive
 
 ### Step Detail

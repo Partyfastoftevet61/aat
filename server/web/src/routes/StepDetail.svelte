@@ -2,7 +2,7 @@
   import type { StepDetail, OASValidationDetail, RequestDetail } from '../lib/types';
   import { fetchStep, fetchAttemptStep } from '../lib/api';
   import { navigate, encPath } from '../lib/router';
-  import { formatDuration, httpStatusCategory } from '../lib/format';
+  import { formatDuration, httpStatusCategory, retryLabel } from '../lib/format';
   import LoadingSpinner from '../components/LoadingSpinner.svelte';
   import Tabs from '../components/Tabs.svelte';
   import JsonViewer from '../components/JsonViewer.svelte';
@@ -244,7 +244,7 @@
       {#if step.retryCount && step.retryCount > 0}
         <div class="step-detail-meta-item">
           <span class="meta-label">Retries</span>
-          <span class="meta-value"><span class="step-retry-badge">{step.retryCount}</span></span>
+          <span class="meta-value"><span class="step-retry-badge">{retryLabel(step.retryCount, step.retriedOn)}</span></span>
         </div>
       {/if}
     </div>

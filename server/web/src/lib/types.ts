@@ -74,6 +74,7 @@ export interface StepSummary {
   oasRespErrorCount?: number;
   oasWarningCount?: number;
   retryCount?: number;
+  retriedOn?: string[];
   offsetMs?: number;
 }
 
@@ -92,6 +93,7 @@ export interface StepDetail {
   hasSelections?: boolean;
   hasResolutions?: boolean;
   retryCount?: number;
+  retriedOn?: string[];
   startTime?: string;
   inputs?: Record<string, unknown>;
   outputs?: Record<string, unknown>;

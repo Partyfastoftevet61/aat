@@ -213,6 +213,8 @@ the graph and plan formats may still change before 1.0.
   followed stdout.
 - Cleanup steps carry a step ID and a start time in archives, so the web UI places them on the timeline;
   their start time was empty.
+- The web UI shows why a step retried (`retried 2x: transient`) on the run timeline and the step page; the
+  server dropped the archive's `retriedOn`, and the badge read "2 RETRY".
 - `--override NODE=URL` routes keep the environment headers, plan headers, overlay headers, and the
   credential, like an `overrides:` entry with that `match` and `baseUrl`; they used to send no headers.
 - `aat prompt` rejects layers when the manifest sets no layers directory instead of silently running

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { StepSummary } from '../lib/types';
   import { navigate, encPath } from '../lib/router';
-  import { formatDuration, httpStatusCategory } from '../lib/format';
+  import { formatDuration, httpStatusCategory, retryLabel } from '../lib/format';
 
   interface Props {
     steps: StepSummary[];
@@ -73,7 +73,7 @@
             <span class="steps-passed">{step.assertionPassedCount}</span><span class="steps-separator"> / </span>{step.assertionCount}
           </span>
           {#if step.retryCount && step.retryCount > 0}
-            <span class="step-retry-badge">{step.retryCount} retry</span>
+            <span class="step-retry-badge">{retryLabel(step.retryCount, step.retriedOn)}</span>
           {/if}
           {#if step.oasRespErrorCount && step.oasRespErrorCount > 0}
             <span class="step-oas-badge">OAS resp {step.oasRespErrorCount}</span>
