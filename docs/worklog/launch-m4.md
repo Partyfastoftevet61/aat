@@ -164,3 +164,40 @@ want to reproduce it. The integration-kit page now has "Reproduce the Single-Pro
 
 The page also says the airline runs cannot be reproduced because that project is private. The shop README's
 example prompt, which had never been run, is now the tested one, and M7 records that prompt.
+
+## 2026-09-11 — Review of M1–M4 before M5
+
+**What:** A second read of the M1–M4 commits covered five things:
+- the runtime diffs, line by line
+- three read-only passes: the public docs, the docs' claims against the code, and the shop kit's descriptions
+  against the sandbox handlers
+- tests on a clean copy
+- reproductions against `aat-sandbox`
+
+The findings were fixed in five commits: cleanup, small runtime fixes, the kit, the docs, and project notes.
+
+**Decisions:**
+- **Cleanup deletes what each step created, newest first.** Two bugs, one fix in the engine.
+  - Graph-level cleanup looked up the creating step's outputs by node name, but outputs are stored by step
+    ID. Two `createCart` steps with their own IDs deleted the first cart twice and left the second. Entries
+    now carry the registering step's ID.
+  - Composed plans (recipes, `aat prompt`) list every graph pairing as a plan-level cleanup step. Those ran
+    in declaration order, replaced the last-in-first-out stack, and ran even when the creating step had
+    failed (F24). A plan-level step on a paired node now defers to the stack, gated by its `runOn`.
+  - The fix is in the engine rather than a removal of `addCleanupSteps`. Hand-written plans that list
+    pairings behave the same way, and plan summaries still show cleanup.
+- **The kit says what the sandbox does.** Integrators' AI tools read the kit, so errors in it become errors
+  in their clients.
+  - Six description errors would have made a generated client wrong: `applyCoupon`'s error order, the order
+    checks repeated after the payment and shipping delays, missing 404s, `*Display` fields, and gift-card
+    balances. They were fixed against the handlers, along with seven smaller ones.
+  - MCP showed graph defaults in a plain "Default" column, so `quantity: 1` and `method: card` looked
+    optional. The column now says "Test default".
+- **Setup errors exit 2 in `aat run`.** A broken manifest exited 1, which CI reads as a test failure. The
+  other commands keep their exit codes until F42 settles the CLI contract.
+- **Claims match what was tested.** The README, roadmap, and case study say AAT was built and proven against
+  the airline API, and the single-prompt claim now says it held in every language tried.
+
+**Open questions:**
+- F3 (Lua `dofile`, `loadfile`, `require`) matters more now that people run each other's kits. It is planned
+  with P13 for M5.
