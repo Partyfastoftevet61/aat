@@ -4,7 +4,7 @@
 
 **What:** Added `--stop-after STEP` and `--dump-state FILE` to `aat run plan`, letting AAT
 drive a system into a known state and hand off the live session (base URL, auth, accumulated
-outputs) to an external/specialized test harness. Motivating case: stop the Airline
+outputs) to an external/specialized test harness. Motivating case: stop the airline
 round-trip booking plan after `createItinerary` and let another script use the live itinerary.
 
 **Decisions:**

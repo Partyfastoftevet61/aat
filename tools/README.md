@@ -54,10 +54,10 @@ Analyzes AAT batch run results and reports node test coverage — which graph no
 
 ```bash
 # Terminal report
-python3 tools/batch-coverage.py runs/batch-XXXXX ../aat-airline/graph.yaml
+python3 tools/batch-coverage.py runs/batch-XXXXX ../my-project/graph.yaml
 
 # Machine-readable JSON
-python3 tools/batch-coverage.py --json runs/batch-XXXXX ../aat-airline/graph.yaml
+python3 tools/batch-coverage.py --json runs/batch-XXXXX ../my-project/graph.yaml
 ```
 
 ### Output

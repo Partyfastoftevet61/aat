@@ -97,18 +97,18 @@ func TestRun(t *testing.T) {
 Each AAT project has an `aat-project.yaml` manifest that declares project artifacts for CLI auto-discovery. The CLI walks up from `cwd` to find it (`config.FindManifest()`), or it can be passed explicitly via `--manifest`.
 
 ```yaml
-# airline/aat-project.yaml
-name: airline
-description: Airline JSON API integration testing
-tags: [travel, api, booking]
+# examples/shop/aat-project.yaml (abridged)
+name: shop
+description: Offline e-commerce demo for AAT
+tags: [demo, e-commerce]
 graph: graph.yaml
 templates: templates/
 domain: domain.yaml
 workflows: workflows/
 plans: plans/
-archives: runs/
+archives: _output/runs
 environment: env.yaml
-defaultEnvironment: pp
+defaultEnvironment: us
 ```
 
 Key type: `config.ProjectManifest`. Fields: `Name` (required), `GraphPath` (required), `TemplatesPath` (required), `DomainPath`, `DocsDir`, `WorkflowsDir`, `LayersDir`, `PlanDirs`, `OASPaths`, `ArchiveDir`, `TracesDir`, `VisualizersDir`, `EnvPath`, `DefaultEnvironment`. The highest-priority manifest found (`--manifest`, CWD walk-up, `AAT_PROJECT`, user config `default_project`) describes the whole project; lower levels never fill in fields it leaves out.
@@ -149,7 +149,7 @@ The environment file supports two formats: **single-environment** (legacy, one `
 - **`docs/worklog/`** — decision log entries per stage (date, decisions, rationale)
 - **`docs/user/`** — user-facing docs, built into the site at https://gburgyan.github.io/aat/ (`mkdocs.yml`, Material for MkDocs; `.github/workflows/docs.yml` deploys it from main). Every page must be listed in the `mkdocs.yml` nav; links, anchors, and nav coverage are checked by `make docs`, so run it before committing doc changes. Keep pages readable on GitHub (plain Markdown); the one site-only construct is the `--8<--` snippet include in `changelog.md` and `examples/shop.md`, which pulls in `CHANGELOG.md` and the `examples/shop/README.md` section between its `[start:body]`/`[end:body]` markers
 
-Record user-visible changes in `CHANGELOG.md` under *Unreleased* as tasks complete. Add worklog entries for non-trivial decisions. The public launch roadmap lives in `LAUNCH-PLAN.md`.
+Record user-visible changes in `CHANGELOG.md` under *Unreleased* as tasks complete. Add worklog entries for non-trivial decisions. The launch roadmap lives in `LAUNCH-PLAN.md`, a local working document.
 
 ## Worklogs
 
@@ -321,4 +321,4 @@ If a task seems too aggressive to do in one operation, push back and offer to br
 
 ## Current Stage
 
-Public launch work is tracked milestone by milestone in `LAUNCH-PLAN.md`; feature status is in `ROADMAP.md` and `CHANGELOG.md`. The historical stage tracker is archived at `docs/worklog/progress-archive-2026-02.md`.
+Public launch work is tracked milestone by milestone in the local `LAUNCH-PLAN.md`; feature status is in `ROADMAP.md` and `CHANGELOG.md`. The historical stage tracker is archived at `docs/worklog/progress-archive-2026-02.md`.

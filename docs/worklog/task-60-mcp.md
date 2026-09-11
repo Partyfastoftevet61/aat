@@ -302,7 +302,7 @@ The current implementation is HTTP/REST-centric (templates, OAS). To avoid one-w
 
 **Graceful degradation:** If a node has no OAS reference, OAS tools return "node has no OAS reference; use inspect_template for request shape or describe_node for graph-level detail". This leaves room for future protocol-specific tools (e.g., proto inspection) to handle non-OAS nodes.
 
-**Tests:** Use a small OAS spec fixture (not the full 1.2MB Airline spec). Test schema resolution, validation errors, example generation with nested objects.
+**Tests:** Use a small OAS spec fixture (not the full 1.2MB airline API spec). Test schema resolution, validation errors, example generation with nested objects.
 
 ---
 
@@ -476,18 +476,18 @@ Each WI is designed as one implementation session. Natural break points:
 
 - **Unit tests per tool handler:** Construct `ServerContext` with test data, call handler directly, assert Markdown output contains expected content. No MCP transport needed.
 - **Format function tests:** Table-driven tests for `format.go` helpers.
-- **OAS tests:** Small fixture spec (not the full Airline spec). Test schema resolution, validation, examples.
+- **OAS tests:** Small fixture spec (not the full airline spec). Test schema resolution, validation, examples.
 - **Integration test (optional per WI):** Use mcp-go's `HandleMessage` for full protocol round-trip on key tools.
-- **Manual validation:** After each WI, test with Claude Code against the Airline booking graph.
+- **Manual validation:** After each WI, test with Claude Code against the airline booking graph.
 
 ## Verification
 
 After all WIs complete:
 1. `go test ./mcp/...` — all tests pass
-2. Create `aat-project.yaml` for Airline booking graph
+2. Create `aat-project.yaml` for airline booking graph
 3. `aat mcp serve --manifest aat-project.yaml` — starts successfully
 4. Connect Claude Code, verify:
-   - `list_nodes` returns 7 Airline nodes
+   - `list_nodes` returns 7 airline nodes
    - `describe_node` shows full detail for SearchFlights
    - `trace_workflow` traces booking workflow
    - `inspect_template` shows request shape

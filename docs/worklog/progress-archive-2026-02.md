@@ -8,10 +8,10 @@ Cross-references task numbers from the implementation plan.
 
 - [x] 0. Project scaffolding (module, packages, CLAUDE.md, progress tracking)
 - [x] 1. Define YAML graph schema with semver versioning
-- [x] 2. Author graph for one real flow (Airline air booking, 7 nodes)
+- [x] 2. Author graph for one real flow (airline booking, 7 nodes)
 - [x] 3. Implement adapter interface and HTTPExecutor
 - [x] 4. Implement Tier 1 template adapter loader
-- [x] 5. Write template adapters for Airline booking flow (7 templates)
+- [x] 5. Write template adapters for airline booking flow (7 templates)
 - [x] 6. Implement sequential plan runner with dependency-aware scheduler
   - [x] 6.1 Plan model + YAML parsing (`plan` package)
   - [x] 6.2 Sequential runner + value resolution (`engine` package)
@@ -88,7 +88,7 @@ Cross-references task numbers from the implementation plan.
   - [x] CT-B. Composition algorithm: ComposeWorkflowTemplate, auto-wire, prefix, splice
   - [x] CT-C. aat prompt integration: addon detection, dynamic composition in Interpret()
   - [x] CT-D. MCP tools: list_workflows, instantiate_workflow, scaffold_template
-  - [x] CT-E. Airline examples: addon markers, 3 composed workflows
+  - [x] CT-E. airline examples: addon markers, 3 composed workflows
 
 ## Stage 3a: CI/CD, Web UI & Polish
 

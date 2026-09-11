@@ -121,7 +121,7 @@ The Call 1 prompt was already clean from Phase 1 — minimal changes needed.
 
 ---
 
-## Session 5: Airline Domain Refinements (deferred)
+## Session 5: airline Domain Refinements (deferred)
 
 Deferred to `aat-airline` repository:
 - Clarify `airportCode` type: prefer airport codes over city codes (ORD not CHI, CDG not PAR)

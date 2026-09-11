@@ -189,8 +189,8 @@ the graph and plan formats may still change before 1.0.
   accepted from the model, and the `warn` OpenAPI validation mode, which behaved exactly like `auto`.
 - The MCP `execute_plan` tool no longer accepts the obsolete `mode` parameter (the runtime
   strict/lean/adaptive modes were removed in 0.0.2).
-- Airline-era repository leftovers (`setup.sh`, a root-level plan, IDE run configurations, the
-  empty Airline case-study stub).
+- Repository leftovers from the private airline project (`setup.sh`, a root-level plan, IDE run
+  configurations, an empty case-study stub).
 
 ### Fixed
 - The shop kit's descriptions match the sandbox. `applyCoupon` lists its errors in the order they are

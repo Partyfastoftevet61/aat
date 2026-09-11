@@ -444,7 +444,7 @@ func TestCheckWorkflowCompat_UnfedStructural(t *testing.T) {
 	// search only produces "results" and "token".
 	// itineraryId is producible (book outputs it) but not in search-only base → unfed.
 	// specialInput is producible (specialProvider outputs it) but not in base → unfed.
-	assert.Equal(t, []string{"specialInput", "itineraryId"}, w.UnfedInputs)
+	assert.Equal(t, []string{"itineraryId", "specialInput"}, w.UnfedInputs)
 }
 
 func TestCheckWorkflowCompat_ValueInputFiltered(t *testing.T) {

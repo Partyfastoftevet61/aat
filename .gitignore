@@ -60,3 +60,6 @@ environments/
 
 # goreleaser output
 dist/
+
+# Local planning notes
+/LAUNCH-PLAN.md

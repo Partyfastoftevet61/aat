@@ -190,9 +190,9 @@ func TestAutoWirePlaceholders(t *testing.T) {
 					ID:   "inc0_searchSeatMap",
 					Node: "searchSeatMap",
 					Values: map[string]plan.StepValue{
-						"itineraryId":          {Default: "AUTOWIRE"},
-						"offerRef": {Default: "AUTOWIRE"},
-						"manualInput":          {Default: "AUTOWIRE"},
+						"itineraryId": {Default: "AUTOWIRE"},
+						"offerRef":    {Default: "AUTOWIRE"},
+						"manualInput": {Default: "AUTOWIRE"},
 					},
 				},
 			},
@@ -200,8 +200,8 @@ func TestAutoWirePlaceholders(t *testing.T) {
 	}
 
 	outputMap := map[string]string{
-		"itineraryId":          "createItinerary.itineraryId",
-		"offerRef": "addOffer.offerRef",
+		"itineraryId": "createItinerary.itineraryId",
+		"offerRef":    "addOffer.offerRef",
 	}
 
 	wire := map[string]string{

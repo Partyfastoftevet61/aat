@@ -38,11 +38,11 @@
 
 ## 2026-02-07 — Airline Booking Graph (Task 2)
 
-**What:** Authored a real API graph for the Airline JSON API air booking workflow. 7 nodes, 10 edges, comprehensive parse and validation tests. File: `graph/testdata/valid/airline_booking.yaml`.
+**What:** Authored a real API graph for the airline JSON API air booking workflow. 7 nodes, 10 edges, comprehensive parse and validation tests. File: `graph/testdata/valid/airline_booking.yaml`.
 
 **Decisions:**
 
-- **7 nodes, not 4:** The implementation plan summary says "search → select → book → add traveler" but the real Airline API requires 6 API calls plus a cleanup operation. Modeled all 7 faithfully: searchFlights, priceOffer, createItinerary, addOffer, addTraveler, commitBooking, ignoreItinerary.
+- **7 nodes, not 4:** The implementation plan summary says "search → select → book → add traveler" but the real airline API requires 6 API calls plus a cleanup operation. Modeled all 7 faithfully: searchFlights, priceOffer, createItinerary, addOffer, addTraveler, commitBooking, ignoreItinerary.
 - **Ordering via data edges:** `commitBooking` logically requires both `addOffer` and `addTraveler` to complete first. Since the graph schema has no explicit `dependsOn` mechanism, we express ordering through data edges — `commitBooking` accepts `offerStatus` (from addOffer) and `travelerId` (from addTraveler) as inputs. The adapter may ignore these values in the actual API call, but the edges encode the ordering constraint. This keeps the schema simple while being expressive enough.
 - **Single selection point:** The user selects one offering from search results via a `select: true` edge from `searchFlights.catalogOfferings` to `priceOffer.offeringId`. The confirmed offering ID then flows forward to `addOffer` as a scalar — no second selection needed.
 - **Parallel-capable topology:** `searchFlights` and `createItinerary` have no dependencies between them and can execute in parallel. `addTraveler` only depends on `createItinerary`, so it can run in parallel with `priceOffer`/`addOffer`.
@@ -86,16 +86,16 @@
 
 **Open questions:**
 
-- None — ready for Task 5 (write real Airline template adapters).
+- None — ready for Task 5 (write real airline template adapters).
 
 ## 2026-02-07 — Airline Template Adapters (Task 5)
 
-**What:** Created 7 YAML template adapter files in `adapter/testdata/templates/airline/` mapping each Airline booking graph node to its real API endpoint. Added `template_airline_test.go` with 21 tests covering loading, request building, and output extraction. All 65 adapter tests pass.
+**What:** Created 7 YAML template adapter files in `adapter/testdata/templates/airline/` mapping each airline booking graph node to its real API endpoint. Added `template_airline_test.go` with 21 tests covering loading, request building, and output extraction. All 65 adapter tests pass.
 
 **Decisions:**
 
 - **One template per graph node:** 7 files matching the 7 nodes in `airline_booking.yaml`. Each template maps graph inputs to API request structure and extracts graph outputs from response JSON using GJSON paths.
-- **Real Airline API structures:** Request bodies use actual `@type` discriminators and schema structures from the Airline JSON API spec: `FlightOffersQueryRequest`, `OfferQueryFromFlightOffers`, `ReservationID`, `Traveler` with `PersonName`, `ReservationQueryConfirmItinerary`. Extract paths follow the real response envelope structure (`FlightOffersResponse`, `OfferListResponse`, `ReservationResponse`, `TravelerResponse`).
+- **Real airline API structures:** Request bodies use actual `@type` discriminators and schema structures from the airline JSON API spec: `FlightOffersQueryRequest`, `OfferQueryFromFlightOffers`, `ReservationID`, `Traveler` with `PersonName`, `ReservationQueryConfirmItinerary`. Extract paths follow the real response envelope structure (`FlightOffersResponse`, `OfferListResponse`, `ReservationResponse`, `TravelerResponse`).
 - **Path parameters via placeholder substitution:** Templates like `addOffer`, `addTraveler`, `commitBooking`, and `ignoreItinerary` embed `{{itineraryId}}` in the URL path. The existing `substitutePlaceholders` function handles this naturally — no code changes needed.
 - **Content-Type only on templates with bodies:** The DELETE template (`ignoreItinerary`) omits the `Content-Type` header since it has no request body. Other common headers (Authorization, X_ACCESS_GROUP, TraceId, etc.) come from `EnvironmentConfig.Headers` at runtime.
 - **One-way search only:** The search template omits optional inputs (`returnDate`, `cabinPreference`). Tier 1 templates don't support conditional body sections, so round-trip and cabin filtering are deferred to Tier 2/3.
@@ -126,7 +126,7 @@
 
 **Open questions:**
 
-- The gjson field path for SELECT edge extraction (`Identifier.value`) may need adjustment after observing real Airline API responses. The test fixture uses this path but it hasn't been validated against the actual API yet.
+- The gjson field path for SELECT edge extraction (`Identifier.value`) may need adjustment after observing real airline API responses. The test fixture uses this path but it hasn't been validated against the actual API yet.
 - None blocking — ready for Task 6a (predicate expression parser).
 
 ## 2026-02-07 — Predicate Expression Parser (Task 6a)
@@ -247,11 +247,11 @@
 
 ## 2026-02-07 — CLI Wiring + Test Artifacts (Task 12)
 
-**What:** Wired `cmd/aat/main.go` so that `aat run --plan <file> --env <env> --graph <file> --templates <dir>` executes a real API workflow end-to-end. Created Airline pre-prod environment config, booking plan YAML, and CLI unit tests. Added `Headers` field to `Environment` for static request headers (needed for `X_ACCESS_GROUP`).
+**What:** Wired `cmd/aat/main.go` so that `aat run --plan <file> --env <env> --graph <file> --templates <dir>` executes a real API workflow end-to-end. Created airline pre-prod environment config, booking plan YAML, and CLI unit tests. Added `Headers` field to `Environment` for static request headers (needed for `X_ACCESS_GROUP`).
 
 **Decisions:**
 
-- **`Headers` field on Environment:** Added `map[string]string` field for static headers included on every request. Custom headers are applied first; auth headers override. This avoids needing an adapter-level workaround for the Airline access group header.
+- **`Headers` field on Environment:** Added `map[string]string` field for static headers included on every request. Custom headers are applied first; auth headers override. This avoids needing an adapter-level workaround for the airline access group header.
 - **`runCommand` extracted for testability:** Core logic in `runCommand(ctx, args)` returns error. `runMain` handles flag parsing and exit codes. Tests call `runCommand` directly with mock HTTP servers.
 - **Subcommand-based CLI:** `aat run` as first subcommand. Future subcommands (e.g., `aat validate`, `aat diff`) follow naturally. Uses `flag.FlagSet` — no third-party CLI library.
 - **All four paths required:** `--plan`, `--env`, `--graph`, `--templates` are mandatory. No convention-based discovery (e.g., auto-finding `graph.yaml`). Explicit is better.
@@ -267,7 +267,7 @@
 
 ## 2026-02-07 — Airline Template Fixes (Post-Task 12)
 
-**What:** Debugged and fixed all 7 Airline templates to work against the real PP API. The initial templates were based on API docs and schema definitions but had several mismatches with actual API behavior. After iterative testing, achieved a full end-to-end booking flow: search → price → createItinerary → addOffer → addTraveler → commitBooking.
+**What:** Debugged and fixed all 7 airline templates to work against the real PP API. The initial templates were based on API docs and schema definitions but had several mismatches with actual API behavior. After iterative testing, achieved a full end-to-end booking flow: search → price → createItinerary → addOffer → addTraveler → commitBooking.
 
 **Decisions:**
 
