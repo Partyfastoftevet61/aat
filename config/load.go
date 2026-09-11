@@ -5,12 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/gburgyan/aat/internal/yamlx"
 )
 
-// readFile reads a file and returns its contents.
+// readFile reads an environment file and returns its contents.
 func readFile(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -34,7 +33,7 @@ func LoadEnvironment(path string) (*Environment, error) {
 			strings.Join(names, ", "))
 	}
 
-	return loadLegacyEnv(data)
+	return loadLegacyEnv(path, data)
 }
 
 // LoadEnvironmentFromDir loads a named environment from a directory (e.g., "<name>.yaml").
@@ -66,8 +65,8 @@ func LoadOverlayFile(path string) (*OverlayFile, error) {
 	}
 
 	var overlay OverlayFile
-	if err := yaml.Unmarshal(data, &overlay); err != nil {
-		return nil, fmt.Errorf("parsing overlay YAML: %w", err)
+	if err := yamlx.Decode(data, &overlay); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 
 	if errs := validateOverrides(overlay.Overrides); len(errs) > 0 {
@@ -93,18 +92,6 @@ func MergeOverrides(base, overlay []HostOverride) []HostOverride {
 	result = append(result, base...)
 	result = append(result, overlay...)
 	return result
-}
-
-func applyDefaults(env *Environment) {
-	if env.Settings.MaxRunDuration.Duration == 0 {
-		env.Settings.MaxRunDuration.Duration = 120 * time.Second
-	}
-	if env.Settings.DefaultRetries == 0 {
-		env.Settings.DefaultRetries = 2
-	}
-	if env.Settings.ArchiveFormat == "" {
-		env.Settings.ArchiveFormat = ArchiveJSON
-	}
 }
 
 // ValidateEnvironment checks that an Environment has all required fields and valid values.
@@ -189,30 +176,21 @@ func validateOverrides(overrides []HostOverride) []string {
 
 func validateSettings(s *RuntimeSettings) []string {
 	var errs []string
-
-	if s.ArchiveFormat != "" {
-		switch s.ArchiveFormat {
-		case ArchiveJSON, ArchiveJSONGZ:
-			// valid
-		default:
-			errs = append(errs, fmt.Sprintf("unknown archiveFormat %q (expected json or json.gz)", s.ArchiveFormat))
-		}
+	if err := CheckOASValidationMode(s.OASValidation); err != nil {
+		errs = append(errs, fmt.Sprintf("settings.oasValidation: %s", err))
 	}
-
-	if !ValidOASValidationMode(s.OASValidation) {
-		errs = append(errs, fmt.Sprintf("unknown oasValidation %q (expected auto, warn, strict, or off)", s.OASValidation))
-	}
-
 	return errs
 }
 
-// ValidOASValidationMode reports whether mode is an accepted oasValidation
-// setting or --oas-validate value: auto, warn, strict, or off. Empty means
-// unset and is valid.
-func ValidOASValidationMode(mode string) bool {
+// CheckOASValidationMode returns an error unless mode is an accepted
+// settings.oasValidation or --oas-validate value: auto, strict, or off. Empty
+// means unset and is accepted.
+func CheckOASValidationMode(mode string) error {
 	switch mode {
-	case "", "auto", "warn", "strict", "off":
-		return true
+	case "", "auto", "strict", "off":
+		return nil
+	case "warn":
+		return fmt.Errorf(`OpenAPI validation mode "warn" was removed because it behaved exactly like "auto"; use auto`)
 	}
-	return false
+	return fmt.Errorf("unknown OpenAPI validation mode %q (expected auto, strict, or off)", mode)
 }

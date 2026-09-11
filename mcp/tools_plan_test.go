@@ -70,7 +70,7 @@ func TestHandleValidatePlan_InvalidYAML(t *testing.T) {
 	result := callTool(t, srv.handleValidatePlan, map[string]any{"yaml": "not: valid: yaml: ["})
 	assert.True(t, result.IsError)
 	text := resultText(t, result)
-	assert.Contains(t, text, "YAML parse error")
+	assert.Contains(t, text, "invalid YAML")
 }
 
 func TestHandleValidatePlan_ValidationErrors(t *testing.T) {
@@ -103,7 +103,7 @@ func TestHandleValidatePlan_MissingSteps(t *testing.T) {
 
 	result := callTool(t, srv.handleValidatePlan, map[string]any{"yaml": "intent:\n  goal: book\n"})
 	assert.True(t, result.IsError)
-	assert.Contains(t, resultText(t, result), "YAML parse error")
+	assert.Contains(t, resultText(t, result), "at least one execution step")
 }
 
 // --- list_saved_plans ---
@@ -275,7 +275,7 @@ func TestHandleSavePlan_InvalidYAMLRejected(t *testing.T) {
 		"yaml": "not: valid: yaml: [",
 	})
 	assert.True(t, result.IsError)
-	assert.Contains(t, resultText(t, result), "YAML parse error")
+	assert.Contains(t, resultText(t, result), "invalid YAML")
 
 	// File should not exist
 	_, err := os.Stat(filepath.Join(dir, "bad.yaml"))
@@ -414,4 +414,14 @@ func TestResolveWorkflowPath_KeepsYAMLExtension(t *testing.T) {
 
 func TestResolveWorkflowPath_KeepsYMLExtension(t *testing.T) {
 	assert.Equal(t, "/plans/test.yml", resolveWorkflowPath("/plans", "test.yml"))
+}
+
+func TestHandleValidatePlan_UnknownKey(t *testing.T) {
+	g := twoNodeGraph()
+	srv := newTestServer(g)
+
+	src := "execution:\n  steps:\n    - node: a\n      values:\n        x: {fromSelecton: sel.id}\n"
+	result := callTool(t, srv.handleValidatePlan, map[string]any{"yaml": src})
+	assert.True(t, result.IsError)
+	assert.Contains(t, resultText(t, result), `line 5: unknown key "fromSelecton" in step value (did you mean "fromSelection"?)`)
 }

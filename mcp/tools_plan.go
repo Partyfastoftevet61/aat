@@ -170,7 +170,7 @@ func (s *Server) handleValidatePlan(_ context.Context, req mcp.CallToolRequest) 
 
 	parsed, err := plan.ParseAny([]byte(yamlStr))
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("YAML parse error: %v", err)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("Parse failed:\n%v", err)), nil
 	}
 
 	var p *plan.Plan
@@ -275,7 +275,7 @@ func (s *Server) handleLoadPlan(_ context.Context, req mcp.CallToolRequest) (*mc
 
 	parsed, err := plan.ParseAny(data)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("parsing plan: %v", err)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("parsing plan: %s: %v", path, err)), nil
 	}
 
 	var p *plan.Plan
@@ -320,7 +320,7 @@ func (s *Server) handleSavePlan(_ context.Context, req mcp.CallToolRequest) (*mc
 
 	parsed, err := plan.ParseAny([]byte(yamlStr))
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("YAML parse error: %v", err)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("Parse failed:\n%v", err)), nil
 	}
 
 	savePath, saveErr := config.ResolvePlanWritePath(s.ctx.PlanDirs, name)

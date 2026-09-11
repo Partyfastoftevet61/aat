@@ -487,9 +487,6 @@ func mergeStepFromLLM(skelStep *plan.Step, llmStep *plan.Step, unfed map[string]
 			if llmSel.SortField != "" {
 				skelSel.SortField = llmSel.SortField
 			}
-			if llmSel.Prompt != "" {
-				skelSel.Prompt = llmSel.Prompt
-			}
 			if llmSel.Index != 0 {
 				skelSel.Index = llmSel.Index
 			}
@@ -524,7 +521,7 @@ func mergeStepFromLLM(skelStep *plan.Step, llmStep *plan.Step, unfed map[string]
 			// Named selection: skeleton is authoritative. Skip.
 			continue
 		} else if skelVal.From != "" && skelVal.Select != nil {
-			// Select edge: accept strategy/filter/sortField/index/prompt overrides.
+			// Select edge: accept strategy/filter/sortField/index overrides.
 			if llmVal.Select != nil {
 				if llmVal.Select.Strategy != "" {
 					skelVal.Select.Strategy = llmVal.Select.Strategy
@@ -537,9 +534,6 @@ func mergeStepFromLLM(skelStep *plan.Step, llmStep *plan.Step, unfed map[string]
 				}
 				if llmVal.Select.Index != 0 {
 					skelVal.Select.Index = llmVal.Select.Index
-				}
-				if llmVal.Select.Prompt != "" {
-					skelVal.Select.Prompt = llmVal.Select.Prompt
 				}
 			}
 			skelStep.Values[inputName] = skelVal

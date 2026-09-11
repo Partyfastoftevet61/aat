@@ -116,8 +116,9 @@ type SelectionDecision struct {
 // ValueResolution records how a single input was resolved.
 type ValueResolution struct {
 	InputName string // input being resolved
-	Source    string // "edge", "select_edge", "plan_default", "expression",
-	// "fallback_pool", "graph_default", "llm", "optional_skip"
+	Source    string // "plan_default", "expression", "plan_from", "select_edge",
+	// "named_selection", "from_input", "from_resolved", "fallback_pool",
+	// "graph_default", "optional_skip"
 	RawValue     any    // before expression evaluation (nil if N/A)
 	FinalValue   any    // after evaluation + coercion
 	FromStep     string // source step (for edge/select_edge/from_input)

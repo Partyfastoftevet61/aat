@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gburgyan/aat/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
 
@@ -39,26 +40,26 @@ type WorkflowExample struct {
 type AfterSpec []string
 
 // UnmarshalYAML accepts both scalar and list forms.
-func (a *AfterSpec) UnmarshalYAML(value *yaml.Node) error {
-	if value.Kind == yaml.ScalarNode {
+func (a *AfterSpec) UnmarshalYAML(unmarshal func(any) error) error {
+	n, err := yamlx.Node(unmarshal)
+	if err != nil {
+		return err
+	}
+	switch n.Kind {
+	case yaml.ScalarNode:
 		var s string
-		if err := value.Decode(&s); err != nil {
+		if err := unmarshal(&s); err != nil {
 			return err
 		}
 		if s != "" {
 			*a = AfterSpec{s}
 		}
 		return nil
+	case yaml.SequenceNode:
+		return unmarshal((*[]string)(a))
+	default:
+		return yamlx.KindError(n, "after", "a node name or a list of node names")
 	}
-	if value.Kind == yaml.SequenceNode {
-		var items []string
-		if err := value.Decode(&items); err != nil {
-			return err
-		}
-		*a = AfterSpec(items)
-		return nil
-	}
-	return fmt.Errorf("after: expected string or list, got %v", value.Kind)
 }
 
 // MarshalYAML emits a scalar for single value, list for multiple.
@@ -189,7 +190,6 @@ type InputDefaultSelect struct {
 	Filter    string `yaml:"filter,omitempty"`
 	Index     int    `yaml:"index,omitempty"`
 	SortField string `yaml:"sortField,omitempty"`
-	Prompt    string `yaml:"prompt,omitempty"`
 }
 
 // HasValue reports whether this InputDefault carries any meaningful value.
@@ -231,48 +231,32 @@ func LiteralDefault(v any) *InputDefault {
 	return &InputDefault{Value: v}
 }
 
-// UnmarshalYAML handles both scalar literals (`default: "ADT"`) and rich
-// map syntax (`default: {pool: [...], constraint: "..."}`).
-func (d *InputDefault) UnmarshalYAML(value *yaml.Node) error {
-	// Scalar or simple value (string, int, float, bool)
-	if value.Kind == yaml.ScalarNode {
-		var v any
-		if err := value.Decode(&v); err != nil {
-			return err
-		}
-		d.Value = v
-		return nil
-	}
-
-	// Sequence node → treat as pool shorthand
-	if value.Kind == yaml.SequenceNode {
-		var items []any
-		if err := value.Decode(&items); err != nil {
-			return err
-		}
-		d.Pool = items
-		return nil
-	}
-
-	// Map node → try rich struct first
-	if value.Kind == yaml.MappingNode {
-		// Decode into the struct fields using an alias to avoid recursion
-		type inputDefaultAlias InputDefault
-		var alias inputDefaultAlias
-		if err := value.Decode(&alias); err != nil {
-			return err
-		}
-		*d = InputDefault(alias)
-		return nil
-	}
-
-	// Fallback: decode as any
-	var v any
-	if err := value.Decode(&v); err != nil {
+// UnmarshalYAML handles scalar literals (`default: "ADT"`), the list
+// shorthand for a pool (`default: [a, b]`), and rich map syntax
+// (`default: {pool: [...], constraint: "..."}`). It uses the callback form so
+// strict decoding reaches the mapping (see internal/yamlx).
+func (d *InputDefault) UnmarshalYAML(unmarshal func(any) error) error {
+	n, err := yamlx.Node(unmarshal)
+	if err != nil {
 		return err
 	}
-	d.Value = v
-	return nil
+	switch n.Kind {
+	case yaml.ScalarNode:
+		return unmarshal(&d.Value)
+	case yaml.SequenceNode:
+		return unmarshal(&d.Pool)
+	case yaml.MappingNode:
+		// The raw type has no methods, which avoids infinite recursion.
+		type rawInputDefault InputDefault
+		var raw rawInputDefault
+		if err := unmarshal(&raw); err != nil {
+			return err
+		}
+		*d = InputDefault(raw)
+		return nil
+	default:
+		return yamlx.KindError(n, "an input default", "a scalar, a list, or a mapping")
+	}
 }
 
 // MarshalYAML emits a bare scalar for literal-only defaults, preserving
@@ -282,9 +266,9 @@ func (d InputDefault) MarshalYAML() (interface{}, error) {
 	if d.IsLiteralOnly() {
 		return d.Value, nil
 	}
-	// Use alias to avoid infinite recursion
-	type inputDefaultAlias InputDefault
-	return inputDefaultAlias(d), nil
+	// The raw type has no methods, which avoids infinite recursion.
+	type rawInputDefault InputDefault
+	return rawInputDefault(d), nil
 }
 
 // Constraint captures validation rules for an input value.

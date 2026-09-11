@@ -11,7 +11,7 @@ Every AAT run produces a JSON archive that captures the full execution trace —
 | Metadata | Plan name, graph version, start/end timestamps, outcome, layers applied |
 | Steps | Per-step records: HTTP method, URL, request headers/body, response headers/body, status code, duration |
 | Value resolutions | How each input was resolved — source (literal, reference, pool, expression), value used, constraint pass/fail |
-| Selection decisions | Array element selection: source size, filter applied, strategy used, selected index, LLM call details |
+| Selection decisions | Array element selection: source size, filter applied, strategy used, selected index |
 | Assertions | Per-step assertion results: type, path, expected value, actual value, pass/fail |
 | Expect-failure records | Negative test outcomes: expected status codes, actual status, pass/fail |
 | Extractions | Output values extracted from responses via gjson paths |

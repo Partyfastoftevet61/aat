@@ -124,16 +124,12 @@ apiBaseUrl: https://petstore.swagger.io/v2
 
 auth:
   type: none
-
-settings:
-  defaultRetries: 1
 ```
 
 The environment file is the only file that changes between environments (dev, staging, production). It provides:
 
 - **`apiBaseUrl`** — prepended to every template's request path.
-- **`auth`** — authentication configuration. The Petstore API is public, so `type: none`. Real APIs would use `bearer`, `apiKey`, `oauth2`, or `custom` here.
-- **`settings`** — runtime defaults. `defaultRetries: 1` means AAT retries each step once on transient failure.
+- **`auth`** — authentication configuration. The Petstore API is public, so `type: none`. Real APIs would use `oauth2`, `apikey`, or `bearer` here.
 
 Everything else (the graph, templates, workflows, recipes) stays the same across environments.
 

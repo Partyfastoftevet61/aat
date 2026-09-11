@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gburgyan/aat/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
 
@@ -16,21 +17,24 @@ import (
 type StringOrList []string
 
 // UnmarshalYAML implements custom YAML unmarshalling for StringOrList.
-func (s *StringOrList) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	// Try single string first
-	var single string
-	if err := unmarshal(&single); err == nil {
-		*s = StringOrList{single}
-		return nil
-	}
-
-	// Try list of strings
-	var list []string
-	if err := unmarshal(&list); err != nil {
+func (s *StringOrList) UnmarshalYAML(unmarshal func(any) error) error {
+	n, err := yamlx.Node(unmarshal)
+	if err != nil {
 		return err
 	}
-	*s = StringOrList(list)
-	return nil
+	switch n.Kind {
+	case yaml.ScalarNode:
+		var single string
+		if err := unmarshal(&single); err != nil {
+			return err
+		}
+		*s = StringOrList{single}
+		return nil
+	case yaml.SequenceNode:
+		return unmarshal((*[]string)(s))
+	default:
+		return yamlx.KindError(n, "this field", "a path or a list of paths")
+	}
 }
 
 // ProjectManifest describes where a project's artifacts live.
@@ -63,8 +67,8 @@ func LoadManifest(path string) (*ProjectManifest, error) {
 	}
 
 	var m ProjectManifest
-	if err := yaml.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("parsing manifest: %w", err)
+	if err := yamlx.Decode(data, &m); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 
 	// Validate required fields

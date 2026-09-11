@@ -33,8 +33,6 @@ overrides:
     confirmItinerary:
       - type: status
         expect: 200
-  descriptions:
-    searchFlights: "Search for flights Rome-NYC"
 `
 	r, err := ParseRecipe([]byte(yaml))
 	require.NoError(t, err)
@@ -51,7 +49,6 @@ overrides:
 	assert.Equal(t, "carrier == 'QF'", r.Overrides.Selections["priceOfferByRef.leg1"].Filter)
 	require.Len(t, r.Overrides.Assertions["confirmItinerary"], 1)
 	assert.Equal(t, "status", r.Overrides.Assertions["confirmItinerary"][0].Type)
-	assert.Equal(t, "Search for flights Rome-NYC", r.Overrides.Descriptions["searchFlights"])
 }
 
 func TestParseRecipe_MissingWorkflow(t *testing.T) {
@@ -80,7 +77,7 @@ execution:
 func TestParseRecipe_MalformedYAML(t *testing.T) {
 	_, err := ParseRecipe([]byte(`{{{invalid`))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "YAML parse error")
+	assert.Contains(t, err.Error(), "invalid YAML")
 }
 
 func TestIsRecipeFile(t *testing.T) {
@@ -152,9 +149,6 @@ func TestMarshalRecipe_RoundTrip(t *testing.T) {
 					{Type: "status", Expect: 200},
 				},
 			},
-			Descriptions: map[string]string{
-				"searchFlights": "Search for flights",
-			},
 		},
 	}
 
@@ -171,7 +165,6 @@ func TestMarshalRecipe_RoundTrip(t *testing.T) {
 	assert.Equal(t, original.Selection.Addons, parsed.Selection.Addons)
 	assert.Equal(t, original.Overrides.Values["searchFlights.origin"], parsed.Overrides.Values["searchFlights.origin"])
 	assert.Equal(t, original.Overrides.Selections["priceOfferByRef.offering"].Strategy, parsed.Overrides.Selections["priceOfferByRef.offering"].Strategy)
-	assert.Equal(t, original.Overrides.Descriptions["searchFlights"], parsed.Overrides.Descriptions["searchFlights"])
 }
 
 func TestWriteRecipe_AndParseRecipeFile(t *testing.T) {
@@ -259,4 +252,24 @@ overrides: {}
 	r, err := ParseRecipe([]byte(yaml))
 	require.NoError(t, err)
 	assert.Equal(t, "Booking", r.Selection.Workflow)
+}
+
+func TestParseRecipe_UnknownKeys(t *testing.T) {
+	src := `
+kind: recipe
+selection:
+  workflow: Booking
+overrides:
+  descriptions:
+    searchFlights: "Search for flights"
+`
+	_, err := ParseRecipe([]byte(src))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `line 6: unknown key "descriptions" in recipe overrides (valid keys: assertions, selections, values)`)
+
+	// The kind probe stays lenient, so a recipe with a bad key is still
+	// dispatched to ParseRecipe and reported there.
+	assert.True(t, IsRecipeFile([]byte(src)))
+	_, err = ParseAny([]byte(src))
+	assert.ErrorContains(t, err, `unknown key "descriptions"`)
 }

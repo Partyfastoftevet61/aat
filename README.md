@@ -7,7 +7,7 @@
 
 AAT is a CLI tool that tests API workflows end-to-end. You define your API as a graph of operations, write test plans that traverse it, and AAT handles the execution — resolving data dependencies between steps, running assertions, and producing detailed archives of every request and response.
 
-With an LLM configured, AAT can also generate test plans from natural language prompts and intelligently select values when explicit data isn't available.
+LLMs are optional and authoring-time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API. Execution is deterministic — no LLM in the loop, ever.
 
 ## Quick start
 

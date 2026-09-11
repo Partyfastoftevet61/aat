@@ -33,7 +33,6 @@ type TargetedSelection struct {
 	Filter    string `json:"filter,omitempty"`
 	SortField string `json:"sortField,omitempty"`
 	Index     int    `json:"index,omitempty"`
-	Prompt    string `json:"prompt,omitempty"`
 }
 
 // TargetedAssertion represents a single mechanical assertion from the LLM.
@@ -444,9 +443,6 @@ func applyTargetedResponse(skeleton *plan.Plan, resp *TargetedResponse, unfedSet
 				if sel.SortField != "" {
 					existing.SortField = sel.SortField
 				}
-				if sel.Prompt != "" {
-					existing.Prompt = sel.Prompt
-				}
 				if sel.Index != 0 {
 					existing.Index = sel.Index
 				}
@@ -465,9 +461,6 @@ func applyTargetedResponse(skeleton *plan.Plan, resp *TargetedResponse, unfedSet
 			}
 			if sel.SortField != "" {
 				sv.Select.SortField = sel.SortField
-			}
-			if sel.Prompt != "" {
-				sv.Select.Prompt = sel.Prompt
 			}
 			if sel.Index != 0 {
 				sv.Select.Index = sel.Index
@@ -732,28 +725,15 @@ func validateValueConstraints(resp *TargetedResponse, unfedSet map[string]bool, 
 	return issues
 }
 
-// validStrategies is the set of valid selection strategies (matches plan/validate.go).
-var validStrategies = map[string]bool{
-	"":       true,
-	"first":  true,
-	"last":   true,
-	"index":  true,
-	"random": true,
-	"min":    true,
-	"max":    true,
-	"match":  true,
-	"llm":    true,
-}
-
 // validateSelectionStrategies checks that selection override strategies are valid.
 func validateSelectionStrategies(resp *TargetedResponse) []TargetedValidationIssue {
 	var issues []TargetedValidationIssue
 	for key, sel := range resp.Selections {
-		if sel.Strategy != "" && !validStrategies[sel.Strategy] {
+		if !plan.IsSelectionStrategy(sel.Strategy) {
 			issues = append(issues, TargetedValidationIssue{
 				Key:     key,
 				Kind:    "invalid_strategy",
-				Message: fmt.Sprintf("%s: unknown selection strategy %q; valid: first, last, random, index, min, max, match, llm", key, sel.Strategy),
+				Message: fmt.Sprintf("%s: unknown selection strategy %q; valid: %s", key, sel.Strategy, strings.Join(plan.SelectionStrategies(), ", ")),
 			})
 		}
 	}

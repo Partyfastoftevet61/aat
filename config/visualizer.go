@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"gopkg.in/yaml.v3"
+	"github.com/gburgyan/aat/internal/yamlx"
 )
 
 // VisualizerDef describes a single visualizer plugin.
@@ -44,8 +44,8 @@ func LoadVisualizers(dir string) ([]VisualizerDef, error) {
 	}
 
 	var manifest VisualizerManifest
-	if err := yaml.Unmarshal(data, &manifest); err != nil {
-		return nil, fmt.Errorf("parsing visualizer manifest: %w", err)
+	if err := yamlx.Decode(data, &manifest); err != nil {
+		return nil, fmt.Errorf("%s: %w", manifestPath, err)
 	}
 
 	for i, v := range manifest.Visualizers {

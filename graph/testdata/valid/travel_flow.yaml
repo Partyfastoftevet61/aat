@@ -51,10 +51,8 @@ nodes:
     inputs:
       - name: searchId
         type: string
-        source: searchFlights.searchId
       - name: flightId
         type: string
-        source: searchFlights.flights[].flightId
     outputs:
       - name: fareId
         type: string

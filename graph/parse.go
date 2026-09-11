@@ -5,15 +5,16 @@ import (
 	"os"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"github.com/gburgyan/aat/internal/yamlx"
 )
 
 // Parse unmarshals YAML bytes into a Graph, populates node names
-// from map keys, and validates the result.
+// from map keys, and validates the result. Keys that no graph field accepts
+// are errors.
 func Parse(data []byte) (*Graph, error) {
 	var g Graph
-	if err := yaml.Unmarshal(data, &g); err != nil {
-		return nil, fmt.Errorf("YAML parse error: %w", err)
+	if err := yamlx.Decode(data, &g); err != nil {
+		return nil, err
 	}
 
 	// Populate Node.Name from map keys
@@ -33,13 +34,18 @@ func Parse(data []byte) (*Graph, error) {
 	return &g, nil
 }
 
-// ParseFile reads a YAML file from disk and parses it into a Graph.
+// ParseFile reads a YAML file from disk and parses it into a Graph. Errors
+// name the file.
 func ParseFile(path string) (*Graph, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading graph file: %w", err)
 	}
-	return Parse(data)
+	g, err := Parse(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return g, nil
 }
 
 // splitRef splits a "node.field" reference into its components.

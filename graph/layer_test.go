@@ -3,6 +3,7 @@ package graph
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -798,4 +799,18 @@ func writeLayer(t *testing.T, dir, filename, name, inputsYAML string) {
 
 func splitLines(s string) []string {
 	return []string{s}
+}
+
+func TestParseLayerFile_UnknownKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "express.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("name: express\ninput:\n  shippingTier: express\n"), 0o644))
+
+	_, err := ParseLayerFile(path)
+	require.Error(t, err)
+	assert.Equal(t, path+`: line 2: unknown key "input" in layer (did you mean "inputs"?)`, err.Error())
+
+	// LoadLayersFromDir passes the error through without naming the file twice.
+	_, err = LoadLayersFromDir(filepath.Dir(path))
+	require.Error(t, err)
+	assert.Equal(t, 1, strings.Count(err.Error(), path))
 }

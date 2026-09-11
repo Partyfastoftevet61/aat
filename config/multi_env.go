@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gburgyan/aat/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,7 +25,7 @@ func LoadNamedEnvironment(path, envName string) (*Environment, error) {
 func LoadNamedEnvironmentWithVars(path, envName string, vars map[string]string) (*Environment, error) {
 	data, err := readFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading environment file: %w", err)
+		return nil, err
 	}
 
 	if isMultiEnv(data) {
@@ -43,7 +44,7 @@ func LoadNamedEnvironmentWithVars(path, envName string, vars map[string]string) 
 	if len(vars) > 0 {
 		return nil, fmt.Errorf("env file is single-environment format; --var applies only to multi-environment files")
 	}
-	return loadLegacyEnv(data)
+	return loadLegacyEnv(path, data)
 }
 
 // ListEnvironments returns the names of all non-abstract environments defined in
@@ -52,7 +53,7 @@ func LoadNamedEnvironmentWithVars(path, envName string, vars map[string]string) 
 func ListEnvironments(path string) ([]string, error) {
 	data, err := readFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading environment file: %w", err)
+		return nil, err
 	}
 
 	if isMultiEnv(data) {
@@ -65,8 +66,8 @@ func ListEnvironments(path string) ([]string, error) {
 
 	// Legacy format — return the environment name
 	var env Environment
-	if err := yaml.Unmarshal(data, &env); err != nil {
-		return nil, fmt.Errorf("parsing environment YAML: %w", err)
+	if err := yamlx.Decode(data, &env); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return []string{env.Name}, nil
 }
@@ -86,7 +87,7 @@ func isMultiEnv(data []byte) bool {
 	var probe struct {
 		Environments map[string]yaml.Node `yaml:"environments"`
 	}
-	if err := yaml.Unmarshal(data, &probe); err != nil {
+	if err := yaml.Unmarshal(data, &probe); err != nil { //nolint:forbidigo // lenient probe: the loader that follows decodes strictly
 		return false
 	}
 	return len(probe.Environments) > 0
@@ -96,7 +97,7 @@ func isMultiEnv(data []byte) bool {
 // This does NOT process includes — use for quick probing only (e.g., error messages).
 func listEnvNamesFromData(data []byte) ([]string, error) {
 	var mef MultiEnvironmentFile
-	if err := yaml.Unmarshal(data, &mef); err != nil {
+	if err := yaml.Unmarshal(data, &mef); err != nil { //nolint:forbidigo // lenient probe: names for an error message only
 		return nil, fmt.Errorf("parsing multi-env YAML: %w", err)
 	}
 	return listEnvNamesFromMEF(&mef), nil
@@ -120,8 +121,8 @@ func listEnvNamesFromMEF(mef *MultiEnvironmentFile) []string {
 // own include directives (no recursive includes).
 func parseAndMergeIncludes(basePath string, data []byte) (*MultiEnvironmentFile, error) {
 	var mef MultiEnvironmentFile
-	if err := yaml.Unmarshal(data, &mef); err != nil {
-		return nil, fmt.Errorf("parsing multi-env YAML: %w", err)
+	if err := yamlx.Decode(data, &mef); err != nil {
+		return nil, fmt.Errorf("%s: %w", basePath, err)
 	}
 
 	if len(mef.Include) == 0 {
@@ -141,8 +142,8 @@ func parseAndMergeIncludes(basePath string, data []byte) (*MultiEnvironmentFile,
 		}
 
 		var incFile MultiEnvironmentFile
-		if err := yaml.Unmarshal(incData, &incFile); err != nil {
-			return nil, fmt.Errorf("parsing include file %q: %w", incPath, err)
+		if err := yamlx.Decode(incData, &incFile); err != nil {
+			return nil, fmt.Errorf("%s: %w", resolvedPath, err)
 		}
 
 		if len(incFile.Include) > 0 {
@@ -169,12 +170,11 @@ func parseAndMergeIncludes(basePath string, data []byte) (*MultiEnvironmentFile,
 }
 
 // loadLegacyEnv loads a single-environment YAML file (existing format).
-func loadLegacyEnv(data []byte) (*Environment, error) {
+func loadLegacyEnv(path string, data []byte) (*Environment, error) {
 	var env Environment
-	if err := yaml.Unmarshal(data, &env); err != nil {
-		return nil, fmt.Errorf("parsing environment YAML: %w", err)
+	if err := yamlx.Decode(data, &env); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	applyDefaults(&env)
 	if err := ValidateEnvironment(&env); err != nil {
 		return nil, err
 	}
@@ -222,7 +222,6 @@ func loadMultiEnv(basePath string, data []byte, envName string, cliVars map[stri
 
 	// Convert to Environment
 	env := toEnvironment(envName, merged)
-	applyDefaults(env)
 
 	if err := validateMultiEnv(env); err != nil {
 		return nil, err
@@ -341,15 +340,6 @@ func mergeSettings(base, overlay *RuntimeSettings) *RuntimeSettings {
 	}
 
 	result := *base
-	if overlay.MaxRunDuration.Duration != 0 {
-		result.MaxRunDuration = overlay.MaxRunDuration
-	}
-	if overlay.DefaultRetries != 0 {
-		result.DefaultRetries = overlay.DefaultRetries
-	}
-	if overlay.ArchiveFormat != "" {
-		result.ArchiveFormat = overlay.ArchiveFormat
-	}
 	if overlay.OASValidation != "" {
 		result.OASValidation = overlay.OASValidation
 	}

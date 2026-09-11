@@ -14,55 +14,74 @@ Runs all checks against the project manifest. AAT auto-discovers the manifest vi
 |------|------|---------|-------------|
 | `--manifest` | path | auto-discovered | Explicit path to `aat-project.yaml` |
 | `--strict` | bool | `false` | Treat warnings as errors |
+| `--var` | `KEY=VALUE` | — | Set a var of a multi-environment file while validating every environment (repeatable) |
 
 ### Example Output
 
-When everything passes:
+When everything passes (the `examples/shop` project):
 
 ```
-Manifest:              OK (project: ecommerce)
-Graph structure:       OK (12 nodes)
-OAS validation:        OK
-Adapter outputs:       OK (10 templates)
-Template inputs:       OK
-Workflow compatibility: OK (3 workflows)
-Workflows:             OK (4 files, 2 templates)
-Plans:                 OK (6 files, 4 recipes)
+Manifest:               OK (project: shop)
+Environment:            OK (2 environments: eu, us)
+Domain:                 OK (3 concepts, 3 types, 6 value pools)
+Visualizers:            OK (1 visualizer)
+Graph structure:        OK (17 nodes)
+OAS validation:         OK
+Adapter outputs:        OK (17 templates)
+Template inputs:        OK
+Workflow compatibility: OK (11 workflows)
+Workflows:              OK (10 files, 10 templates)
+Layers:                 OK (12 layers)
+Plans:                  OK (7 files, 3 recipes)
 
 Project validation: PASSED
 ```
 
-When a section fails:
+When sections fail, each error names its file (relative to the working directory) and, for YAML problems, the line:
 
 ```
-Manifest:              OK (project: ecommerce)
-Graph structure:       OK (12 nodes)
-OAS validation:        FAILED
-  loading spec "openapi.yaml": file not found
-Adapter outputs:       OK (10 templates)
-Template inputs:       OK
-Workflow compatibility: OK (3 workflows)
-Workflows:             OK (4 files, 2 templates)
-Plans:                 FAILED
-  smoke-test.yaml: step 2 (createOrder): required input "productId" has no plan value
+Manifest:               OK (project: shop)
+Environment:            OK (2 environments: eu, us)
+Domain:                 FAILED
+  domain.yaml: line 44: unknown key "valuePool" in knowledge base (did you mean "valuePools"?)
+Visualizers:            OK (1 visualizer)
+Graph structure:        OK (17 nodes)
+OAS validation:         OK
+Adapter outputs:        OK (17 templates)
+Template inputs:        OK
+Workflow compatibility: OK (11 workflows)
+Workflows:              OK (10 files, 10 templates)
+Layers:                 OK (12 layers)
+Plans:                  FAILED
+  plans/full-lifecycle.yaml: line 17: unknown key "fromSelecton" in step value (did you mean "fromSelection"?)
 
 Project validation: FAILED (2 section(s) with errors)
 ```
+
+### Unknown Keys
+
+Every project file — manifest, environment files and their includes, overlays, graph, templates, domain, visualizers, workflows, layers, plans, and recipes — is decoded strictly: a key that no field accepts is an error, not silently ignored. The message names the line, the key, where it appeared, and either the likely intended key or the keys that are valid there. The same rule applies to plan YAML given to the MCP server's plan tools. A misspelled `fromSelection` or an indented-too-far `optional` would otherwise produce a plan that loads and quietly does something else.
+
+A manifest that exists but fails to load is an error for every command that discovers it, rather than being skipped in favor of a lower-priority project.
 
 ### What It Checks
 
 | Section | What It Validates |
 |---------|-------------------|
 | Manifest | Manifest discovery, all referenced files and directories exist |
+| Environment | Every non-abstract environment loads: `extends` chains, `${var}` substitution, auth and override rules |
+| Domain | The domain file parses and its concepts, types, and value pools are well formed |
+| Visualizers | `visualizers.yaml` parses and each visualizer's HTML file exists |
 | Graph structure | YAML parsing, node uniqueness, input/output types, required fields |
 | OAS validation | OpenAPI spec loading, operationId alignment, inputs and required parameters, outputs present in the 2xx response schema at their template extract paths (nested objects and array items included) |
 | Adapter outputs | Template extraction paths match graph output declarations |
 | Template inputs | Required template placeholders vs optional graph inputs |
 | Workflow compatibility | Addon `AUTOWIRE` inputs are produced in every base the addon attaches to; a slot counts when all of its options produce the input, because slots are filled before addons are spliced |
-| Workflows | Workflow directory files parse correctly and validate against graph |
+| Workflows | Workflow directory files, subdirectories included, parse correctly and validate against graph |
+| Layers | Layer files parse, names are unique, and every input key matches a node input in the graph |
 | Plans | Plan directory files parse correctly and validate against graph; recipes reconstitute |
 
-Sections that depend on optional artifacts (OAS specs, workflows directory, plans directory) are skipped when those artifacts are not configured.
+Sections that depend on optional artifacts (environment file, domain, visualizers, OAS specs, workflows, layers, plans) are skipped when those artifacts are not configured.
 
 ## Graph Validation
 
@@ -224,12 +243,15 @@ Workflows:             OK (4 files, 2 templates)
 
 | Error Pattern | Meaning | Fix |
 |---------------|---------|-----|
+| `line N: unknown key "X" in Y (did you mean "Z"?)` | A key that no field of `Y` accepts — a typo, wrong indentation, or a key that was removed | Use the suggested key, or one of the listed valid keys; see [Unknown Keys](#unknown-keys) |
+| `line N: A must be B, found C` | A value has the wrong shape, such as a list where a step value belongs | Write the value in one of the shapes named |
+| `line N: invalid YAML: ...` | The file is not valid YAML | Fix the syntax at or just before line N (the first line's errors carry no number) |
 | `node "X" not found in graph` | Step references a node that doesn't exist | Check node name spelling in your plan; run `aat validate graph` to see available nodes |
 | `required input "X" has no plan value` | A non-optional input is missing from the step's values | Add a value, `from` reference, or make the input optional in the graph |
 | `'from' reference "X" for "Y": "Z" is not a step` | A value's `from` references a step name that doesn't exist in the plan | Check the step ID spelling; `from` uses step names, not node names |
 | `has 'from' reference to "X" but does not list it in dependsOn` | A data dependency is missing from `dependsOn` | Add the referenced step to `dependsOn` to ensure execution order |
 | `dependsOn cycle detected` | Steps have circular dependencies | Remove the circular reference; draw out the dependency chain to find the loop |
-| `unknown selection strategy "X"` | Invalid strategy in a selection config | Use one of: `first`, `last`, `index`, `random`, `min`, `max`, `match`, `llm` |
+| `unknown selection strategy "X"` | Invalid strategy in a selection config | Use one of: `first`, `last`, `index`, `random`, `min`, `max`, `match` |
 | `sortField "X" not found in elementFields` | Selection sort field doesn't match any elementField | Check the array output's elementFields in the graph; use a field name, not a path |
 | `output "X" is not an array type` | Selection source isn't an array | Selections require array outputs; check the source step's output type |
 | `plan graphVersion incompatible with graph version` | Major version mismatch between plan and graph | Update the plan's `graphVersion` or regenerate the plan |
@@ -257,4 +279,4 @@ If validation fails (exit code 1), the batch command never runs. This is the rec
 
 ---
 
-*Source: `cmd/aat/validate_cmd.go`, `cmd/aat/validate_graph_cmd.go`, `cmd/aat/validate_plan_cmd.go`, `cmd/aat/validate_workflow_cmd.go`, `graph/validate.go`, `plan/validate.go`.*
+*Source: `cmd/aat/validate_cmd.go`, `cmd/aat/validate_graph_cmd.go`, `cmd/aat/validate_plan_cmd.go`, `cmd/aat/validate_workflow_cmd.go`, `graph/validate.go`, `plan/validate.go`, `internal/yamlx/decode.go`.*

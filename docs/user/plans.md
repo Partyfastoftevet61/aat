@@ -160,16 +160,6 @@ overrides:
         path: "orderId"
 ```
 
-### Description Overrides
-
-`overrides.descriptions` replaces step descriptions in the composed plan:
-
-```yaml
-overrides:
-  descriptions:
-    searchProducts: "Search for electronics under $500"
-```
-
 ### Creating Recipes
 
 Three paths to creating a recipe:
@@ -415,9 +405,7 @@ See [Value Resolution: Array Selection](value-flow.md#array-selection) for strat
 
 #### Assertions
 
-Assertions validate the step's response. Two kinds:
-
-**Mechanical assertions** are structural checks evaluated by the engine:
+Assertions validate the step's response. They are listed under `mechanical` (a bare list is accepted too) and evaluated by the engine:
 
 | Type | Fields | Description |
 |------|--------|-------------|
@@ -468,16 +456,7 @@ assertions:
 
 **Status under `expectFailure`.** When a step has `expectFailure` — declared in the plan or added by an overlay — its `expectFailure.status` list is the status check. A `status` assertion that expects success (an exact code below 400, or a `1xx`–`3xx` class such as a composed `2xx` default) can never hold there: `aat validate plan` rejects a plan that declares both, and when an overlay adds `expectFailure` at run time the assertion is reported as skipped. One that agrees with the expected failure, such as `409` or `4xx`, is evaluated and can fail the step — useful to pin one code out of a broader `expectFailure` list. Other assertions still run against the error response.
 
-**Semantic assertions** are prose descriptions for documentation and future automated evaluation:
-
-```yaml
-assertions:
-  semantic:
-    - "The response should contain at least one product offering"
-    - "All product prices should be in the requested currency"
-```
-
-#### Retry and Fallback
+#### Retry
 
 Steps can configure retry behavior:
 
@@ -494,8 +473,6 @@ Steps can configure retry behavior:
 | `retry.max` | Maximum retry attempts |
 | `retry.on` | Rules that trigger a retry — error category names and/or HTTP status codes |
 | `retry.failOn` | Rules that cause immediate failure with no retry; checked before `on` |
-| `fallback.action` | Action on exhausted retries (e.g., `"skip"`) |
-| `fallback.maxAttempts` | Maximum fallback attempts |
 
 Each entry in `on` and `failOn` is either an **error category** name or an **HTTP status code** written as an integer. The two can be mixed freely: `on: [503, transient]` retries on any transient failure *and* on a bare 503. AAT classifies every failure into exactly one category:
 
@@ -1029,8 +1006,6 @@ overrides:
         value: expectedValue
       - type: predicate
         expr: "field > 0"
-  descriptions:                      # stepId → step description override
-    stepId: "New description"
 ```
 
 ## Full Plan Schema Reference
@@ -1103,19 +1078,12 @@ execution:
             value: "expected"
           - type: predicate
             expr: "field > 0 && field < 100"
-        semantic:
-          - "Response should contain valid data"
 
       # Retry configuration
       retry:
         max: 3                        # maximum retry attempts
         on: [transient, server, 503]  # categories and/or HTTP status codes that trigger retry
         failOn: [auth, client]        # categories and/or status codes that fail immediately
-
-      # Fallback on exhausted retries
-      fallback:
-        action: skip                  # what to do after all retries fail
-        maxAttempts: 1
 
       # Negative testing
       expectFailure:

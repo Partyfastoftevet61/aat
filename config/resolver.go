@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,30 +34,46 @@ type ProjectPaths struct {
 //  3. CWD manifest discovery (walk up from cwd for aat-project.yaml)
 //  4. Explicit flag values in overrides (highest priority)
 //
-// Lower-priority errors are silently ignored so a stale home config or missing
-// CWD manifest doesn't block operation when explicit flags are provided.
+// A level whose manifest does not exist is skipped, so a stale home config or
+// missing CWD manifest doesn't block operation when explicit flags are provided.
+// A manifest that exists but fails to load is an error, unless a higher-priority
+// level loads a manifest after it: otherwise a typo in aat-project.yaml would
+// quietly run against a lower-priority project, or none.
 func ResolveProjectPaths(overrides ProjectPaths) (*ProjectPaths, error) {
 	result := &ProjectPaths{}
+	var manifestErr error
+	apply := func(pathOrDir string) {
+		loaded, err := applyManifest(result, pathOrDir)
+		switch {
+		case err != nil:
+			manifestErr = err
+		case loaded:
+			manifestErr = nil
+		}
+	}
 
 	// 1. User home config
 	userCfg, _ := LoadUserConfig()
 	if userCfg != nil && userCfg.DefaultProject != "" {
-		applyManifest(result, userCfg.DefaultProject)
+		apply(userCfg.DefaultProject)
 	}
 
 	// 2. AAT_PROJECT env var
 	if envProject := os.Getenv("AAT_PROJECT"); envProject != "" {
-		applyManifest(result, envProject)
+		apply(envProject)
 	}
 
 	// 3. CWD manifest discovery
 	if found, err := FindManifest(); err == nil {
-		applyManifest(result, found)
+		apply(found)
 	}
 
 	// 3.5. Explicit --manifest flag (overrides auto-discovery)
 	if overrides.ExplicitManifest != "" {
-		applyManifest(result, overrides.ExplicitManifest)
+		apply(overrides.ExplicitManifest)
+	}
+	if manifestErr != nil {
+		return nil, manifestErr
 	}
 
 	// Default TracesDir to traces/ relative to manifest when not explicitly set
@@ -101,16 +119,20 @@ func ResolveProjectPaths(overrides ProjectPaths) (*ProjectPaths, error) {
 
 // applyManifest loads a manifest from pathOrDir and applies its paths to result.
 // pathOrDir may be a directory (looks for aat-project.yaml inside) or a direct
-// .yaml file path. Errors are silently ignored.
-func applyManifest(result *ProjectPaths, pathOrDir string) {
+// .yaml file path. It reports whether a manifest was applied; a manifest that
+// does not exist is not an error.
+func applyManifest(result *ProjectPaths, pathOrDir string) (bool, error) {
 	manifestPath := resolveManifestPath(pathOrDir)
 	if manifestPath == "" {
-		return
+		return false, nil
+	}
+	if _, err := os.Stat(manifestPath); errors.Is(err, fs.ErrNotExist) {
+		return false, nil
 	}
 
 	m, err := LoadManifest(manifestPath)
 	if err != nil {
-		return
+		return false, err
 	}
 
 	result.ManifestPath = manifestPath
@@ -147,6 +169,7 @@ func applyManifest(result *ProjectPaths, pathOrDir string) {
 	if m.DefaultEnvironment != "" {
 		result.DefaultEnvName = m.DefaultEnvironment
 	}
+	return true, nil
 }
 
 // resolveManifestPath converts a user-provided path to an aat-project.yaml

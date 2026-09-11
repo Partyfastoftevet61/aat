@@ -27,7 +27,7 @@ func init() {
 	runCmd.PersistentFlags().Int("retries", 0, "max plan-level retries on failure (0 = no retries)")
 	runCmd.PersistentFlags().StringSlice("layer", nil, "data layer to apply (repeatable, e.g. --layer european --layer amex)")
 	runCmd.PersistentFlags().Bool("no-auto-overrides", false, "disable auto-discovery of .aat-overrides.yaml")
-	runCmd.PersistentFlags().String("oas-validate", "", "OAS validation mode: auto (default), warn, strict, off")
+	runCmd.PersistentFlags().String("oas-validate", "", "OAS validation mode: auto (default), strict, off")
 	runCmd.PersistentFlags().Bool("verbose-auth", false, "log auth request/response details to stderr for debugging")
 	runCmd.PersistentFlags().Bool("no-mutations", false, "skip mutation-expanded sibling steps; run only the happy path (smoke-test mode)")
 

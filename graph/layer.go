@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"github.com/gburgyan/aat/internal/yamlx"
 )
 
 // Layer is a named set of input default overrides that can be applied on top
@@ -58,11 +58,12 @@ func (l *Layer) UnknownInputs(g *Graph) []string {
 	return unknown
 }
 
-// ParseLayer unmarshals YAML bytes into a Layer with basic validation.
+// ParseLayer unmarshals YAML bytes into a Layer with basic validation. Keys
+// that no layer field accepts are errors.
 func ParseLayer(data []byte) (*Layer, error) {
 	var l Layer
-	if err := yaml.Unmarshal(data, &l); err != nil {
-		return nil, fmt.Errorf("layer YAML parse error: %w", err)
+	if err := yamlx.Decode(data, &l); err != nil {
+		return nil, err
 	}
 	if l.Name == "" {
 		return nil, fmt.Errorf("layer must have a name")
@@ -70,13 +71,18 @@ func ParseLayer(data []byte) (*Layer, error) {
 	return &l, nil
 }
 
-// ParseLayerFile reads a YAML file and parses it as a Layer.
+// ParseLayerFile reads a YAML file and parses it as a Layer. Errors name the
+// file.
 func ParseLayerFile(path string) (*Layer, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading layer file: %w", err)
 	}
-	return ParseLayer(data)
+	l, err := ParseLayer(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return l, nil
 }
 
 // LoadLayersFromDir scans a directory for *.yaml and *.yml files, parses each
@@ -101,7 +107,7 @@ func LoadLayersFromDir(dir string) (map[string]*Layer, error) {
 		path := filepath.Join(dir, entry.Name())
 		layer, err := ParseLayerFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("parsing %s: %w", path, err)
+			return nil, err
 		}
 
 		if existing, ok := layers[layer.Name]; ok {

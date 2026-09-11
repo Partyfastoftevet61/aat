@@ -253,7 +253,6 @@ func TestTargetedResponseToRecipeOverrides_RoundTrip(t *testing.T) {
 	assert.Equal(t, "carrier == 'QF'", ro.Selections["offering.leg1"].Filter)
 	require.Len(t, ro.Assertions["commit"], 1)
 	assert.Equal(t, "status", ro.Assertions["commit"][0].Type)
-	assert.Nil(t, ro.Descriptions) // descriptions are not saved
 
 	// Convert back.
 	tr2 := recipeOverridesToTargetedResponse(ro)
@@ -266,7 +265,6 @@ func TestTargetedResponseToRecipeOverrides_Nil(t *testing.T) {
 	assert.Nil(t, ro.Values)
 	assert.Nil(t, ro.Selections)
 	assert.Nil(t, ro.Assertions)
-	assert.Nil(t, ro.Descriptions)
 }
 
 func TestWorkflowSelectionToRecipeSelection_Nil(t *testing.T) {
@@ -286,7 +284,6 @@ func TestTargetedResponseToRecipeOverrides_EmptyMaps(t *testing.T) {
 	assert.Nil(t, ro.Values)
 	assert.Nil(t, ro.Selections)
 	assert.Nil(t, ro.Assertions)
-	assert.Nil(t, ro.Descriptions)
 }
 
 func TestReconstitute_RecipeLayersWithoutLayersDirFail(t *testing.T) {

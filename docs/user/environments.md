@@ -56,7 +56,7 @@ shared:
       var: OPENAI_API_KEY
     model: gpt-4
   settings:
-    maxRunDuration: 5m
+    oasValidation: auto
 
 environments:
   dev:
@@ -427,20 +427,14 @@ Execution-time defaults for the engine:
 
 ```yaml
 settings:
-  maxRunDuration: 120s
-  defaultRetries: 2
-  archiveFormat: json
   oasValidation: auto
 ```
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `maxRunDuration` | `120s` | Maximum wall-clock time for a single plan run |
-| `defaultRetries` | `2` | Plan-level retry count on failure |
-| `archiveFormat` | `json` | Archive format: `json` or `json.gz` |
-| `oasValidation` | `auto` | OpenAPI validation mode: `auto`, `warn`, `strict`, or `off` |
+| `oasValidation` | `auto` | OpenAPI validation mode: `auto`, `strict`, or `off` |
 
-Duration values use Go duration syntax: `30s`, `5m`, `2h30m`, etc.
+Retries are not an environment setting: set them per step with `retry:` (see [Plans: Retry](plans.md#retry)) or per run with `--retries` (see [Running Tests: Retries](running.md#retries)).
 
 ### OAS Validation Mode
 
@@ -449,7 +443,6 @@ When the graph references an OpenAPI spec, every step's request and response is 
 | Value | Behavior |
 |-------|----------|
 | `auto` | Validate whenever specs are present; violations are reported as warnings (default) |
-| `warn` | Same reporting as `auto` |
 | `strict` | Like `auto`, but a violation in the request or response fails the step (cleanup still runs); `expectFailure` steps are exempt |
 | `off` | Skip loading specs and validating entirely |
 
@@ -700,7 +693,7 @@ Overlays are useful for:
 
 ## Validation
 
-`aat validate` checks environment files for structural correctness.
+`aat validate` checks environment files for structural correctness. A key that no field accepts, such as a misspelled `apiBaseURL`, is an error naming the file, the line, and the likely intended key.
 
 **Single-environment files:**
 - `environment` name is required
@@ -710,7 +703,7 @@ Overlays are useful for:
 - API key requires `credentials.key` and `headerName`
 - Bearer requires `credentials.token`
 - Override entries must have a `match` pattern
-- `archiveFormat` must be `json` or `json.gz`
+- `settings.oasValidation` must be `auto`, `strict`, or `off`
 
 **Multi-environment files** — all the above, plus:
 - All `extends` targets must exist
@@ -772,10 +765,7 @@ llm:                                      # LLM configuration (for aat prompt)
   provider: openai                        # optional — auto-detected from endpoint
 
 settings:                                 # optional — runtime defaults
-  maxRunDuration: 120s                    #   max plan execution time (default: 120s)
-  defaultRetries: 2                       #   plan-level retries (default: 2)
-  archiveFormat: json                     #   json or json.gz (default: json)
-  oasValidation: auto                     #   auto, warn, strict, or off (default: auto)
+  oasValidation: auto                     #   auto, strict, or off (default: auto)
 
 notes: "Staging environment for QA"       # optional — freeform notes
 
@@ -823,8 +813,7 @@ shared:                                   # optional — defaults merged into ev
       var: OPENAI_API_KEY
     model: gpt-4
   settings:
-    maxRunDuration: 5m
-    defaultRetries: 2
+    oasValidation: auto
   values:
     region: us-east
 

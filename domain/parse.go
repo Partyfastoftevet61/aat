@@ -5,15 +5,17 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gburgyan/aat/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
 
 // Parse unmarshals YAML bytes into a KnowledgeBase, populates Name fields
-// from map keys, and validates the result.
+// from map keys, and validates the result. Keys that no domain field accepts
+// are errors.
 func Parse(data []byte) (*KnowledgeBase, error) {
 	var kb KnowledgeBase
-	if err := yaml.Unmarshal(data, &kb); err != nil {
-		return nil, fmt.Errorf("YAML parse error: %w", err)
+	if err := yamlx.Decode(data, &kb); err != nil {
+		return nil, err
 	}
 
 	// Populate Name from map keys
@@ -46,12 +48,17 @@ func Parse(data []byte) (*KnowledgeBase, error) {
 }
 
 // ParseFile reads a YAML file from disk and parses it into a KnowledgeBase.
+// Errors name the file.
 func ParseFile(path string) (*KnowledgeBase, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading domain file: %w", err)
 	}
-	return Parse(data)
+	kb, err := Parse(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return kb, nil
 }
 
 // extractValueAnnotations does a second YAML parse using yaml.Node to capture
@@ -59,7 +66,7 @@ func ParseFile(path string) (*KnowledgeBase, error) {
 // annotations on the corresponding ValuePool.
 func extractValueAnnotations(data []byte, kb *KnowledgeBase) {
 	var root yaml.Node
-	if err := yaml.Unmarshal(data, &root); err != nil {
+	if err := yaml.Unmarshal(data, &root); err != nil { //nolint:forbidigo // reads comments only; Parse already decoded strictly
 		return
 	}
 	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {

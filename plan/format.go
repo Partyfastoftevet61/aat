@@ -219,9 +219,6 @@ func writeAssertions(b *strings.Builder, a *Assertions) {
 	for _, m := range a.Mechanical {
 		parts = append(parts, formatMechanicalAssertion(m))
 	}
-	for _, s := range a.Semantic {
-		parts = append(parts, fmt.Sprintf("semantic: %s", s))
-	}
 	if len(parts) > 0 {
 		fmt.Fprintf(b, "     Assertions: %s\n", strings.Join(parts, ", "))
 	}

@@ -31,8 +31,6 @@ request:
 response:
   extract:
     id: "$.data.id"
-  validate:
-    schema: schemas/search.json
 `,
 			check: func(t *testing.T, tmpl *Template) {
 				assert.Equal(t, "test.search", tmpl.Adapter)
@@ -42,8 +40,6 @@ response:
 				assert.Equal(t, "application/json", tmpl.Request.Headers["Content-Type"])
 				assert.Equal(t, `{"q": "test"}`, tmpl.Request.Body)
 				assert.Equal(t, ExtractRule{Path: "$.data.id"}, tmpl.Response.Extract["id"])
-				require.NotNil(t, tmpl.Response.Validate)
-				assert.Equal(t, "schemas/search.json", tmpl.Response.Validate.Schema)
 			},
 		},
 		{
@@ -61,7 +57,6 @@ response:
 			check: func(t *testing.T, tmpl *Template) {
 				assert.Equal(t, "GET", tmpl.Request.Method)
 				assert.Empty(t, tmpl.Request.Body)
-				assert.Nil(t, tmpl.Response.Validate)
 			},
 		},
 		{
@@ -98,25 +93,24 @@ request:
 			wantErr: "invalid YAML",
 		},
 		{
+			name:    "misspelled extract rule key",
+			yaml:    "adapter: test\nrequest:\n  method: GET\n  path: /test\nresponse:\n  extract:\n    id: {path: $.id, optinal: true}\n",
+			wantErr: `line 7: unknown key "optinal" in extract rule (did you mean "optional"?)`,
+		},
+		{
+			name:    "removed response validate",
+			yaml:    "adapter: test\nrequest:\n  method: GET\n  path: /test\nresponse:\n  validate:\n    schema: s.json\n",
+			wantErr: `line 6: unknown key "validate" in template response (valid keys: extract, transform)`,
+		},
+		{
+			name:    "list as an extract rule",
+			yaml:    "adapter: test\nrequest:\n  method: GET\n  path: /test\nresponse:\n  extract:\n    id: [$.id]\n",
+			wantErr: `line 7: an extract rule must be a path or a mapping, found a list`,
+		},
+		{
 			name:    "unsupported protocol",
 			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  method: GET\n  path: /test\n",
 			wantErr: "unsupported protocol",
-		},
-		{
-			name: "validate schema captured",
-			yaml: `
-adapter: test.validated
-request:
-  method: POST
-  path: /test
-response:
-  validate:
-    schema: schemas/response.json
-`,
-			check: func(t *testing.T, tmpl *Template) {
-				require.NotNil(t, tmpl.Response.Validate)
-				assert.Equal(t, "schemas/response.json", tmpl.Response.Validate.Schema)
-			},
 		},
 	}
 

@@ -367,7 +367,6 @@ nodes:
     inputs:
       - name: offerId
         type: string
-        from: SearchAir.offerId
     outputs:
       - name: reservationId
         type: string
@@ -468,7 +467,6 @@ nodes:
     inputs:
       - name: offerId
         type: string
-        from: SearchAir.offerId
     outputs:
       - name: reservationId
         type: string
@@ -568,7 +566,6 @@ nodes:
     inputs:
       - name: offerId
         type: string
-        from: SearchAir.offerId
     outputs:
       - name: reservationId
         type: string
@@ -732,7 +729,6 @@ nodes:
     inputs:
       - name: offerId
         type: string
-        from: SearchAir.offerId
     outputs:
       - name: reservationId
         type: string
@@ -852,4 +848,49 @@ func TestValidateWorkflows_WalksSubdirectories(t *testing.T) {
 	assert.Equal(t, 1, result.Templates, "the referenced slot option is recognized as a template")
 	require.Len(t, result.Errors, 1)
 	assert.Contains(t, result.Errors[0], filepath.Join("addons", "broken.yaml"))
+}
+
+// TestValidate_UnknownKeysNameFileLineAndKey checks that bare aat validate
+// reports an unknown key in every kind of project file it loads, each with its
+// file (relative to the working directory), line, and suggestion.
+func TestValidate_UnknownKeysNameFileLineAndKey(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"aat-project.yaml":             "name: typos\ngraph: graph.yaml\ntemplates: templates/\ndomain: domain.yaml\nvisualizers: visualizers/\nplans: plans/\n",
+		"graph.yaml":                   "version: \"1.0.0\"\nnodes:\n  getItem:\n    adapter: getItem\n    inputs:\n      - name: id\n        type: string\n    outputs:\n      - name: name\n        type: string\n",
+		"templates/getItem.yaml":       "adapter: getItem\nrequest:\n  method: GET\n  path: /items/{{id}}\nresponse:\n  extract:\n    name: $.name\n",
+		"domain.yaml":                  "concepts:\n  item:\n    description: A thing\nvaluePool:\n  ids: [a]\n",
+		"visualizers/visualizers.yaml": "visualizers:\n  - id: item\n    file: item.html\n    matches:\n      node: getItem\n",
+		"visualizers/item.html":        "<html></html>",
+		"plans/smoke.yaml":             "execution:\n  steps:\n    - node: getItem\n      values:\n        id: {fromSelecton: item.id}\n",
+	}
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	}
+	t.Chdir(dir)
+	t.Setenv("AAT_PROJECT", "")
+
+	var buf bytes.Buffer
+	code := validateCommand(&validateArgs{}, &buf)
+	out := buf.String()
+	assert.Equal(t, 1, code, out)
+	assert.Contains(t, out, `domain.yaml: line 4: unknown key "valuePool" in knowledge base (did you mean "valuePools"?)`)
+	assert.Contains(t, out, filepath.Join("visualizers", "visualizers.yaml")+`: line 4: unknown key "matches" in visualizer (did you mean "match"?)`)
+	assert.Contains(t, out, filepath.Join("plans", "smoke.yaml")+`: line 5: unknown key "fromSelecton" in step value (did you mean "fromSelection"?)`)
+}
+
+func TestValidate_BrokenManifestIsReported(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "aat-project.yaml"),
+		[]byte("name: typos\ngraph: graph.yaml\ntemplates: templates/\nplan: plans/\n"), 0o644))
+	t.Chdir(dir)
+	t.Setenv("AAT_PROJECT", "")
+
+	var buf bytes.Buffer
+	code := validateCommand(&validateArgs{}, &buf)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, buf.String(), `line 4: unknown key "plan" in project manifest (did you mean "plans"?)`)
+	assert.NotContains(t, buf.String(), "no manifest found")
 }

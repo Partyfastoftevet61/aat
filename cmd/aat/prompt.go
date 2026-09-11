@@ -151,7 +151,7 @@ func init() {
 	promptCmd.Flags().String("trace-dir", "_output/traces", "directory for plan trace output")
 	promptCmd.Flags().StringSlice("layer", nil, "data layer to apply (repeatable, e.g. --layer european --layer amex)")
 	promptCmd.Flags().Bool("no-auto-overrides", false, "disable auto-discovery of .aat-overrides.yaml")
-	promptCmd.Flags().String("oas-validate", "", "OAS validation mode: auto (default), warn, strict, off")
+	promptCmd.Flags().String("oas-validate", "", "OAS validation mode: auto (default), strict, off")
 }
 
 // promptArgs holds parsed CLI flags for the prompt command.
@@ -171,7 +171,7 @@ type promptArgs struct {
 	Layers            []string
 	LayersDir         string
 	AutoOverridesPath string            // path to auto-discovered .aat-overrides.yaml
-	OASValidateMode   string            // "auto", "warn", "strict", "off"
+	OASValidateMode   string            // "auto", "strict", "off"
 	Vars              map[string]string // --var KEY=VALUE for multi-environment files
 }
 

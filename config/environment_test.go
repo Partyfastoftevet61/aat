@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,9 +26,7 @@ func TestLoadEnvironment_Full(t *testing.T) {
 	assert.Equal(t, "testuser", env.Auth.Credentials["username"].Value)
 	assert.Equal(t, "https://llm.example.com/v1", env.LLM.Endpoint)
 	assert.Equal(t, "gpt-4", env.LLM.Model)
-	assert.Equal(t, 5*time.Minute, env.Settings.MaxRunDuration.Duration)
-	assert.Equal(t, 3, env.Settings.DefaultRetries)
-	assert.Equal(t, ArchiveJSONGZ, env.Settings.ArchiveFormat)
+	assert.Equal(t, "strict", env.Settings.OASValidation)
 	assert.Equal(t, "Full test environment with all fields populated.", env.Notes)
 }
 
@@ -40,11 +37,7 @@ func TestLoadEnvironment_Minimal(t *testing.T) {
 	assert.Equal(t, "minimal", env.Name)
 	assert.Equal(t, "https://api.example.com", env.APIBaseURL)
 	assert.Equal(t, "none", env.Auth.Type)
-
-	// Verify defaults applied
-	assert.Equal(t, 120*time.Second, env.Settings.MaxRunDuration.Duration)
-	assert.Equal(t, 2, env.Settings.DefaultRetries)
-	assert.Equal(t, ArchiveJSON, env.Settings.ArchiveFormat)
+	assert.Empty(t, env.Settings.OASValidation, "unset means auto")
 }
 
 func TestLoadEnvironment_MissingFile(t *testing.T) {
@@ -59,7 +52,7 @@ func TestLoadEnvironment_MalformedYAML(t *testing.T) {
 
 	_, err := LoadEnvironment(tmpFile)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "parsing environment YAML")
+	assert.Contains(t, err.Error(), tmpFile+": ")
 }
 
 func TestLoadEnvironment_MissingName(t *testing.T) {
@@ -97,7 +90,6 @@ func TestValidateEnvironment_InvalidAuthType(t *testing.T) {
 		APIBaseURL: "https://api.example.com",
 		Auth:       AuthConfig{Type: "magic"},
 		LLM:        LLMConfig{},
-		Settings:   RuntimeSettings{ArchiveFormat: ArchiveJSON},
 	}
 	err := ValidateEnvironment(env)
 	require.Error(t, err)
@@ -119,8 +111,7 @@ func TestValidateEnvironment_OAuth2MissingCredentials(t *testing.T) {
 			TokenURL: "https://auth.example.com/token",
 			// no credentials
 		},
-		LLM:      LLMConfig{},
-		Settings: RuntimeSettings{ArchiveFormat: ArchiveJSON},
+		LLM: LLMConfig{},
 	}
 	err := ValidateEnvironment(env)
 	require.Error(t, err)
@@ -136,7 +127,6 @@ func TestValidateEnvironment_APIKeyMissingKey(t *testing.T) {
 		APIBaseURL: "https://api.example.com",
 		Auth:       AuthConfig{Type: "apikey", HeaderName: "X-Api-Key"},
 		LLM:        LLMConfig{},
-		Settings:   RuntimeSettings{ArchiveFormat: ArchiveJSON},
 	}
 	err := ValidateEnvironment(env)
 	require.Error(t, err)
@@ -151,25 +141,11 @@ func TestValidateEnvironment_APIKeyMissingHeaderName(t *testing.T) {
 			Type:        "apikey",
 			Credentials: map[string]SecretRef{"key": {Source: "literal", Value: "abc"}},
 		},
-		LLM:      LLMConfig{},
-		Settings: RuntimeSettings{ArchiveFormat: ArchiveJSON},
+		LLM: LLMConfig{},
 	}
 	err := ValidateEnvironment(env)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "auth.headerName is required")
-}
-
-func TestValidateEnvironment_InvalidArchiveFormat(t *testing.T) {
-	env := &Environment{
-		Name:       "test",
-		APIBaseURL: "https://api.example.com",
-		Auth:       AuthConfig{Type: "none"},
-		LLM:        LLMConfig{},
-		Settings:   RuntimeSettings{ArchiveFormat: "xml"},
-	}
-	err := ValidateEnvironment(env)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown archiveFormat")
 }
 
 func TestValidateEnvironment_OASValidationMode(t *testing.T) {
@@ -180,10 +156,10 @@ func TestValidateEnvironment_OASValidationMode(t *testing.T) {
 	}{
 		{name: "unset", mode: ""},
 		{name: "auto", mode: "auto"},
-		{name: "warn", mode: "warn"},
+		{name: "warn was removed", mode: "warn", wantErr: `"warn" was removed`},
 		{name: "strict", mode: "strict"},
 		{name: "off", mode: "off"},
-		{name: "typo", mode: "stirct", wantErr: `unknown oasValidation "stirct"`},
+		{name: "typo", mode: "stirct", wantErr: `unknown OpenAPI validation mode "stirct"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -191,7 +167,7 @@ func TestValidateEnvironment_OASValidationMode(t *testing.T) {
 				Name:       "test",
 				APIBaseURL: "https://api.example.com",
 				Auth:       AuthConfig{Type: "none"},
-				Settings:   RuntimeSettings{ArchiveFormat: ArchiveJSON, OASValidation: tt.mode},
+				Settings:   RuntimeSettings{OASValidation: tt.mode},
 			}
 			err := ValidateEnvironment(env)
 			if tt.wantErr == "" {
@@ -239,41 +215,6 @@ func TestSecretRef_IsSet(t *testing.T) {
 	assert.True(t, SecretRef{Source: "env", Var: "X"}.IsSet())
 	assert.True(t, SecretRef{Source: "literal", Value: "x"}.IsSet())
 	assert.False(t, SecretRef{}.IsSet())
-}
-
-// --- Duration tests ---
-
-func TestDuration_Parse(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected time.Duration
-	}{
-		{"120s", 120 * time.Second},
-		{"5m", 5 * time.Minute},
-		{"2h30m", 2*time.Hour + 30*time.Minute},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			yaml := "environment: test\napiBaseUrl: https://x\nauth:\n  type: none\nsettings:\n  maxRunDuration: " + tt.input + "\n"
-			tmpFile := t.TempDir() + "/dur.yaml"
-			require.NoError(t, os.WriteFile(tmpFile, []byte(yaml), 0644))
-
-			env, err := LoadEnvironment(tmpFile)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, env.Settings.MaxRunDuration.Duration)
-		})
-	}
-}
-
-func TestDuration_RejectBareInteger(t *testing.T) {
-	yaml := "environment: test\napiBaseUrl: https://x\nauth:\n  type: none\nsettings:\n  maxRunDuration: 120\n"
-	tmpFile := t.TempDir() + "/dur.yaml"
-	require.NoError(t, os.WriteFile(tmpFile, []byte(yaml), 0644))
-
-	_, err := LoadEnvironment(tmpFile)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid duration")
 }
 
 // --- Auth tests ---

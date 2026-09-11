@@ -152,7 +152,7 @@ These flags apply to both `run plan` and `run batch`.
 | `--retries` | int | `0` | Max plan-level retries on failure |
 | `--layer` | string | — | Data layer to apply (repeatable) |
 | `--no-auto-overrides` | bool | `false` | Disable auto-discovery of `.aat-overrides.yaml` |
-| `--oas-validate` | string | `auto` | OAS validation mode: `auto`, `warn`, `strict`, or `off` (see [OAS Validation](#oas-validation)) |
+| `--oas-validate` | string | `auto` | OAS validation mode: `auto`, `strict`, or `off` (see [OAS Validation](#oas-validation)) |
 | `--no-mutations` | bool | `false` | Skip mutation-expanded sibling steps; run only the happy path (smoke-test mode) |
 | `--verbose-auth` | bool | `false` | Log auth request/response details to stderr for debugging |
 | `--json` | bool | `false` | Machine-readable JSON summary to stdout |
@@ -380,7 +380,6 @@ The `--oas-validate` flag controls the mode:
 | Mode | Behavior |
 |------|----------|
 | `auto` | Default. Validate when specs are present; report violations as warnings |
-| `warn` | Same reporting as `auto` |
 | `strict` | Like `auto`, but a request or response that violates the spec fails the step (outcome `failed`, cleanup still runs). Skipped validations and schema compilation warnings never fail a step; `expectFailure` steps are exempt. Use a `schema` assertion instead when only specific steps should be strict (see [Plans: Assertions](plans.md#assertions)) |
 | `off` | Do not load specs or validate |
 

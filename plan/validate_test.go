@@ -592,13 +592,6 @@ func TestValidate_SelectionStrategies(t *testing.T) {
 	})
 
 	t.Run("llm strategy rejected", func(t *testing.T) {
-		p := baseStep(&SelectionConfig{Strategy: "llm", Prompt: "pick the cheapest option"})
-		err := Validate(p, g)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unknown selection strategy")
-	})
-
-	t.Run("llm without prompt also rejected", func(t *testing.T) {
 		p := baseStep(&SelectionConfig{Strategy: "llm"})
 		err := Validate(p, g)
 		require.Error(t, err)

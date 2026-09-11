@@ -8,6 +8,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestApplySelection_ImplementsEveryStrategy keeps plan.SelectionStrategies,
+// which plan validation and aat prompt accept, in step with the engine.
+func TestApplySelection_ImplementsEveryStrategy(t *testing.T) {
+	arr := []any{
+		map[string]any{"id": "a", "price": 3},
+		map[string]any{"id": "b", "price": 1},
+	}
+	for _, strategy := range plan.SelectionStrategies() {
+		t.Run(strategy, func(t *testing.T) {
+			sel := &plan.SelectionConfig{Strategy: strategy, SortField: "price", Filter: "id == 'b'"}
+			_, err := applySelection(arr, sel)
+			assert.NoError(t, err)
+		})
+	}
+	_, err := applySelection(arr, &plan.SelectionConfig{Strategy: "llm"})
+	assert.ErrorContains(t, err, `unknown selection strategy "llm"`)
+}
+
 func TestApplySelection_NilConfig_DefaultsToFirst(t *testing.T) {
 	arr := []any{"a", "b", "c"}
 	result, err := applySelection(arr, nil)

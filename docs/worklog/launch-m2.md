@@ -64,3 +64,55 @@ Every fix has a test; where a test could run against the old code it was checked
 
 **Open questions:** none for this commit. Strict YAML decoding and the dead-key removal follow in commit 2, the docs
 site in commits 3 and 4.
+
+## 2026-09-10 — Commit 2: strict YAML decoding, dead keys removed
+
+**What:** Every loader of project YAML decodes through `internal/yamlx`, which rejects keys no field accepts and
+reports each with its line, the key, a noun for where it appeared, and either a near-miss suggestion or the valid
+keys. Keys nothing read were deleted rather than kept as accepted-and-ignored: step `fallback`,
+`assertions.semantic`, the settings `maxRunDuration`/`defaultRetries`/`archiveFormat` (and `config.Duration`,
+`ArchiveFormat`, `applyDefaults`), template `response.validate`, the selection `prompt` fields and the `llm`
+strategy, recipe `overrides.descriptions`, the `warn` OAS mode, and the web UI's trace `repetitions`.
+
+**Decisions:**
+
+- **The callback form of `UnmarshalYAML`.** yaml.v3's `Node.Decode` builds a fresh decoder without `KnownFields`,
+  so any type with a `*yaml.Node` unmarshaler (step values, assertions, input defaults, extract rules) would have
+  stayed lenient inside. The older `UnmarshalYAML(func(any) error)` form decodes on the parent decoder, keeping
+  strictness, line numbers, anchors, and `<<` merges; a test in `yamlx` pins both behaviors. `yamlx.Node` lets such
+  a method branch on the node's kind, and `yamlx.KindError` returns a `*yaml.TypeError` so the decoder records it
+  and keeps collecting problems. Rejected: re-encoding nodes (loses line numbers and outside anchors), a
+  hand-written key check per type, and switching YAML libraries.
+- **Nouns from Go types.** The noun in `unknown key "x" in step value` comes from the type yaml.v3 names in its
+  error: the `raw` prefix of method-less alias types and the Go-only suffixes `Def` and `Partial` are dropped, so
+  alias types must be named `raw<Type>`. Valid keys come from a reflection walk of the target type, only on the
+  error path.
+- **Lenient on purpose, and marked.** The `kind` probe before a recipe decode, the multi-environment probe, the
+  names listed in an error message, the overlay `environment` peek, the comment pass over the domain file, and
+  the user config (shared by every installed aat version, so an older binary must tolerate newer keys) use
+  `yaml.Unmarshal` with `//nolint:forbidigo` and a reason. The new `forbidigo` rule bans `yaml.Unmarshal` and
+  `yaml.Node.Decode` elsewhere outside tests.
+- **AI input.** Plan YAML given to the MCP plan tools is strict: an agent fixes a precise error in one turn,
+  while a dropped key yields a "valid" plan that does something else. `aat prompt` parses model output as JSON
+  with `encoding/json` and is unchanged; the `$EDITOR` round-trip goes through `plan.ParseFile` and is strict.
+- **Errors name the file where it is read.** `plan.ParseFile`, `graph.ParseFile`, `ParseLayerFile`,
+  `ParseTemplateFile`, `domain.ParseFile`, and the config loaders prefix the path; the byte-level parsers no longer
+  add "YAML parse error:" (the `line N:` form already says what it is), and syntax errors read `invalid YAML:`
+  because yaml.v3 omits the line number for the first line. Callers that added a path (`LoadLayersFromDir`,
+  `LoadTemplates`, workflow templates, `aat validate` sections) stopped. `aat validate` rewrites the manifest's
+  paths relative to the working directory, so its errors say `plans/smoke.yaml: line 12: …`.
+- **Manifest errors surface.** `ResolveProjectPaths` ignored every `LoadManifest` error, so a typo in
+  `aat-project.yaml` made commands fall back to `AAT_PROJECT`, the user's default project, or nothing. A manifest
+  that exists but fails to load is now an error unless a higher-priority level loads one after it; a missing one is
+  still skipped.
+- **`aat validate` covers every file kind.** Domain and Visualizers sections join the file-level sections before
+  the graph, so "run `aat validate` to find unknown keys" holds for everything except overlays, which load
+  strictly when a run uses them.
+- **Selection strategies in one place.** `plan.SelectionStrategies()` feeds plan validation and `aat prompt`'s
+  response check (which had its own list, with `llm`); an engine test applies each strategy.
+- **`warn` removed rather than aliased.** It behaved exactly like `auto`; an alias would keep documenting a
+  distinction that does not exist. The error names the replacement.
+
+**Open questions:** the private airline project may carry keys strict decoding now rejects; `aat validate` lists
+them. Fixture sweep: only `graph/testdata/valid/travel_flow.yaml` and inline graph YAML in two `cmd/aat` tests had
+ignored keys (an input `source:`/`from:`), plus `settings.defaultRetries` in `examples/petstore/env.yaml`.

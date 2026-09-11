@@ -2,9 +2,28 @@ version: "2"
 
 linters:
   default: standard
+  enable:
+    - forbidigo
   settings:
     errcheck:
       check-type-assertions: false
+    forbidigo:
+      analyze-types: true
+      forbid:
+        # Project YAML decodes strictly through internal/yamlx. A lenient decode
+        # (a probe, or the user config) carries //nolint:forbidigo and a reason.
+        - pattern: ^yaml\.Unmarshal$
+          pkg: ^gopkg\.in/yaml\.v3$
+          msg: decode project YAML with yamlx.Decode, which rejects unknown keys
+        # Node.Decode starts a decoder that ignores unknown keys; custom
+        # unmarshalers use the callback form instead (see internal/yamlx).
+        - pattern: ^yaml\.Node\.Decode$
+          pkg: ^gopkg\.in/yaml\.v3$
+          msg: use UnmarshalYAML(func(any) error) with yamlx.Node, which keeps strict decoding
   exclusions:
     paths:
       - server/web
+    rules:
+      - path: _test\.go
+        linters:
+          - forbidigo

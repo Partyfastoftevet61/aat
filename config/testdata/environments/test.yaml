@@ -26,8 +26,6 @@ llm:
   model: gpt-4
 
 settings:
-  maxRunDuration: 5m
-  defaultRetries: 3
-  archiveFormat: json.gz
+  oasValidation: strict
 
 notes: Full test environment with all fields populated.

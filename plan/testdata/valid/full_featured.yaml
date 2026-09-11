@@ -36,8 +36,6 @@ execution:
             expect: 200
           - type: fieldExists
             path: "$.FlightOffersResponse"
-        semantic:
-          - "Response should contain at least one flight offering"
 
     - node: priceOffer
       dependsOn: [searchFlights]
@@ -47,9 +45,6 @@ execution:
           select:
             strategy: first
             field: "Identifier.value"
-      fallback:
-        action: nextValue
-        maxAttempts: 3
 
     - node: createItinerary
 

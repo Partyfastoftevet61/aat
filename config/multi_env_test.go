@@ -359,8 +359,7 @@ shared:
       value: shared-key
     model: gpt-4
   settings:
-    maxRunDuration: 5m
-    defaultRetries: 3
+    oasValidation: strict
 
 environments:
   dev:
@@ -371,7 +370,7 @@ environments:
       X-Shared: overridden
       X-Dev: dev-val
     settings:
-      defaultRetries: 1
+      oasValidation: "off"
 `
 	path := writeTempYAML(t, yaml)
 
@@ -384,32 +383,27 @@ environments:
 	// LLM: inherited from shared
 	assert.Equal(t, "https://api.openai.com/v1", env.LLM.Endpoint)
 	assert.Equal(t, "gpt-4", env.LLM.Model)
-	// Settings: field-level merge
-	assert.Equal(t, 1, env.Settings.DefaultRetries) // overridden
+	// Settings: the environment's value wins
+	assert.Equal(t, "off", env.Settings.OASValidation)
 }
 
-func TestLoadNamedEnvironment_SettingsFieldMerge(t *testing.T) {
+func TestLoadNamedEnvironment_SettingsInheritedFromShared(t *testing.T) {
 	yaml := `
 shared:
   settings:
-    maxRunDuration: 5m
-    defaultRetries: 3
-    archiveFormat: json.gz
+    oasValidation: strict
 
 environments:
   dev:
     apiBaseUrl: https://dev.example.com
     auth:
       type: none
-    settings:
-      defaultRetries: 1
 `
 	path := writeTempYAML(t, yaml)
 
 	env, err := LoadNamedEnvironment(path, "dev")
 	require.NoError(t, err)
-	assert.Equal(t, 1, env.Settings.DefaultRetries)            // overridden
-	assert.Equal(t, ArchiveJSONGZ, env.Settings.ArchiveFormat) // inherited
+	assert.Equal(t, "strict", env.Settings.OASValidation) // inherited
 }
 
 func TestLoadEnvironment_RejectsMultiEnv(t *testing.T) {
@@ -588,24 +582,6 @@ environments:
 	env, err := LoadNamedEnvironment(path, "dev")
 	require.NoError(t, err)
 	assert.Equal(t, "https://dev-api.example.com", env.APIBaseURL)
-}
-
-func TestLoadNamedEnvironment_DefaultsApplied(t *testing.T) {
-	yaml := `
-environments:
-  dev:
-    apiBaseUrl: https://dev.example.com
-    auth:
-      type: none
-`
-	path := writeTempYAML(t, yaml)
-
-	env, err := LoadNamedEnvironment(path, "dev")
-	require.NoError(t, err)
-	// Defaults should be applied
-	assert.NotZero(t, env.Settings.MaxRunDuration.Duration)
-	assert.NotZero(t, env.Settings.DefaultRetries)
-	assert.Equal(t, ArchiveJSON, env.Settings.ArchiveFormat)
 }
 
 func TestLoadNamedEnvironment_IncludeSecrets(t *testing.T) {

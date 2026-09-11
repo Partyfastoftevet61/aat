@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gburgyan/aat/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,12 +29,11 @@ type RecipeSelection struct {
 }
 
 // RecipeOverrides captures the LLM's creative decisions: literal values,
-// selection strategy overrides, assertions, and step descriptions.
+// selection strategy overrides, and assertions.
 type RecipeOverrides struct {
-	Values       map[string]any                     `yaml:"values,omitempty"`
-	Selections   map[string]RecipeSelectionOverride `yaml:"selections,omitempty"`
-	Assertions   map[string][]RecipeAssertion       `yaml:"assertions,omitempty"`
-	Descriptions map[string]string                  `yaml:"descriptions,omitempty"`
+	Values     map[string]any                     `yaml:"values,omitempty"`
+	Selections map[string]RecipeSelectionOverride `yaml:"selections,omitempty"`
+	Assertions map[string][]RecipeAssertion       `yaml:"assertions,omitempty"`
 }
 
 // RecipeSelectionOverride mirrors intent.TargetedSelection for YAML serialization
@@ -43,7 +43,6 @@ type RecipeSelectionOverride struct {
 	Filter    string `yaml:"filter,omitempty"`
 	SortField string `yaml:"sortField,omitempty"`
 	Index     int    `yaml:"index,omitempty"`
-	Prompt    string `yaml:"prompt,omitempty"`
 }
 
 // RecipeAssertion mirrors intent.TargetedAssertion for YAML serialization.
@@ -56,11 +55,17 @@ type RecipeAssertion struct {
 	Raw    bool   `yaml:"raw,omitempty"`
 }
 
-// ParseRecipe unmarshals YAML bytes into a Recipe with basic validation.
+// ParseRecipe unmarshals YAML bytes into a Recipe with basic validation. Keys
+// that no recipe field accepts are errors.
 func ParseRecipe(data []byte) (*Recipe, error) {
+	// Check the kind first, so a plan passed here reports the wrong kind rather
+	// than every plan key as unknown.
+	if kind, err := probeKind(data); err == nil && kind != "recipe" {
+		return nil, fmt.Errorf("expected kind: recipe, got %q", kind)
+	}
 	var r Recipe
-	if err := yaml.Unmarshal(data, &r); err != nil {
-		return nil, fmt.Errorf("recipe YAML parse error: %w", err)
+	if err := yamlx.Decode(data, &r); err != nil {
+		return nil, err
 	}
 	if r.Kind != "recipe" {
 		return nil, fmt.Errorf("expected kind: recipe, got %q", r.Kind)
@@ -71,24 +76,35 @@ func ParseRecipe(data []byte) (*Recipe, error) {
 	return &r, nil
 }
 
-// ParseRecipeFile reads a YAML file and parses it as a Recipe.
+// ParseRecipeFile reads a YAML file and parses it as a Recipe. Errors name the
+// file.
 func ParseRecipeFile(path string) (*Recipe, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading recipe file: %w", err)
 	}
-	return ParseRecipe(data)
+	r, err := ParseRecipe(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return r, nil
 }
 
 // IsRecipeFile probes YAML bytes to check if they represent a recipe.
 func IsRecipeFile(data []byte) bool {
+	kind, err := probeKind(data)
+	return err == nil && kind == "recipe"
+}
+
+// probeKind reads only the top-level kind field.
+func probeKind(data []byte) (string, error) {
 	var probe struct {
 		Kind string `yaml:"kind"`
 	}
-	if err := yaml.Unmarshal(data, &probe); err != nil {
-		return false
+	if err := yaml.Unmarshal(data, &probe); err != nil { //nolint:forbidigo // lenient probe: the full decode that follows is strict
+		return "", err
 	}
-	return probe.Kind == "recipe"
+	return probe.Kind, nil
 }
 
 // ParseAny probes the kind field and dispatches to ParseRecipe or Parse.
@@ -100,14 +116,18 @@ func ParseAny(data []byte) (any, error) {
 	return Parse(data)
 }
 
-// ParseAnyFile reads a YAML file and dispatches to ParseRecipe or ParseFile.
-// Returns *Recipe or *Plan.
+// ParseAnyFile reads a YAML file and dispatches to ParseRecipe or Parse.
+// Returns *Recipe or *Plan. Errors name the file.
 func ParseAnyFile(path string) (any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading file: %w", err)
 	}
-	return ParseAny(data)
+	parsed, err := ParseAny(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return parsed, nil
 }
 
 // MarshalRecipe serializes a Recipe to YAML bytes.

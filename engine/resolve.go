@@ -154,7 +154,6 @@ func resolveNamedSelection(ctx context.Context, selName string, sel plan.StepSel
 		Filter:    sel.Filter,
 		Index:     sel.Index,
 		SortField: sel.SortField,
-		Prompt:    sel.Prompt,
 	}
 
 	// Resolve elementField names in SortField

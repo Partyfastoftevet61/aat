@@ -81,7 +81,6 @@ func TestFormatNarrative(t *testing.T) {
 									{Type: "status", Expect: 200},
 									{Type: "fieldExists", Path: "$.results"},
 								},
-								Semantic: []string{"Should contain flights"},
 							},
 						},
 						{
@@ -104,7 +103,7 @@ func TestFormatNarrative(t *testing.T) {
 				"Steps (2):",
 				"1. searchFlights — Search for flights",
 				`origin: "DEN"`,
-				"Assertions: status 200, fieldExists $.results, semantic: Should contain flights",
+				"Assertions: status 200, fieldExists $.results",
 				"2. commitBooking [GOAL]",
 				"Depends on: searchFlights",
 				"Constraints:",

@@ -157,7 +157,6 @@ func recipeOverridesToTargetedResponse(ro plan.RecipeOverrides) *TargetedRespons
 			Filter:    sel.Filter,
 			SortField: sel.SortField,
 			Index:     sel.Index,
-			Prompt:    sel.Prompt,
 		}
 	}
 
@@ -217,7 +216,6 @@ func TargetedResponseToRecipeOverrides(tr *TargetedResponse) plan.RecipeOverride
 			Filter:    sel.Filter,
 			SortField: sel.SortField,
 			Index:     sel.Index,
-			Prompt:    sel.Prompt,
 		}
 	}
 

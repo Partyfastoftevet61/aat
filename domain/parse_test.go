@@ -89,7 +89,7 @@ func TestParse_GroupedPool(t *testing.T) {
 func TestParse_MalformedYAML(t *testing.T) {
 	_, err := Parse([]byte("not: [yaml: broken"))
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "YAML parse error")
+	assert.Contains(t, err.Error(), "invalid YAML")
 }
 
 func TestParse_EmptyInput(t *testing.T) {
@@ -394,4 +394,10 @@ func TestMerge_DoesNotMutateOriginalAnnotations(t *testing.T) {
 	Merge(kb1, kb2)
 	// Original kb1 annotations should be unchanged
 	assert.Equal(t, map[string]string{"A": "Alpha"}, kb1.ValuePools["pool1"].Annotations)
+}
+
+func TestParse_UnknownKey(t *testing.T) {
+	_, err := Parse([]byte("concept:\n  x:\n    description: d\n"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `line 1: unknown key "concept" in knowledge base (did you mean "concepts"?)`)
 }

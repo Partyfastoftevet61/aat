@@ -50,7 +50,6 @@ nodes:
     inputs:
       - name: offerId
         type: string
-        from: SearchAir.offerId
     outputs:
       - name: reservationId
         type: string
@@ -145,7 +144,6 @@ nodes:
     inputs:
       - name: offerId
         type: string
-        from: SearchAir.offerId
     outputs:
       - name: reservationId
         type: string

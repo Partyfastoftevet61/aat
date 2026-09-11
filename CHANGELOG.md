@@ -40,6 +40,8 @@ the graph and plan formats may still change before 1.0.
   `{{?X-Request-Id}}…{{/X-Request-Id}}` for a header parameter.
 - `aat validate` checks the layers directory: parse errors, duplicate layer names, and layer input keys
   that match no node input (which layers silently ignored).
+- `aat validate` checks the domain file and `visualizers.yaml` (Domain and Visualizers sections), and
+  names each error's file relative to the working directory.
 - Plan-level `execution.cleanup` steps now execute after the main flow, in declaration order and
   honoring `runOn: always|success|failure`, before graph-level cleanup pairings.
 - Plan `execution.verification` steps now execute after the main flow and before cleanup, with their
@@ -59,6 +61,16 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- **BREAKING:** project YAML is decoded strictly. A key that no field accepts — in the manifest,
+  environment files and their includes, overlays, the graph, templates, the domain file, visualizers,
+  workflows, layers, plans, recipes, and plan YAML given to the MCP plan tools — is an error naming the
+  file, the line, and the likely intended key (`plans/smoke.yaml: line 12: unknown key "fromSelecton"
+  in step value (did you mean "fromSelection"?)`). Such keys were silently ignored, so a typo produced a
+  plan that loaded and did something else. `aat prompt` model output (JSON) is unaffected. To migrate,
+  run `aat validate` and fix what it lists.
+- **BREAKING:** a manifest that exists but fails to load is an error for every command that discovers
+  it; it was skipped, so commands fell back to a lower-priority project or to none. A missing manifest
+  is still skipped, and a higher-priority manifest that loads still wins.
 - `aat web` and `aat mcp serve --http` listen on `127.0.0.1` by default instead of every interface.
   Pass `--host 0.0.0.0` (or set `AAT_HOST`) to accept connections from other machines.
 - Steps composed from workflow templates (recipes, `aat prompt`) get a default `status: 2xx`
@@ -98,6 +110,12 @@ the graph and plan formats may still change before 1.0.
 - Minimum Go version is 1.25.7 (the OpenAPI libraries require it).
 
 ### Removed
+- **BREAKING:** YAML keys that nothing read, which strict decoding now rejects: step `fallback`,
+  `assertions.semantic`, the environment settings `maxRunDuration`, `defaultRetries`, and
+  `archiveFormat` (retry with a step's `retry:` or `--retries`), template `response.validate`, the
+  `prompt` field of selections and graph default `select`, and recipe `overrides.descriptions`.
+- **BREAKING:** the `llm` selection strategy, which plan validation already rejected but `aat prompt`
+  accepted from the model, and the `warn` OpenAPI validation mode, which behaved exactly like `auto`.
 - The MCP `execute_plan` tool no longer accepts the obsolete `mode` parameter (the runtime
   strict/lean/adaptive modes were removed in 0.0.2).
 - Airline-era repository leftovers (`setup.sh`, a root-level plan, IDE run configurations, the

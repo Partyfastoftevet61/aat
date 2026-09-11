@@ -15,5 +15,3 @@ response:
   extract:
     offerId: "$.data.offerId"
     totalPrice: "$.data.totalPrice"
-  validate:
-    schema: schemas/price_response.json

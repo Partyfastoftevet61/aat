@@ -4,36 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
-
-	"gopkg.in/yaml.v3"
 )
-
-// ArchiveFormat controls the format for run archives.
-type ArchiveFormat string
-
-const (
-	ArchiveJSON   ArchiveFormat = "json"
-	ArchiveJSONGZ ArchiveFormat = "json.gz"
-)
-
-// Duration wraps time.Duration with custom YAML unmarshaling via time.ParseDuration.
-type Duration struct {
-	time.Duration
-}
-
-// UnmarshalYAML parses a duration string like "120s", "5m", or "2h30m".
-func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
-	if value.Kind != yaml.ScalarNode {
-		return fmt.Errorf("duration must be a string, got %v", value.Tag)
-	}
-	parsed, err := time.ParseDuration(value.Value)
-	if err != nil {
-		return fmt.Errorf("invalid duration %q: %w", value.Value, err)
-	}
-	d.Duration = parsed
-	return nil
-}
 
 // SecretRef holds a reference to a secret value, resolved either from an
 // environment variable or a literal value.
@@ -82,12 +53,9 @@ type LLMConfig struct {
 	Provider string    `yaml:"provider,omitempty"` // "openai" or "anthropic"; auto-detected from endpoint if empty
 }
 
-// RuntimeSettings holds execution-time configuration with sensible defaults.
+// RuntimeSettings holds execution-time configuration.
 type RuntimeSettings struct {
-	MaxRunDuration Duration      `yaml:"maxRunDuration"`
-	DefaultRetries int           `yaml:"defaultRetries"`
-	ArchiveFormat  ArchiveFormat `yaml:"archiveFormat"`
-	OASValidation  string        `yaml:"oasValidation,omitempty"` // "auto" (default), "warn", "strict", "off"
+	OASValidation string `yaml:"oasValidation,omitempty"` // "auto" (default), "strict", "off"
 }
 
 // PathRewrite controls URL path rewriting for overrides.

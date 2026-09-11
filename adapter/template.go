@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gburgyan/aat/internal/yamlx"
 	"github.com/tidwall/gjson"
 	"gopkg.in/yaml.v3"
 )
@@ -30,10 +31,9 @@ type TemplateRequest struct {
 	Body    string            `yaml:"body,omitempty"`
 }
 
-// TemplateResponse defines output extraction and validation rules.
+// TemplateResponse defines how outputs are extracted from the response.
 type TemplateResponse struct {
 	Extract   map[string]ExtractRule `yaml:"extract,omitempty"`
-	Validate  *TemplateValidate      `yaml:"validate,omitempty"`
 	Transform string                 `yaml:"transform,omitempty"`
 }
 
@@ -49,22 +49,27 @@ type ExtractRule struct {
 
 // UnmarshalYAML handles both string and object forms of extract rules.
 // A bare string "some.path" becomes ExtractRule{Path: "some.path"}.
-// An object {path: "...", fields: {...}} is decoded fully.
-func (r *ExtractRule) UnmarshalYAML(value *yaml.Node) error {
-	// Try string first
-	var s string
-	if err := value.Decode(&s); err == nil {
-		r.Path = s
-		return nil
-	}
-	// Try object
-	type rawRule ExtractRule
-	var raw rawRule
-	if err := value.Decode(&raw); err != nil {
+// An object {path: "...", fields: {...}} is decoded fully. It uses the
+// callback form so strict decoding reaches the object (see internal/yamlx).
+func (r *ExtractRule) UnmarshalYAML(unmarshal func(any) error) error {
+	n, err := yamlx.Node(unmarshal)
+	if err != nil {
 		return err
 	}
-	*r = ExtractRule(raw)
-	return nil
+	switch n.Kind {
+	case yaml.ScalarNode:
+		return unmarshal(&r.Path)
+	case yaml.MappingNode:
+		type rawExtractRule ExtractRule
+		var raw rawExtractRule
+		if err := unmarshal(&raw); err != nil {
+			return err
+		}
+		*r = ExtractRule(raw)
+		return nil
+	default:
+		return yamlx.KindError(n, "an extract rule", "a path or a mapping")
+	}
 }
 
 // GJSONPath returns the rule's path in GJSON syntax, the form responses are
@@ -94,11 +99,6 @@ func (t *Template) HasTransform() bool {
 	return t.Response.Transform != ""
 }
 
-// TemplateValidate holds optional validation configuration for responses.
-type TemplateValidate struct {
-	Schema string `yaml:"schema,omitempty"`
-}
-
 // TemplateAdapter implements the Adapter interface using a parsed Template.
 type TemplateAdapter struct {
 	tmpl Template
@@ -115,11 +115,12 @@ var iterOpenRe = regexp.MustCompile(`\{\{#([\w-]+)\}\}`)
 // Keys may contain hyphens.
 var condOpenRe = regexp.MustCompile(`\{\{\?([\w|-]+)\}\}`)
 
-// ParseTemplate parses YAML bytes into a Template and validates required fields.
+// ParseTemplate parses YAML bytes into a Template and validates required
+// fields. Keys that no template field accepts are errors.
 func ParseTemplate(data []byte) (*Template, error) {
 	var t Template
-	if err := yaml.Unmarshal(data, &t); err != nil {
-		return nil, fmt.Errorf("invalid YAML: %w", err)
+	if err := yamlx.Decode(data, &t); err != nil {
+		return nil, err
 	}
 
 	if t.Adapter == "" {
@@ -142,13 +143,18 @@ func ParseTemplate(data []byte) (*Template, error) {
 	return &t, nil
 }
 
-// ParseTemplateFile reads a file and parses it as a template.
+// ParseTemplateFile reads a file and parses it as a template. Errors name the
+// file.
 func ParseTemplateFile(path string) (*Template, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading template file: %w", err)
 	}
-	return ParseTemplate(data)
+	t, err := ParseTemplate(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return t, nil
 }
 
 // NewTemplateAdapter wraps a parsed Template into an Adapter implementation.
@@ -781,11 +787,11 @@ func LoadTemplates(dir string, registry *Registry) (int, error) {
 		path := filepath.Join(dir, entry.Name())
 		tmpl, err := ParseTemplateFile(path)
 		if err != nil {
-			return count, fmt.Errorf("loading %s: %w", entry.Name(), err)
+			return count, err
 		}
 
 		if err := registry.Register(tmpl.Adapter, NewTemplateAdapter(*tmpl)); err != nil {
-			return count, fmt.Errorf("loading %s: %w", entry.Name(), err)
+			return count, fmt.Errorf("%s: %w", path, err)
 		}
 		count++
 	}

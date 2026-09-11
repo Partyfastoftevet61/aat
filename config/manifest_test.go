@@ -123,7 +123,7 @@ func TestLoadManifest_InvalidYAML(t *testing.T) {
 
 	_, err := LoadManifest(path)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "parsing manifest")
+	assert.Contains(t, err.Error(), path+": line 1: ")
 }
 
 func TestFindManifest_Found(t *testing.T) {

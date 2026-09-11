@@ -143,13 +143,6 @@
               </div>
             </div>
           {/if}
-
-          {#if trace.repetitions}
-            <div class="trace-section">
-              <h4 class="section-heading">Repetitions</h4>
-              <JsonViewer data={trace.repetitions} />
-            </div>
-          {/if}
         </div>
       {/if}
 

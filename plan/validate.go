@@ -371,18 +371,6 @@ func Validate(p *Plan, g *graph.Graph) error {
 		}
 	}
 
-	// Valid strategy names
-	validStrategies := map[string]bool{
-		"":       true,
-		"first":  true,
-		"last":   true,
-		"index":  true,
-		"random": true,
-		"min":    true,
-		"max":    true,
-		"match":  true,
-	}
-
 	// Validate predicate expressions and selection strategies in step selections and values
 	for i, step := range p.Execution.Steps {
 		sid := step.StepID()
@@ -390,7 +378,7 @@ func Validate(p *Plan, g *graph.Graph) error {
 		// Validate named selection strategies and filter fields
 		for selName, sel := range step.Selections {
 			strategy := sel.Strategy
-			if !validStrategies[strategy] {
+			if !IsSelectionStrategy(strategy) {
 				errs = append(errs, fmt.Sprintf("step %d (%s): unknown selection strategy %q for selection %q", i, sid, strategy, selName))
 			}
 			if sel.Filter != "" {
@@ -442,7 +430,7 @@ func Validate(p *Plan, g *graph.Graph) error {
 		for name, sv := range step.Values {
 			if sv.Select != nil {
 				sel := sv.Select
-				if !validStrategies[sel.Strategy] {
+				if !IsSelectionStrategy(sel.Strategy) {
 					errs = append(errs, fmt.Sprintf("step %d (%s): unknown selection strategy %q for %q", i, sid, sel.Strategy, name))
 				}
 				if sel.Filter != "" {

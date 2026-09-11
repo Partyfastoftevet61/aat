@@ -37,7 +37,7 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 | `plan/` | Plan model, expression evaluator, validation, persistence |
 | `intent/` | LLM-powered prompt → plan transformation |
 | `engine/` | Execution engine: scheduling, value resolution, retry, cleanup, verification |
-| `validate/` | Mechanical, semantic, and intent validation |
+| `validate/` | Mechanical assertions (status, fields, predicates, schema) and JSONPath helpers |
 | `archive/` | Run archives: capture, inspection, diffing, reports |
 | `llm/` | Provider-agnostic LLM client |
 | `config/` | Configuration, environments, local storage |
@@ -45,6 +45,7 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 | `mcp/` | MCP server: API lifecycle platform for IDE-based AI tools (stdio transport) |
 | `internal/sandbox/shop/` | Offline e-commerce sandbox API (regions, OAuth2/API key, order state machine, chaos hooks); stdlib only |
 | `internal/httpstatus/` | Expected-status values shared by plan validation and assertions: exact codes, `2xx` classes, contradictions with `expectFailure` |
+| `internal/yamlx/` | Strict YAML decoding for project files: unknown keys are errors with line, key, and suggestion |
 | `internal/testutil/` | Shared test helpers and fixtures |
 | `internal/version/` | Build version info |
 | root `embed.go` | `package aat`: embeds `examples/shop` for `aat-sandbox init` |
@@ -53,12 +54,12 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 
 Dependencies flow in one direction. No cycles. No lateral imports within a tier.
 
-**Foundation packages** (stdlib and third-party imports only; importable from any tier): `internal/httpstatus`
-**Leaf packages** (no aat imports other than foundation packages): `config`, `graph`, `domain`, `llm`, `internal/sandbox/shop`
-**Mid-tier**: `adapter` → config; `plan` → graph, config; `archive` → plan; `validate` → llm
-**Orchestrators**: `engine` → graph, adapter, plan, domain, llm, validate, archive, config
-**Entry points**: `intent` → graph, domain, plan, llm; `mcp` → all packages; `server` → engine, archive, plan, config
-**Binaries**: `cmd/aat` → engine, server, intent, mcp, archive, config (its tests also import `internal/sandbox/shop` and the root embed for the shop end-to-end test); `cmd/aat-sandbox` → internal/sandbox/shop, root embed
+**Foundation packages** (stdlib and third-party imports only; importable from any tier): `internal/httpstatus`, `internal/yamlx`, `internal/version`
+**Leaf packages** (no aat imports other than foundation packages): `config`, `graph`, `domain`, `adapter`, `validate`, `internal/sandbox/shop`
+**Mid-tier**: `graph/oas` → graph; `llm` → config; `plan` → graph, config; `archive` → plan
+**Orchestrators**: `engine` → graph, graph/oas, adapter, plan, domain, validate, archive, config
+**Entry points**: `intent` → graph, domain, plan, llm; `mcp` → all packages; `server` → intent, archive, plan, config
+**Binaries**: `cmd/aat` → every package outside `internal/` (its tests also import `internal/sandbox/shop` and the root embed for the shop end-to-end test); `cmd/aat-sandbox` → internal/sandbox/shop, root embed
 
 Data flows down, decisions flow up. No business logic in `cmd/`.
 
@@ -135,6 +136,7 @@ The environment file supports two formats: **single-environment** (legacy, one `
 - Exported types and functions get doc comments
 - Use `errors.Is` / `errors.As` for error inspection
 - Prefer returning concrete types; accept interfaces
+- Decode project YAML with `yamlx.Decode`, never `yaml.Unmarshal` (a `forbidigo` rule enforces it): unknown keys must be errors. A deliberately lenient decode, such as a `kind` probe before the strict decode, carries `//nolint:forbidigo` and a reason. Custom unmarshalers use the callback form `UnmarshalYAML(func(any) error)` with `yamlx.Node` and `yamlx.KindError`, because `yaml.Node.Decode` starts a decoder that ignores unknown keys; their method-less alias types are named `raw<Type>`. A function that reads a file names the file in its errors, so callers do not add the path again
 
 ## Documentation
 
@@ -209,7 +211,7 @@ cd examples/petstore/
 #   --overlay FILE       path to overlay YAML with additional overrides
 #   --no-auto-overrides  disable auto-discovery of .aat-overrides.yaml
 #   --retries N        max plan-level retries on failure (0 = no retries)
-#   --oas-validate MODE  runtime OpenAPI validation: auto|warn|strict|off
+#   --oas-validate MODE  runtime OpenAPI validation: auto|strict|off
 #   --stop-after STEP  stop after a step, skip cleanup, keep resources alive
 #   --dump-state FILE  write live state (per-step base URLs and headers, outputs) for external harnesses
 ```

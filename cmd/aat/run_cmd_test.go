@@ -1097,7 +1097,7 @@ func TestResolveOASMode(t *testing.T) {
 		{name: "defaults to auto", want: "auto"},
 		{name: "environment setting", setting: "strict", want: "strict"},
 		{name: "flag beats the setting", flag: "off", setting: "strict", want: "off"},
-		{name: "unknown flag value", flag: "stirct", wantErr: `unknown --oas-validate mode "stirct"`},
+		{name: "unknown flag value", flag: "stirct", wantErr: `--oas-validate: unknown OpenAPI validation mode "stirct"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

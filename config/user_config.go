@@ -46,7 +46,9 @@ func loadUserConfigFrom(path string) (*UserConfig, error) {
 	}
 
 	var cfg UserConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	// Lenient on purpose: the user config is not project YAML, and one file is
+	// shared by every aat version installed, so an older aat must tolerate newer keys.
+	if err := yaml.Unmarshal(data, &cfg); err != nil { //nolint:forbidigo // user config, see above
 		return nil, fmt.Errorf("parsing user config: %w", err)
 	}
 	return &cfg, nil

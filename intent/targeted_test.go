@@ -1438,7 +1438,7 @@ func TestValidateTargetedResponse_WiredInputsIgnored(t *testing.T) {
 }
 
 func TestValidateTargetedResponse_ValidStrategiesAccepted(t *testing.T) {
-	strategies := []string{"first", "last", "random", "index", "min", "max", "match", "llm", ""}
+	strategies := append(plan.SelectionStrategies(), "")
 	for _, s := range strategies {
 		resp := &TargetedResponse{
 			Values: map[string]any{},

@@ -1,6 +1,8 @@
 package plan
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -75,15 +77,8 @@ func TestParseFile_FullFeatured(t *testing.T) {
 	// Step with assertions
 	require.NotNil(t, search.Assertions)
 	assert.Len(t, search.Assertions.Mechanical, 2)
-	assert.Len(t, search.Assertions.Semantic, 1)
 	assert.Equal(t, "status", search.Assertions.Mechanical[0].Type)
 	assert.Equal(t, 200, search.Assertions.Mechanical[0].Expect)
-
-	// Step with fallback
-	price := p.Execution.Steps[1]
-	require.NotNil(t, price.Fallback)
-	assert.Equal(t, "nextValue", price.Fallback.Action)
-	assert.Equal(t, 3, price.Fallback.MaxAttempts)
 
 	// Cleanup steps
 	require.Len(t, p.Execution.Cleanup, 1)
@@ -100,7 +95,7 @@ func TestParse_NoSteps(t *testing.T) {
 func TestParse_BadYAML(t *testing.T) {
 	_, err := ParseFile("testdata/invalid/bad_yaml.yaml")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "YAML parse error")
+	assert.Contains(t, err.Error(), "testdata/invalid/bad_yaml.yaml: line 2: invalid YAML: ")
 }
 
 func TestParse_MissingFile(t *testing.T) {
@@ -224,14 +219,11 @@ execution:
         mechanical:
           - type: status
             expect: 200
-        semantic:
-          - "response should contain valid data"
 `)
 	p, err := Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, p.Execution.Steps[0].Assertions)
 	assert.Len(t, p.Execution.Steps[0].Assertions.Mechanical, 1)
-	assert.Len(t, p.Execution.Steps[0].Assertions.Semantic, 1)
 }
 
 func TestStepValue_SelectWithIndex(t *testing.T) {
@@ -630,4 +622,70 @@ execution:
 	// StepID
 	assert.Equal(t, "trip-search", p.Execution.Steps[1].StepID())
 	assert.Equal(t, "payment", p.Execution.Steps[3].StepID())
+}
+
+func TestParse_UnknownKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "metadata name",
+			yaml: "metadata:\n  name: smoke\nexecution:\n  steps:\n    - node: a\n",
+			want: `line 2: unknown key "name" in metadata (valid keys: created, graphVersion, prompt)`,
+		},
+		{
+			name: "intent summary",
+			yaml: "intent:\n  summary: buy\nexecution:\n  steps:\n    - node: a\n",
+			want: `line 2: unknown key "summary" in intent (valid keys: constraints, description, goal)`,
+		},
+		{
+			name: "removed step fallback",
+			yaml: "execution:\n  steps:\n    - node: a\n      fallback:\n        node: b\n",
+			want: `line 4: unknown key "fallback" in step (valid keys: `,
+		},
+		{
+			name: "misspelled key in a step value",
+			yaml: "execution:\n  steps:\n    - node: a\n      values:\n        id: {fromSelecton: offer.id}\n",
+			want: `line 5: unknown key "fromSelecton" in step value (did you mean "fromSelection"?)`,
+		},
+		{
+			name: "removed selection prompt",
+			yaml: "execution:\n  steps:\n    - node: a\n      values:\n        id:\n          from: b.items\n          select: {strategy: min, prompt: cheapest}\n",
+			want: `line 7: unknown key "prompt" in selection config (valid keys: field, filter, index, sortField, strategy)`,
+		},
+		{
+			name: "removed semantic assertions",
+			yaml: "execution:\n  steps:\n    - node: a\n      assertions:\n        semantic: [looks right]\n",
+			want: `line 5: unknown key "semantic" in assertions (valid keys: mechanical)`,
+		},
+		{
+			name: "values on a cleanup step",
+			yaml: "execution:\n  steps:\n    - node: a\n  cleanup:\n    - node: b\n      values: {id: 1}\n",
+			want: `line 6: unknown key "values" in cleanup step (valid keys: node, runOn)`,
+		},
+		{
+			name: "list as a step value",
+			yaml: "execution:\n  steps:\n    - node: a\n      values:\n        origin: [DEN, SFO]\n",
+			want: `line 5: a step value must be a scalar or a mapping, found a list`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse([]byte(tt.yaml))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+func TestParseFile_UnknownKeyNamesFileLineAndKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "smoke.yaml")
+	src := "execution:\n  steps:\n    - node: a\n      values:\n        id: {fromSelecton: offer.id}\n"
+	require.NoError(t, os.WriteFile(path, []byte(src), 0o644))
+
+	_, err := ParseFile(path)
+	require.Error(t, err)
+	assert.Equal(t, path+`: line 5: unknown key "fromSelecton" in step value (did you mean "fromSelection"?)`, err.Error())
 }

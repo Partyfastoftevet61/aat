@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -73,7 +74,6 @@ type Step struct {
 	Selections    map[string]StepSelection `yaml:"selections,omitempty" json:"selections,omitempty"`
 	Values        map[string]StepValue     `yaml:"values,omitempty" json:"values,omitempty"`
 	Retry         *RetryConfig             `yaml:"retry,omitempty" json:"retry,omitempty"`
-	Fallback      *FallbackConfig          `yaml:"fallback,omitempty" json:"fallback,omitempty"`
 	Assertions    *Assertions              `yaml:"assertions,omitempty" json:"assertions,omitempty"`
 	ExpectFailure *ExpectFailure           `yaml:"expectFailure,omitempty" json:"expectFailure,omitempty"`
 	// RawBody, when non-empty, replaces the adapter-built request body at
@@ -133,7 +133,6 @@ type StepSelection struct {
 	Filter    string `yaml:"filter,omitempty" json:"filter,omitempty"`
 	Index     int    `yaml:"index,omitempty" json:"index,omitempty"`
 	SortField string `yaml:"sortField,omitempty" json:"sortField,omitempty"`
-	Prompt    string `yaml:"prompt,omitempty" json:"prompt,omitempty"`
 }
 
 // StepValue represents a value assignment for a step input.
@@ -175,7 +174,19 @@ type SelectionConfig struct {
 	Filter    string `yaml:"filter,omitempty" json:"filter,omitempty"`
 	Index     int    `yaml:"index,omitempty" json:"index,omitempty"`
 	SortField string `yaml:"sortField,omitempty" json:"sortField,omitempty"` // For min/max: field to compare by
-	Prompt    string `yaml:"prompt,omitempty" json:"prompt,omitempty"`       // For llm strategy: selection criteria
+}
+
+// SelectionStrategies returns the selection strategy names the engine
+// implements, in the order documentation lists them. An empty strategy means
+// "first" (or "match" when only a filter is given).
+func SelectionStrategies() []string {
+	return []string{"first", "last", "index", "random", "min", "max", "match"}
+}
+
+// IsSelectionStrategy reports whether s names a selection strategy. The empty
+// string is accepted as the default.
+func IsSelectionStrategy(s string) bool {
+	return s == "" || slices.Contains(SelectionStrategies(), s)
 }
 
 // RetryConfig controls retry behavior for a step.
@@ -185,16 +196,9 @@ type RetryConfig struct {
 	FailOn []string `yaml:"failOn,omitempty" json:"failOn,omitempty"`
 }
 
-// FallbackConfig describes what to do when a step fails after retries.
-type FallbackConfig struct {
-	Action      string `yaml:"action" json:"action"`
-	MaxAttempts int    `yaml:"maxAttempts,omitempty" json:"maxAttempts,omitempty"`
-}
-
-// Assertions holds mechanical and semantic assertions for a step.
+// Assertions holds the assertions checked against a step's response.
 type Assertions struct {
 	Mechanical []MechanicalAssertion `yaml:"mechanical,omitempty" json:"mechanical,omitempty"`
-	Semantic   []string              `yaml:"semantic,omitempty" json:"semantic,omitempty"`
 }
 
 // MechanicalAssertion describes a structured check on a response.

@@ -188,7 +188,7 @@ func TestFormatPlanSummary_SelectionOverridesDetails(t *testing.T) {
 		Values: map[string]any{},
 		Selections: map[string]TargetedSelection{
 			"step1.sel1": {Strategy: "match", Filter: "carrier == 'UA'"},
-			"step1.sel2": {Prompt: "pick the cheapest"},
+			"step1.sel2": {SortField: "price"},
 			"step2.sel3": {Index: 3},
 		},
 	}
@@ -202,7 +202,7 @@ func TestFormatPlanSummary_SelectionOverridesDetails(t *testing.T) {
 
 	assert.Contains(t, result, "Selection overrides:")
 	assert.Contains(t, result, "step1.sel1: strategy: match, filter: carrier == 'UA'")
-	assert.Contains(t, result, `step1.sel2: prompt: "pick the cheapest"`)
+	assert.Contains(t, result, "step1.sel2: sortField: price")
 	assert.Contains(t, result, "step2.sel3: index: 3")
 }
 

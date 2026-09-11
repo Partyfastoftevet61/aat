@@ -416,7 +416,6 @@ func TestInputDefaultToStepValue(t *testing.T) {
 				Field:    "price",
 				Filter:   "active == true",
 				Index:    2,
-				Prompt:   "pick cheapest",
 			},
 		}
 		sv := inputDefaultToStepValue(d)
@@ -426,7 +425,6 @@ func TestInputDefaultToStepValue(t *testing.T) {
 		assert.Equal(t, "price", sv.Select.Field)
 		assert.Equal(t, "active == true", sv.Select.Filter)
 		assert.Equal(t, 2, sv.Select.Index)
-		assert.Equal(t, "pick cheapest", sv.Select.Prompt)
 	})
 }
 

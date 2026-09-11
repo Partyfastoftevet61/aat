@@ -4,14 +4,16 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/gburgyan/aat/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
 
-// Parse unmarshals YAML bytes into a Plan.
+// Parse unmarshals YAML bytes into a Plan. Keys that no plan field accepts
+// are errors.
 func Parse(data []byte) (*Plan, error) {
 	var p Plan
-	if err := yaml.Unmarshal(data, &p); err != nil {
-		return nil, fmt.Errorf("YAML parse error: %w", err)
+	if err := yamlx.Decode(data, &p); err != nil {
+		return nil, err
 	}
 	if len(p.Execution.Steps) == 0 {
 		return nil, fmt.Errorf("plan must have at least one execution step")
@@ -19,40 +21,44 @@ func Parse(data []byte) (*Plan, error) {
 	return &p, nil
 }
 
-// ParseFile reads a YAML file and parses it into a Plan.
+// ParseFile reads a YAML file and parses it into a Plan. Errors name the file.
 func ParseFile(path string) (*Plan, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading plan file: %w", err)
 	}
-	return Parse(data)
+	p, err := Parse(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return p, nil
 }
 
 // UnmarshalYAML implements custom YAML unmarshalling for Assertions.
 // Handles two formats:
-//   - Mapping with mechanical/semantic keys (correct form)
-//   - Flat list of assertion objects (common LLM mistake → treated as mechanical)
-func (a *Assertions) UnmarshalYAML(value *yaml.Node) error {
-	switch value.Kind {
+//   - Mapping with a mechanical key (the documented form)
+//   - Flat list of assertion objects (treated as mechanical)
+//
+// It uses the callback form so strict decoding reaches the assertions (see
+// internal/yamlx).
+func (a *Assertions) UnmarshalYAML(unmarshal func(any) error) error {
+	n, err := yamlx.Node(unmarshal)
+	if err != nil {
+		return err
+	}
+	switch n.Kind {
 	case yaml.SequenceNode:
-		// Flat list → treat as mechanical assertions.
-		var items []MechanicalAssertion
-		if err := value.Decode(&items); err != nil {
-			return err
-		}
-		a.Mechanical = items
-		return nil
+		return unmarshal(&a.Mechanical)
 	case yaml.MappingNode:
-		// Mapping → unmarshal normally.
 		type rawAssertions Assertions
 		var raw rawAssertions
-		if err := value.Decode(&raw); err != nil {
+		if err := unmarshal(&raw); err != nil {
 			return err
 		}
 		*a = Assertions(raw)
 		return nil
 	default:
-		return fmt.Errorf("unexpected YAML node kind %d for Assertions", value.Kind)
+		return yamlx.KindError(n, "assertions", "a mapping or a list")
 	}
 }
 
@@ -70,28 +76,26 @@ func (sv StepValue) MarshalYAML() (interface{}, error) {
 
 // UnmarshalYAML implements custom YAML unmarshalling for StepValue.
 // Bare scalars (e.g., origin: "DEN") set Default only.
-// Mappings unmarshal into the full StepValue struct.
-func (sv *StepValue) UnmarshalYAML(value *yaml.Node) error {
-	switch value.Kind {
+// Mappings unmarshal into the full StepValue struct. It uses the callback form
+// so strict decoding reaches the mapping (see internal/yamlx).
+func (sv *StepValue) UnmarshalYAML(unmarshal func(any) error) error {
+	n, err := yamlx.Node(unmarshal)
+	if err != nil {
+		return err
+	}
+	switch n.Kind {
 	case yaml.ScalarNode:
-		// Bare scalar → set Default only
-		var v any
-		if err := value.Decode(&v); err != nil {
-			return err
-		}
-		sv.Default = v
-		return nil
+		return unmarshal(&sv.Default)
 	case yaml.MappingNode:
-		// Mapping → unmarshal into the full struct.
-		// Use a type alias to avoid infinite recursion.
+		// The raw type has no methods, which avoids infinite recursion.
 		type rawStepValue StepValue
 		var raw rawStepValue
-		if err := value.Decode(&raw); err != nil {
+		if err := unmarshal(&raw); err != nil {
 			return err
 		}
 		*sv = StepValue(raw)
 		return nil
 	default:
-		return fmt.Errorf("unexpected YAML node kind %d for StepValue", value.Kind)
+		return yamlx.KindError(n, "a step value", "a scalar or a mapping")
 	}
 }

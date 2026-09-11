@@ -295,7 +295,6 @@ export interface TraceDetail {
   reselectionCall?: LLMCallDetail;
   workflowName?: string;
   templatePath?: string;
-  repetitions?: unknown;
   templateExpandedYaml?: string;
   recipeYaml?: string;
 }

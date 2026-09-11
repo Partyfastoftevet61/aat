@@ -11,6 +11,7 @@ import (
 
 	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/config"
+	"github.com/gburgyan/aat/domain"
 	"github.com/gburgyan/aat/engine"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/graph/oas"
@@ -23,7 +24,7 @@ import (
 var validateCmd = &cobra.Command{
 	Use:   "validate",
 	Short: "Validate the current AAT project",
-	Long:  "Validate the AAT project: manifest, graph, OAS specs, templates, and workflows.",
+	Long:  "Validate the AAT project: manifest, environments, domain, visualizers, graph, OAS specs, templates, workflows, layers, and plans. Unknown keys in any project file are errors.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cmd.SilenceUsage = true
 
@@ -105,6 +106,7 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 		printSections(out, sections)
 		return 1
 	}
+	shortenManifestPaths(m)
 
 	// Validate referenced files exist on disk
 	var manifestErrors []string
@@ -160,12 +162,18 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 		Detail: detail,
 	})
 
-	// 2. Validate environment file
+	// 2. Files that stand alone: environment, domain, visualizers
 	if m.EnvPath != "" {
 		envSection := validateEnvironmentFile(m.EnvPath, m.DefaultEnvironment, args.Vars)
 		if envSection != nil {
 			sections = append(sections, *envSection)
 		}
+	}
+	if m.DomainPath != "" {
+		sections = append(sections, validateDomain(m.DomainPath))
+	}
+	if m.VisualizersDir != "" {
+		sections = append(sections, validateVisualizers(m.VisualizersDir))
 	}
 
 	// 3. Parse graph
@@ -399,15 +407,10 @@ func validateWorkflows(workflowsDir string, g *graph.Graph, workflowTemplates ma
 		if d.IsDir() || (!strings.HasSuffix(d.Name(), ".yaml") && !strings.HasSuffix(d.Name(), ".yml")) {
 			return nil
 		}
-		name, relErr := filepath.Rel(workflowsDir, planPath)
-		if relErr != nil {
-			name = d.Name()
-		}
-
 		result.Total++
 		p, err := plan.ParseFile(planPath)
 		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", name, err))
+			result.Errors = append(result.Errors, err.Error()) // names the file
 			return nil
 		}
 
@@ -420,7 +423,7 @@ func validateWorkflows(workflowsDir string, g *graph.Graph, workflowTemplates ma
 		}
 
 		if _, err := plan.InstantiateAndValidate(p, g); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", name, err))
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", planPath, err))
 		}
 		return nil
 	})
@@ -473,18 +476,18 @@ func validatePlans(planDirs []string, g *graph.Graph, graphDir, layersDir string
 		result.Total++
 		parsed, err := plan.ParseAnyFile(entry.FullPath)
 		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", entry.Name, err))
+			result.Errors = append(result.Errors, err.Error()) // names the file
 			continue
 		}
 		switch v := parsed.(type) {
 		case *plan.Plan:
 			if _, err := plan.InstantiateAndValidate(v, g); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", entry.Name, err))
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", entry.FullPath, err))
 			}
 		case *plan.Recipe:
 			result.Recipes++
 			if _, err := intent.Reconstitute(v, g, graphDir, intent.WithLayersDir(layersDir)); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: reconstituting recipe: %s", entry.Name, err))
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: reconstituting recipe: %s", entry.FullPath, err))
 			}
 		}
 	}
@@ -517,6 +520,56 @@ func validateLayers(dir string, g *graph.Graph) sectionResult {
 		return sectionResult{Name: "Layers", Status: "FAILED", Errors: errs}
 	}
 	return sectionResult{Name: "Layers", Status: "OK", Detail: fmt.Sprintf("(%d layers)", len(layers))}
+}
+
+// validateDomain parses the domain knowledge file.
+func validateDomain(path string) sectionResult {
+	kb, err := domain.ParseFile(path)
+	if err != nil {
+		return sectionResult{Name: "Domain", Status: "FAILED", Errors: []string{err.Error()}}
+	}
+	return sectionResult{Name: "Domain", Status: "OK", Detail: fmt.Sprintf("(%d concepts, %d types, %d value pools)",
+		len(kb.Concepts), len(kb.Types), len(kb.ValuePools))}
+}
+
+// validateVisualizers loads the visualizer manifest and checks that each
+// visualizer's HTML file exists.
+func validateVisualizers(dir string) sectionResult {
+	defs, err := config.LoadVisualizers(dir)
+	if err != nil {
+		return sectionResult{Name: "Visualizers", Status: "FAILED", Errors: []string{err.Error()}}
+	}
+	detail := fmt.Sprintf("(%d visualizers)", len(defs))
+	if len(defs) == 1 {
+		detail = "(1 visualizer)"
+	}
+	return sectionResult{Name: "Visualizers", Status: "OK", Detail: detail}
+}
+
+// shortenManifestPaths rewrites the manifest's paths relative to the working
+// directory where that is shorter. Every error aat validate prints names its
+// file, and "plans/smoke.yaml" reads better than an absolute path.
+func shortenManifestPaths(m *config.ProjectManifest) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	shorten := func(path string) string {
+		if path == "" || !filepath.IsAbs(path) {
+			return path
+		}
+		if rel, err := filepath.Rel(wd, path); err == nil && len(rel) < len(path) {
+			return rel
+		}
+		return path
+	}
+	for _, p := range []*string{&m.GraphPath, &m.TemplatesPath, &m.DomainPath, &m.EnvPath,
+		&m.WorkflowsDir, &m.LayersDir, &m.VisualizersDir} {
+		*p = shorten(*p)
+	}
+	for i := range m.PlanDirs {
+		m.PlanDirs[i] = shorten(m.PlanDirs[i])
+	}
 }
 
 // printSections prints the validation sections in aligned columns.

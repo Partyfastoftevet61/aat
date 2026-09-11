@@ -184,9 +184,6 @@ func writeSummarySelections(b *strings.Builder, tr *TargetedResponse, p *plan.Pl
 		if sel.SortField != "" {
 			parts = append(parts, fmt.Sprintf("sortField: %s", sel.SortField))
 		}
-		if sel.Prompt != "" {
-			parts = append(parts, fmt.Sprintf("prompt: %q", sel.Prompt))
-		}
 		if sel.Index != 0 {
 			parts = append(parts, fmt.Sprintf("index: %d", sel.Index))
 		}

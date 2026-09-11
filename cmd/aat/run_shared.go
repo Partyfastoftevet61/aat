@@ -47,7 +47,7 @@ type runArgs struct {
 	LayerGroups       [][]string        // layer groups for permutation (batch only)
 	NoAutoOverrides   bool              // disable .aat-overrides.yaml auto-discovery
 	AutoOverridesPath string            // resolved path to auto-discovered overrides file
-	OASValidateMode   string            // "auto", "warn", "strict", "off"
+	OASValidateMode   string            // "auto", "strict", "off"
 	VerboseAuth       bool              // log auth request/response details to stderr
 	SkipMutations     bool              // strip mutations from plans before running (smoke-test mode)
 	StopAfterStep     string            // stop after this step ID; skip cleanup (checkpoint handoff)
@@ -713,7 +713,7 @@ type runContext struct {
 
 	// OAS validation
 	OASCache        *oas.SpecCache // loaded specs for runtime validation (nil if none)
-	OASValidateMode string         // effective mode: "auto", "warn", "strict", "off"
+	OASValidateMode string         // effective mode: "auto", "strict", "off"
 
 	// Execution options
 	SkipMutations bool   // strip mutations from each plan before instantiation
@@ -1107,8 +1107,8 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 // environment setting is validated when the environment loads.
 func resolveOASMode(cliFlag, envSetting string) (string, error) {
 	if cliFlag != "" {
-		if !config.ValidOASValidationMode(cliFlag) {
-			return "", fmt.Errorf("unknown --oas-validate mode %q (expected auto, warn, strict, or off)", cliFlag)
+		if err := config.CheckOASValidationMode(cliFlag); err != nil {
+			return "", fmt.Errorf("--oas-validate: %w", err)
 		}
 		return cliFlag, nil
 	}

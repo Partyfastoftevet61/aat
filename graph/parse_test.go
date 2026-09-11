@@ -105,7 +105,7 @@ func TestParse_OptionalInputs(t *testing.T) {
 func TestParse_InvalidYAML(t *testing.T) {
 	_, err := Parse([]byte(`{{{not yaml`))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "YAML parse error")
+	assert.Contains(t, err.Error(), "invalid YAML")
 }
 
 func TestParse_EmptyDocument(t *testing.T) {
@@ -390,6 +390,43 @@ func TestSplitRef(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantNode, node)
 			assert.Equal(t, tt.wantField, field)
+		})
+	}
+}
+
+func TestParse_UnknownKeys(t *testing.T) {
+	const head = "version: 1.0.0\nnodes:\n  getUser:\n    adapter: getUser\n"
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "path on an output",
+			yaml: head + "    outputs:\n      - name: id\n        type: string\n        path: $.id\n",
+			want: `line 8: unknown key "path" in output (valid keys: description, display, elementFields, name, optional, type)`,
+		},
+		{
+			name: "source on an input",
+			yaml: head + "    inputs:\n      - name: id\n        type: string\n        source: other.id\n",
+			want: `line 8: unknown key "source" in input (valid keys: configurable, constraints, default, description, name, optional, type)`,
+		},
+		{
+			name: "misspelled key in an input default",
+			yaml: head + "    inputs:\n      - name: id\n        type: string\n        default: {frm: other.id}\n",
+			want: `line 8: unknown key "frm" in input default (did you mean "from"?)`,
+		},
+		{
+			name: "mapping as after",
+			yaml: "version: 1.0.0\nworkflows:\n  - name: w\n    template: w.yaml\n    after: {node: getUser}\nnodes:\n  getUser:\n    adapter: getUser\n",
+			want: `line 5: after must be a node name or a list of node names, found a mapping`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse([]byte(tt.yaml))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
 		})
 	}
 }

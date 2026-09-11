@@ -35,7 +35,7 @@ func LoadWorkflowTemplate(templatePath, graphDir string, g *graph.Graph) (*plan.
 
 	p, err := plan.ParseFile(resolved)
 	if err != nil {
-		return nil, fmt.Errorf("loading workflow template %s: %w", templatePath, err)
+		return nil, fmt.Errorf("loading workflow template: %w", err)
 	}
 
 	// Validate all step nodes exist in the graph (skip slot markers).

@@ -64,7 +64,7 @@ Press Enter (or `y`) to execute immediately. Press `n` to abort. Press `a` to ed
 | `--trace-dir` | path | `_output/traces` | Directory for plan trace output |
 | `--layer` | string | — | Data layer to apply (repeatable) |
 | `--no-auto-overrides` | bool | `false` | Disable auto-discovery of `.aat-overrides.yaml` |
-| `--oas-validate` | string | `auto` | OAS validation mode for the executed plan: `auto`, `warn`, `strict`, or `off` (see [Running Tests: OAS Validation](running.md#oas-validation)) |
+| `--oas-validate` | string | `auto` | OAS validation mode for the executed plan: `auto`, `strict`, or `off` (see [Running Tests: OAS Validation](running.md#oas-validation)) |
 
 When a manifest is discoverable, `--env-config`, `--graph`, `--templates`, and `--domain` are optional.
 

@@ -694,14 +694,14 @@ The archive is the primary debugging artifact. Read it to understand what happen
       "sourceSize": 10,
       "filterExpr": "string",
       "filteredSize": 3,
-      "strategy": "first | last | random | min | max | match | llm",
+      "strategy": "first | last | index | random | min | max | match",
       "selectedIndex": 0
     }
   ],
   "resolutions": [
     {
       "inputName": "string",
-      "source": "literal | step | pool | llm | env | expression",
+      "source": "plan_default | expression | plan_from | select_edge | named_selection | from_input | from_resolved | fallback_pool | graph_default | optional_skip",
       "rawValue": "any",
       "finalValue": "any",
       "fromStep": "string",

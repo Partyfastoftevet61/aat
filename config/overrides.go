@@ -53,7 +53,7 @@ func PeekOverlayEnvironment(path string) (string, error) {
 	var stub struct {
 		Environment string `yaml:"environment"`
 	}
-	if err := yaml.Unmarshal(data, &stub); err != nil {
+	if err := yaml.Unmarshal(data, &stub); err != nil { //nolint:forbidigo // lenient probe: LoadOverlayFile decodes the file strictly
 		return "", fmt.Errorf("parsing overlay YAML: %w", err)
 	}
 	return stub.Environment, nil
