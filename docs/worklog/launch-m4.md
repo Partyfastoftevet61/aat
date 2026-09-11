@@ -153,3 +153,14 @@ those primitives are conveniences.
 **Open questions:**
 - Record the same single-prompt run for M7 (the Python and Common Lisp takes), now on the enriched kit.
 - P14 and P15 stay logged as conveniences: rendering one request, and `execute_plan` returning exchanges.
+
+**Follow-up:** the author asked for the prompt in the docs, since the claim is a tall one and readers will
+want to reproduce it. The integration-kit page now has "Reproduce the Single-Prompt Test" with:
+- the prompt, verbatim
+- the packaging and `.mcp.json` steps
+- the headless `claude -p` command with the same restrictions
+- the model and Claude Code version
+- the measured results
+
+The page also says the airline runs cannot be reproduced because that project is private. The shop README's
+example prompt, which had never been run, is now the tested one, and M7 records that prompt.

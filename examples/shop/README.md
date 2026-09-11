@@ -196,10 +196,18 @@ build while everything else keeps using the sandbox. AAT picks the file up autom
 integration kit (`aat-kit.yaml`, below) and has read-only tools that describe operations, data flow,
 and the OpenAPI contract: what an integrator's AI tool would see. `shop-test` reads the whole project
 and adds plan tools, including execution. `.claude/settings.json` pre-approves the read-only
-`shop-api` tools. Open this directory in Claude Code with `aat` on your `PATH` and ask, for example:
+`shop-api` tools. Start the sandbox, open this directory in Claude Code with `aat` on your `PATH`, and give
+it this prompt, naming any language you like:
 
-> Using only the `shop-api` MCP server for API knowledge, write a Python client (standard library
-> only) that places an order for two items and then cancels it. Run it against the local sandbox.
+> Using only the shop-api MCP server for knowledge of the shop API (no web search, no guessing), write
+> a working Python 3 (standard library only) command-line client for the shop API in this directory. It
+> must place an order for two different in-stock products, pay for it by card, then cancel the order
+> and refund the payment, and print the order ID, the order total, and the order's final status and
+> payment status. The shop sandbox is already running locally. Run the client and show me its output.
+
+Given only the packaged kit's MCP server, this prompt produced a working Python client and a working Go
+client on their first run. [Reproduce the single-prompt test](https://gburgyan.github.io/aat/integration-kit/#reproduce-the-single-prompt-test)
+has the locked-down setup that was used and the results.
 
 ## The integration kit
 

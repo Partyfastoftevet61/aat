@@ -174,7 +174,7 @@ The shop is laid out this way. See [Share your API with integrators](https://gbu
 }
 ```
 
-With that much machine-readable detail, a working client in any language is a single prompt. On a 74-node airline API, AI coding tools built search-and-booking clients this way in Java, C#, Go, Python, Perl, and Lisp. To try it, open the shop in Claude Code and ask, using only `shop-api`, for a client in your language that places an order for two items, pays for it, and cancels it; then run it against the sandbox.
+With that much machine-readable detail, a working client in any language is a single prompt. On a 74-node airline API, AI coding tools built search-and-booking clients this way in Java, C#, Go, Python, Perl, and Lisp. That project is private, but the same test on the shop is reproducible: [Reproduce the single-prompt test](https://gburgyan.github.io/aat/integration-kit/#reproduce-the-single-prompt-test) has the exact prompt, the setup, and the results of a Python run and a Go run.
 
 LLMs are optional and authoring-time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API. Execution never calls an LLM.
 

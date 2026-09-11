@@ -95,6 +95,8 @@ the graph and plan formats may still change before 1.0.
   integration kit tells an AI tool beyond an OpenAPI spec: the whole workflow, from call order and data
   hand-offs to the fields that matter and what a failure looks like. With it, a working client in any
   language takes a single prompt, as it did on the airline API in Java, C#, Go, Python, Perl, and Lisp.
+  The integration-kit page publishes the prompt, the setup, and the results of the shop's Python and Go
+  runs, so the claim can be checked; the shop README uses the same prompt.
 - `examples/shop` keeps the suites its integration kit does not ship in `internal/plans/`: the negative
   tests, `resilience`, and `giftcard-express`. The manifest lists `plans/` and `internal/plans/`, so plan
   names (`negative/state-machine`) and batch results are unchanged; only the files' paths moved.

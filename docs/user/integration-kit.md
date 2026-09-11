@@ -2,7 +2,7 @@
 
 An OpenAPI spec describes an API one call at a time. The AAT project you build to test that API describes how the calls work together: which calls reach a goal and in what order, where each input comes from, which fields of a large schema matter, what a failure looks like, and which call undoes which. Your own test runs keep all of it true.
 
-Package part of that project as an **integration kit** and give it to the teams who integrate with you. Their AI coding tool reads the whole workflow through `aat mcp serve`, in a form it can act on, and writes a working client in whatever language they use. On a 74-node airline API, each such client took a single prompt, in Java, C#, Go, Python, Perl, and Lisp. Integrators can also run your reference flows against your sandbox and see the real exchanges.
+Package part of that project as an **integration kit** and give it to the teams who integrate with you. Their AI coding tool reads the whole workflow through `aat mcp serve`, in a form it can act on, and writes a working client in whatever language they use. On a 74-node airline API, each such client took a single prompt, in Java, C#, Go, Python, Perl, and Lisp. That project is private, but the same test on the shop example is [reproducible](#reproduce-the-single-prompt-test), prompt included. Integrators can also run your reference flows against your sandbox and see the real exchanges.
 
 One framework pays off twice: first when you test your API, then when others integrate with it.
 
@@ -175,4 +175,57 @@ Then:
 
 [`examples/shop`](examples/shop.md) uses this layout. Its `shop-api` MCP server reads `aat-kit.yaml`, and `shop-test` reads the whole project. `make example-shop` packages the kit, unpacks it into an empty directory, and validates and runs it there against the sandbox.
 
-The shop's kit passed the single-prompt test too. Headless Claude Code sessions got nothing but the packaged kit's MCP server and one prompt each: write a client that authenticates, buys two products, pays by card, cancels the order, and refunds it. The Python client and the Go client both worked on their first run. Neither session read a file of the kit; everything they knew came through the MCP tools.
+## Reproduce the Single-Prompt Test
+
+The shop's kit went through the test the airline project passed: one prompt, only the kit, a working client. The setup and the prompt below are the ones that were used, so you can run the test yourself.
+
+**Set up an integrator's directory** that holds nothing but the packaged kit:
+
+```bash
+mkdir kit-test && cd kit-test
+aat-sandbox init shop                                # the example project
+aat-sandbox serve &                                  # shop API on :8765, payments API on :8766
+sh shop/package-kit.sh integrator/vendor/shop-kit
+cd integrator
+cat >.mcp.json <<'EOF'
+{
+  "mcpServers": {
+    "shop-api": {
+      "command": "aat",
+      "args": ["mcp", "serve", "--manifest", "vendor/shop-kit/aat-project.yaml", "--persona", "api"]
+    }
+  }
+}
+EOF
+```
+
+**The prompt**, verbatim. The Go run replaced `Python 3 (standard library only)` with `Go (standard library only)`:
+
+> Using only the shop-api MCP server for knowledge of the shop API (no web search, no guessing), write a
+> working Python 3 (standard library only) command-line client for the shop API in this directory. It must
+> place an order for two different in-stock products, pay for it by card, then cancel the order and refund
+> the payment, and print the order ID, the order total, and the order's final status and payment status.
+> The shop sandbox is already running locally. Run the client and show me its output.
+
+You can paste it into Claude Code opened in `integrator/` (approve the `shop-api` server when asked). The measured runs were stricter. They used headless Claude Code, with the prompt saved as `prompt.txt`. The kit's server was the session's only MCP server, the session could read and write only its own directory and run only the language toolchain, and web tools were off:
+
+```bash
+claude -p "$(cat prompt.txt)" \
+  --mcp-config .mcp.json --strict-mcp-config \
+  --allowedTools "mcp__shop-api__*" "Read(/$PWD/**)" "Write(/$PWD/**)" "Edit(/$PWD/**)" \
+    "Bash(python3:*)" "Bash(ls:*)" "Bash(mkdir:*)" \
+  --disallowedTools WebFetch WebSearch
+```
+
+For the Go client, allow `Bash(go:*)` instead of `Bash(python3:*)`.
+
+**Results** with Claude Code 2.1.269 and the model `claude-opus-5`, on 2026-09-11:
+
+| Client | First run | Time | Turns | MCP tool calls | Cost | Kit files read |
+|--------|-----------|------|-------|----------------|------|----------------|
+| Python 3, standard library | worked | 85 s | 28 | 20 | $0.58 | none |
+| Go, standard library | worked | 146 s | 34 | 23 | $0.77 | none |
+
+Each client authenticated, bought two in-stock products, paid by card, cancelled the order, and refunded it. Reading each order back from the sandbox showed `cancelled` and `refunded`. Both sessions relied on `get_oas_operation` together with `list_integration_flows`, `get_integration_flow`, `list_concepts`, `explain_concept`, and `explain_field`. The Go session's one hiccup came from the lockdown: it was not allowed to run the binary it built, so it used `go run .` instead.
+
+Your times, turn counts, and costs will differ with the model and from run to run. The claim to check is the outcome: a client written from the kit alone that works on its first run.
