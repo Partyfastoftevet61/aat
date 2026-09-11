@@ -6,18 +6,16 @@ This example uses the public [Swagger Petstore API](https://petstore.swagger.io/
 
 ## Prerequisites
 
-- Go 1.25 or later
+- `aat`: see [Install](https://gburgyan.github.io/aat/install/) for Homebrew, release archives, Docker, and `go install`.
 - Internet access (the Petstore API is public)
 
-## Build AAT
-
-From the repository root:
+Until v0.1.0 is released, build `aat` from source. From the repository root (Go 1.25.7 or later, and Node.js for the web UI):
 
 ```bash
-go build -o aat ./cmd/aat/
+make build   # ./aat and ./aat-sandbox with the web UI; `make cli` builds ./aat alone, without Node.js
 ```
 
-> For the full experience (web UI, version info), use `make build` instead, which also needs Node.js. The Petstore example works fine with a plain `go build`.
+The commands below run that build from this directory as `../../aat`; with `aat` installed on your `PATH`, type `aat` instead.
 
 ## Run the example
 

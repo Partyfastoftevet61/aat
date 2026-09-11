@@ -41,7 +41,21 @@ sudo install aat aat-sandbox /usr/local/bin/
 
 On macOS, check the download with `shasum -a 256 --check --ignore-missing checksums.txt` instead. The binaries are not notarized: if macOS refuses to run one you downloaded with a browser, remove the quarantine attribute with `xattr -d com.apple.quarantine aat aat-sandbox`.
 
-On Windows, extract the zip and put the folder on your `PATH`.
+To install the latest release in one step on macOS or Linux, without the checksum check:
+
+```
+curl -fsSL "https://github.com/gburgyan/aat/releases/latest/download/aat_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
+  | sudo tar -xz -C /usr/local/bin aat aat-sandbox
+```
+
+On Windows, extract the zip and put the folder on your `PATH`. In PowerShell, for the amd64 build (open a new terminal afterwards):
+
+```
+$dir = "$env:LOCALAPPDATA\Programs\aat"
+Invoke-WebRequest https://github.com/gburgyan/aat/releases/latest/download/aat_windows_amd64.zip -OutFile "$env:TEMP\aat.zip"
+Expand-Archive "$env:TEMP\aat.zip" -DestinationPath $dir -Force
+[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ";$dir", 'User')
+```
 
 ## Homebrew (macOS)
 
