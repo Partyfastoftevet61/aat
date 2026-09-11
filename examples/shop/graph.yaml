@@ -53,11 +53,11 @@ nodes:
 
   checkInventory:
     description: >-
-      Read the stock of one SKU (GET /inventory/{sku}). It always answers 200: status OK with the
-      available units, or status ERROR with errorCode and errorMessage when the read failed. The
-      first read of SKU-1004 with each bearer token is a stale ERROR (STALE_READ) that a retry
-      clears. An unknown SKU is 404 NOT_FOUND. Optional in a purchase, since addItem checks stock
-      itself.
+      Read the stock of one SKU (GET /inventory/{sku}). An unknown SKU is 404 NOT_FOUND; a known one
+      always answers 200: status OK with the available units, or status ERROR with errorCode and
+      errorMessage when the read failed (available is then 0). The first read of SKU-1004 with each
+      bearer token in each region is a stale ERROR (STALE_READ) that a retry clears. Optional in a
+      purchase, since addItem checks stock itself.
     adapter: checkInventory
     tags: [catalog]
     oas:
@@ -76,7 +76,7 @@ nodes:
         description: The SKU that was read
       - name: available
         type: integer
-        description: Units in stock, present when status is OK
+        description: Units in stock when status is OK; 0 when status is ERROR
     # The API reports this failure inside a 200 response; surface it as a
     # response_error so retry rules can act on it.
     errorDetection:
@@ -94,7 +94,7 @@ nodes:
     description: >-
       Open an empty cart (POST /carts, 201). Every purchase starts here: the cartId feeds addItem,
       getCart, applyCoupon, and checkoutCart. A customerEmail makes it a registered customer's
-      cart; one that is not an email address is 400 VALIDATION_ERROR.
+      cart; one without an @ is 400 VALIDATION_ERROR.
     adapter: createCart
     tags: [carts]
     oas:
@@ -143,7 +143,9 @@ nodes:
             filter: inStock == true
       - name: quantity
         type: integer
-        description: Units to add, at least 1; the cart's total for this SKU may not exceed its stock
+        description: >-
+          Units to add, required and at least 1 (400 VALIDATION_ERROR otherwise); the cart's total for
+          this SKU may not exceed its stock
         default: 1
     outputs:
       - name: cartId
@@ -207,9 +209,10 @@ nodes:
     description: >-
       Apply a coupon to an open cart (POST /carts/{cartId}/coupon, 200). A cart holds one coupon;
       applying another replaces it. SAVE10 takes 10% off the subtotal and FREESHIP makes shipping
-      free in every region; EU-ONLY takes 10% off in eu only (422 COUPON_NOT_VALID_IN_REGION
-      elsewhere). Unknown codes are 404 COUPON_INVALID, and a checked-out cart is 409 CART_NOT_OPEN.
-      Apply coupons before checkoutCart, which fixes the order's totals.
+      free in every region; EU-ONLY takes 10% off in eu only. Errors, in the order they are checked:
+      400 VALIDATION_ERROR (code missing or a malformed body), 404 NOT_FOUND (cart), 409 CART_NOT_OPEN
+      (cart checked out), 404 COUPON_INVALID (unknown code), 422 COUPON_NOT_VALID_IN_REGION (EU-ONLY
+      outside eu). Apply coupons before checkoutCart, which fixes the order's totals.
     adapter: applyCoupon
     tags: [carts]
     oas:
@@ -242,7 +245,8 @@ nodes:
       created and unpaid, and the cart is no longer open. Its total and currency are what
       paymentCharge must charge, exactly. US adds 8.25% sales tax to the discounted subtotal; EU
       prices include 20% VAT. Errors: 400 VALIDATION_ERROR (shippingTier missing or unknown,
-      postalCode missing, deliveryDate not YYYY-MM-DD), 404 NOT_FOUND (cart), 409 CART_NOT_OPEN,
+      postalCode missing, deliveryDate neither YYYY-MM-DD nor RFC 3339), 404 NOT_FOUND (cart),
+      409 CART_NOT_OPEN,
       409 CART_EMPTY (no lines), 422 TIER_NOT_AVAILABLE (overnight in eu).
     adapter: checkoutCart
     tags: [carts, orders]
@@ -266,11 +270,11 @@ nodes:
         default: "{{env.postalCode}}"
       - name: customerEmail
         type: string
-        description: Overrides the cart's customer email on the order
+        description: Overrides the cart's customer email on the order; not validated
         optional: true
       - name: deliveryDate
         type: date
-        description: Requested delivery date, YYYY-MM-DD
+        description: Requested delivery date, YYYY-MM-DD (an RFC 3339 timestamp is also accepted)
         optional: true
       - name: notes
         type: string
@@ -397,6 +401,8 @@ nodes:
     description: >-
       Ship a paid order (POST /orders/{orderId}/ship, 201; takes about 600 ms) and return the new
       shipment. Any other state answers 409 INVALID_TRANSITION; an unknown order is 404 NOT_FOUND.
+      The order is checked again after the delay, so one cancelled or deleted meanwhile answers 409
+      or 404 then.
     adapter: shipOrder
     tags: [orders, shipments]
     oas:
@@ -461,8 +467,8 @@ nodes:
   deliverShipment:
     description: >-
       Mark a shipment delivered (POST /shipments/{shipmentId}/deliver, 200), moving its order from
-      shipped to delivered. Any other order state answers 409 INVALID_TRANSITION; an unknown
-      shipment is 404 NOT_FOUND.
+      shipped to delivered. Errors, in the order they are checked: 404 NOT_FOUND (shipment, or its
+      order if that was deleted), 409 INVALID_TRANSITION (order not shipped).
     adapter: deliverShipment
     tags: [shipments]
     oas:
@@ -486,8 +492,8 @@ nodes:
   createReturn:
     description: >-
       Return a delivered order (POST /orders/{orderId}/returns, 201); the order becomes returned. A
-      reason is required (400 VALIDATION_ERROR), and other order states answer 409
-      INVALID_TRANSITION. Returning does not refund: call paymentRefund as well.
+      reason is required (400 VALIDATION_ERROR), an unknown order is 404 NOT_FOUND, and other order
+      states answer 409 INVALID_TRANSITION. Returning does not refund: call paymentRefund as well.
     adapter: createReturn
     tags: [orders]
     oas:
@@ -537,10 +543,13 @@ nodes:
       call goes to the payments host with the X-API-Key header, not to the shop API with the bearer
       token. The order must be created and not yet paid, and amount and currency must equal the
       order's total and currency; on success the order becomes paid. Errors, in the order they are
-      checked: 400 VALIDATION_ERROR (orderId, amount, or currency missing; unknown method; the
-      method's companion field missing), 404 NOT_FOUND (order), 422 CURRENCY_MISMATCH,
-      422 AMOUNT_MISMATCH, 409 INVALID_TRANSITION (order not created), then, after the gateway
-      delay, 402 CARD_DECLINED, 404 GIFT_CARD_INVALID, or 402 INSUFFICIENT_FUNDS.
+      checked: 400 VALIDATION_ERROR (orderId missing, amount not a positive integer, currency
+      missing, method missing or unknown, or the method's companion field missing), 404 NOT_FOUND
+      (order), 422 CURRENCY_MISMATCH, 422 AMOUNT_MISMATCH, 409 INVALID_TRANSITION (order not
+      created), then, after the gateway delay, 402 CARD_DECLINED, 404 GIFT_CARD_INVALID, or 402
+      INSUFFICIENT_FUNDS. The order is checked again after the delay: 404 NOT_FOUND if it was deleted
+      meanwhile, 409 INVALID_TRANSITION if it was cancelled or paid by another request. If a charge's
+      response is lost, read the order with getOrder before charging again.
     adapter: paymentCharge
     tags: [payments]
     oas:
@@ -558,18 +567,20 @@ nodes:
           from: checkoutCart.total
       - name: currency
         type: string
-        description: The order's currency, USD or EUR (422 CURRENCY_MISMATCH otherwise)
+        description: The order's currency in upper case, USD or EUR (422 CURRENCY_MISMATCH otherwise)
         default:
           from: checkoutCart.currency
       - name: method
         type: enum[card, gift_card, paypal]
-        description: How to pay; decides which one of cardNumber, giftCardCode, or paypalEmail is required
+        description: >-
+          How to pay, required (400 VALIDATION_ERROR when missing or unknown); decides which one of
+          cardNumber, giftCardCode, or paypalEmail is required
         default: card
       - name: cardNumber
         type: string
         description: >-
-          Required for method card. 4242424242424242 and 378282246310005 are approved;
-          4000000000000002 is declined (402 CARD_DECLINED)
+          Required for method card. 4000000000000002 is declined (402 CARD_DECLINED); any other
+          number, such as 4242424242424242 or 378282246310005, is approved
         optional: true
         default: "4242424242424242"
       - name: giftCardCode

@@ -9,7 +9,8 @@ language from a single prompt.
 
 ## What you need
 
-- `aat`: see [Install](https://gburgyan.github.io/aat/install/).
+- `aat` and `aat-sandbox`: see [Install](https://gburgyan.github.io/aat/install/). The release archives and
+  the Homebrew cask ship both.
 - The API. This kit targets the offline sandbox that `aat-sandbox serve` starts.
 
 ## Connecting
@@ -34,7 +35,8 @@ payments API.
 listProducts → createCart → addItem (once per product) → [applyCoupon] → checkoutCart → paymentCharge
 ```
 
-- `addItem` takes the `cartId` from `createCart` and a `sku` whose `inStock` is true in `listProducts`.
+- `addItem` takes the `cartId` from `createCart`, a `sku` whose `inStock` is true in `listProducts`, and a
+  `quantity` of at least 1.
 - `checkoutCart` needs `shippingTier` and `postalCode`. It returns the `orderId`, `total`, and `currency`
   that `paymentCharge` must send, exactly, along with a `method` and that method's field: `cardNumber`,
   `giftCardCode`, or `paypalEmail`.
@@ -55,11 +57,15 @@ checkoutCart → [paymentCharge] → cancelOrder → paymentRefund (only if it w
 
 ## Rules that matter
 
-- Money is an integer in minor units (cents); each amount has a `*Display` twin for people.
-- Errors are `{"error": {"code": "...", "message": "..."}}`. Branch on `code`: `INVALID_TRANSITION` for an
-  out-of-order call, `OUT_OF_STOCK`, `AMOUNT_MISMATCH`, `CARD_DECLINED`, and so on.
+- Money is an integer in minor units (cents). An order's amounts have `*Display` twins for people; order
+  lines carry only `unitPrice` and `lineTotal`.
+- Errors under `/{region}/v1` are `{"error": {"code": "...", "message": "..."}}`. Branch on `code`:
+  `INVALID_TRANSITION` for an out-of-order call, `OUT_OF_STOCK`, `AMOUNT_MISMATCH`, `CARD_DECLINED`, and so
+  on. A wrong base URL gets a plain-text 404 instead.
 - Orders move created → paid → shipped → delivered → returned; cancel works from created or paid.
   Cancelling or returning never refunds; `paymentRefund` does, in any state while money is captured.
+- `paymentCharge` and `shipOrder` check the order again after their delay. If a charge's response is lost,
+  read the order before charging again: a second charge answers 409 `INVALID_TRANSITION`.
 - Retry exactly two things: `checkInventory` answering 200 with `status: ERROR` (`STALE_READ`), and
   `getShipment` answering 503 `TRACKING_UNAVAILABLE` (wait for its `Retry-After` seconds).
 - Apply a coupon before checkout; totals are fixed when the order is created.

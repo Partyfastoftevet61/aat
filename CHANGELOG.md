@@ -86,6 +86,9 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- MCP operation details and `explain_field` label a graph input's default "Test default": it is data AAT
+  sends in tests, not a value the API fills in. Read as a plain default, the shop's `quantity: 1` and
+  `method: card` made required fields look optional.
 - A plan-level cleanup step that names a node a step's graph node pairs with (`cleanup:` on the node)
   runs from the graph pairings: once per created resource, newest first, and not at all when the creating
   step failed. Its `runOn` still decides whether it runs. Recipes and `aat prompt` plans list every
@@ -185,6 +188,12 @@ the graph and plan formats may still change before 1.0.
   empty Airline case-study stub).
 
 ### Fixed
+- The shop kit's descriptions match the sandbox. `applyCoupon` lists its errors in the order they are
+  checked; `paymentCharge` and `shipOrder` say they check the order again after their delay;
+  `createReturn` and `deliverShipment` list their 404s; `addItem.quantity` and `paymentCharge.method` say
+  they are required. Order lines have no `*Display` fields, `GC-100-DEMO` covers orders up to 10000 minor
+  units, and the stale inventory read happens once per token in each region. `openapi.yaml` declares the
+  400 responses of `createCart` and `applyCoupon`.
 - Graph-level cleanup deletes the resource each step created. Cleanup looked up the creating node's
   outputs by node name, but outputs are stored by step ID, so a step with its own `id` fell through to the
   first step with an output of that name: two `createCart` steps with their own IDs deleted the first cart

@@ -23,8 +23,10 @@ concepts:
 
   errorEnvelope:
     description: >-
-      Errors from both APIs share one JSON envelope, {"error": {"code": "...", "message": "..."}}.
-      Branch on the stable code, not the message. 400 VALIDATION_ERROR (including a missing or
+      Errors from both APIs under /{region}/v1 share one JSON envelope, {"error": {"code": "...",
+      "message": "..."}}. Branch on the stable code, not the message. A path outside that prefix (a
+      wrong base URL or API version) gets a plain-text 404 or 405 instead, and an unknown region is
+      404 REGION_NOT_FOUND before any credential check. 400 VALIDATION_ERROR (including a missing or
       malformed JSON body); 401 UNAUTHORIZED; 402 CARD_DECLINED or INSUFFICIENT_FUNDS; 404 NOT_FOUND,
       REGION_NOT_FOUND, COUPON_INVALID, GIFT_CARD_INVALID, or WRONG_LISTENER; 409 CART_NOT_OPEN,
       CART_EMPTY, OUT_OF_STOCK, INVALID_TRANSITION, or PAYMENT_NOT_REFUNDABLE; 422
@@ -37,7 +39,7 @@ concepts:
     description: >-
       Two failures are temporary and clear when the request is retried. checkInventory answers 200
       with status ERROR and errorCode STALE_READ for the first read of SKU-1004 with each bearer
-      token. getShipment answers 503 TRACKING_UNAVAILABLE with a Retry-After header (seconds) for the
+      token in each region. getShipment answers 503 TRACKING_UNAVAILABLE with a Retry-After header (seconds) for the
       first two reads of every shipment. Retry those two; every other error fails the same way again.
     applies_to: [sku, shipmentId]
     constraint: wait the Retry-After seconds before retrying getShipment
@@ -88,8 +90,9 @@ concepts:
   minorUnits:
     description: >-
       Money is an integer in minor units (cents), sent and received as a JSON integer, never a
-      decimal or a string. Each amount has a matching *Display field with the formatted value, such
-      as $130.66 or €87.78. A charge must equal the order total exactly.
+      decimal or a string. An order's subtotal, discount, shipping, tax, and total each have a
+      matching *Display field with the formatted value, such as $130.66 or €87.78; order lines carry
+      only unitPrice and lineTotal. A charge must equal the order total exactly.
     applies_to: [amount, total, subtotal, discount, price, shipping, tax]
 
 types:
@@ -105,9 +108,9 @@ types:
     pool: postalCodes
 
   couponCode:
-    description: Cart coupon code
+    description: Cart coupon code, matched case-insensitively
     format: string
-    validation: "^[A-Z0-9-]+$"
+    validation: "^[A-Za-z0-9-]+$"
     pool: couponCodes
 
 valuePools:
@@ -157,6 +160,6 @@ valuePools:
     description: Demo gift cards and their balances
     type: string
     values:
-      - GC-10-DEMO   # $10, too small for any order (402 INSUFFICIENT_FUNDS)
-      - GC-100-DEMO  # $100
-      - GC-500-DEMO  # $500, covers any demo order
+      - GC-10-DEMO   # 1000 minor units, too small for any order (402 INSUFFICIENT_FUNDS)
+      - GC-100-DEMO  # 10000 minor units; orders above that total get 402 INSUFFICIENT_FUNDS
+      - GC-500-DEMO  # 50000 minor units; covers orders up to that total

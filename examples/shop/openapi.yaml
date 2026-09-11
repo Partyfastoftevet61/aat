@@ -101,6 +101,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Cart'
+        '400':
+          $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
 
@@ -175,7 +177,7 @@ paths:
     post:
       operationId: applyCoupon
       summary: Apply a coupon to a cart
-      description: '`SAVE10` (10% off), `FREESHIP` (free shipping), `EU-ONLY` (eu region only; 422 elsewhere). Unknown codes are 404.'
+      description: '`SAVE10` (10% off), `FREESHIP` (free shipping), `EU-ONLY` (eu region only). Errors in the order they are checked: 400 (code missing), 404 (cart), 409 (cart checked out), 404 `COUPON_INVALID`, 422 (`EU-ONLY` outside eu).'
       tags: [carts]
       requestBody:
         required: true
@@ -190,6 +192,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Cart'
+        '400':
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
         '409':
@@ -407,8 +411,9 @@ paths:
         Served by the payments listener (default port 8766) and authenticated
         with `X-API-Key`. The amount must equal the order total; the order
         moves `created` to `paid`. Card `4000000000000002` is declined (402);
-        gift card `GC-10-DEMO` has insufficient funds (402) while
-        `GC-100-DEMO` and `GC-500-DEMO` succeed. Takes about 350 ms.
+        gift cards `GC-10-DEMO`, `GC-100-DEMO`, and `GC-500-DEMO` hold 1000,
+        10000, and 50000 minor units, and a balance below the amount is 402.
+        Takes about 350 ms.
       tags: [payments]
       security:
         - paymentsKey: []

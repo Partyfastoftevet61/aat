@@ -612,7 +612,7 @@ func (s *Server) handleExplainField(_ context.Context, req mcp.CallToolRequest) 
 			}
 			fmt.Fprintf(&b, "**Required:** %v\n", !inp.Optional)
 			if inp.Default != nil && inp.Default.HasValue() {
-				fmt.Fprintf(&b, "**Default:** %s\n", formatGraphDefault(inp.Default))
+				fmt.Fprintf(&b, "**Test default:** %s (data AAT sends in tests, not a default the API applies)\n", formatGraphDefault(inp.Default))
 			}
 			if inp.Constraints != nil {
 				fmt.Fprintf(&b, "**Constraints:** %s\n", formatConstraintCell(inp.Constraints))

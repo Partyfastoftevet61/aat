@@ -66,8 +66,8 @@ func TestFormatInputTable(t *testing.T) {
 			inputs: []graph.Input{
 				{Name: "origin", Type: "string", Description: "Airport code"},
 			},
-			want: "| Name | Type | Required | Default | Description |\n" +
-				"|------|------|----------|---------|-------------|\n" +
+			want: "| Name | Type | Required | Test default | Description |\n" +
+				"|------|------|----------|--------------|-------------|\n" +
 				"| origin | string | yes |  | Airport code |\n",
 		},
 		{
@@ -76,8 +76,8 @@ func TestFormatInputTable(t *testing.T) {
 				{Name: "origin", Type: "string"},
 				{Name: "maxResults", Type: "integer", Optional: true, Default: graph.LiteralDefault(10), Description: "Max results"},
 			},
-			want: "| Name | Type | Required | Default | Description |\n" +
-				"|------|------|----------|---------|-------------|\n" +
+			want: "| Name | Type | Required | Test default | Description |\n" +
+				"|------|------|----------|--------------|-------------|\n" +
 				"| origin | string | yes |  |  |\n" +
 				"| maxResults | integer | no | 10 | Max results |\n",
 		},

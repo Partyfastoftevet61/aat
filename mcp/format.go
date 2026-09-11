@@ -124,7 +124,10 @@ func formatNodeDetail(node *graph.Node, g *graph.Graph) string {
 	return b.String()
 }
 
-// formatInputTable returns a Markdown table for a slice of inputs.
+// formatInputTable returns a Markdown table for a slice of inputs. The default
+// column is labelled "Test default": a graph default is data AAT sends in
+// tests, and a reader integrating with the API must not take it for a value
+// the API fills in.
 func formatInputTable(inputs []graph.Input) string {
 	if len(inputs) == 0 {
 		return ""
@@ -140,11 +143,11 @@ func formatInputTable(inputs []graph.Input) string {
 
 	var b strings.Builder
 	if hasConstraints {
-		b.WriteString("| Name | Type | Required | Default | Constraints | Description |\n")
-		b.WriteString("|------|------|----------|---------|-------------|-------------|\n")
+		b.WriteString("| Name | Type | Required | Test default | Constraints | Description |\n")
+		b.WriteString("|------|------|----------|--------------|-------------|-------------|\n")
 	} else {
-		b.WriteString("| Name | Type | Required | Default | Description |\n")
-		b.WriteString("|------|------|----------|---------|-------------|\n")
+		b.WriteString("| Name | Type | Required | Test default | Description |\n")
+		b.WriteString("|------|------|----------|--------------|-------------|\n")
 	}
 	for _, inp := range inputs {
 		required := "yes"
