@@ -60,17 +60,22 @@ func (e *Error) Error() string {
 	return b.String()
 }
 
-// Decode unmarshals the first document in data into v, rejecting keys that no
-// field of the target type accepts. An empty or comment-only document leaves v
-// untouched and returns nil, as yaml.Unmarshal does. Errors are *Error values
-// whose issues name the line, the key, and a suggestion for near misses; syntax
-// errors read "invalid YAML: ...".
+// Decode unmarshals the document in data into v, rejecting keys that no field
+// of the target type accepts. An empty or comment-only document leaves v
+// untouched and returns nil, as yaml.Unmarshal does. A second document with
+// content is an error, since it would otherwise be silently ignored; an empty
+// one, such as a trailing "---", is not. Errors are *Error values whose issues
+// name the line, the key, and a suggestion for near misses; syntax errors read
+// "invalid YAML: ...".
 func Decode(data []byte, v any) error {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	err := dec.Decode(v)
-	if err == nil || errors.Is(err, io.EOF) {
+	if errors.Is(err, io.EOF) {
 		return nil
+	}
+	if err == nil {
+		return secondDocument(dec)
 	}
 
 	var typeErr *yaml.TypeError
@@ -81,7 +86,42 @@ func Decode(data []byte, v any) error {
 		}
 		return out
 	}
-	// A syntax error. yaml.v3 leaves out the line when it is the first one.
+	return syntaxError(err)
+}
+
+// secondDocument reports a document after the first that has content.
+func secondDocument(dec *yaml.Decoder) error {
+	for {
+		var doc yaml.Node
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return syntaxError(err)
+		}
+		if isEmptyDocument(&doc) {
+			continue
+		}
+		return &Error{Issues: []Issue{{
+			Line:    doc.Line,
+			Message: "a second YAML document starts here; a project file holds exactly one",
+		}}}
+	}
+}
+
+// isEmptyDocument reports whether doc holds nothing, as after a trailing "---".
+func isEmptyDocument(doc *yaml.Node) bool {
+	if len(doc.Content) == 0 {
+		return true
+	}
+	c := doc.Content[0]
+	return len(doc.Content) == 1 && c.Kind == yaml.ScalarNode && c.Tag == "!!null" && c.Value == ""
+}
+
+// syntaxError renders a yaml.v3 syntax error, which leaves out the line when
+// it is the first one.
+func syntaxError(err error) error {
 	issue := parseLine(strings.TrimPrefix(err.Error(), "yaml: "))
 	issue.Message = "invalid YAML: " + issue.Message
 	return &Error{Issues: []Issue{issue}}

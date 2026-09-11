@@ -206,6 +206,8 @@ the graph and plan formats may still change before 1.0.
   between steps. Cleanup after an interrupt keeps its 30-second budget, which was lost on the way to the
   cleanup requests.
 - `--stop-after` naming a node instead of a step ID says which step IDs run that node.
+- A project YAML file with a second document (`---` followed by content) is an error naming its line;
+  strict decoding read only the first document and silently ignored the rest.
 - The sequential batch display prints a run's `OAS: N warning(s)` total, as the plan display does.
 - With `--dump-state -`, run output is coloured when stderr, where it goes, is a terminal; colour
   followed stdout.

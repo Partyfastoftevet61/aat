@@ -262,3 +262,36 @@ func TestClosest(t *testing.T) {
 	assert.Equal(t, "values", closest("VALUES", valid))
 	assert.Equal(t, "", closest("unrelated", valid))
 }
+
+// TestDecode_Documents checks that a second YAML document, which yaml.v3 would
+// silently ignore, is an error naming where it starts, while the document
+// markers a single-document file may carry are fine.
+func TestDecode_Documents(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{name: "one document", yaml: "name: a\n"},
+		{name: "leading marker", yaml: "---\nname: a\n"},
+		{name: "trailing marker", yaml: "name: a\n---\n"},
+		{name: "trailing marker and comment", yaml: "name: a\n---\n# nothing else\n"},
+		{name: "document end marker", yaml: "name: a\n...\n"},
+		{name: "two documents", yaml: "name: a\n---\nname: b\n", wantErr: "line 2: a second YAML document starts here; a project file holds exactly one"},
+		{name: "second document after an empty one", yaml: "name: a\n---\n---\nname: b\n", wantErr: "line 3: a second YAML document starts here; a project file holds exactly one"},
+		{name: "syntax error in a second document", yaml: "name: a\n---\nname: [b\n", wantErr: "invalid YAML"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var doc testDoc
+			err := Decode([]byte(tt.yaml), &doc)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				assert.Equal(t, "a", doc.Name)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}

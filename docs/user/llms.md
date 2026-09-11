@@ -866,6 +866,7 @@ In `summary.json` and `batch.json`, optional fields such as `attempt`, `attempts
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `line N: unknown key "K" in <section> (did you mean "X"?)` | Misspelled or unsupported key in a project file | Use the suggested key, or remove it |
+| `line N: a second YAML document starts here; a project file holds exactly one` | Two YAML documents separated by `---` in one file, such as two plans pasted together | Split them into separate files |
 | `adapter "X" not found` | Template missing or adapter name mismatch | Check `adapter` field in template matches graph node |
 | `step N: node "X" not found in graph` | Plan references a node not in the graph | Check node name spelling |
 | `required input "X" has no plan value` / `has no value` | Required input has no value, no default, and no upstream output | Add a value in the plan or a default in the graph |

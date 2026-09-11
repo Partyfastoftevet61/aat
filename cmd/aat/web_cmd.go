@@ -31,46 +31,22 @@ var webCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cmd.SilenceUsage = true
 
-		overrides := config.ProjectPaths{}
-		if cmd.Flags().Changed("manifest") {
-			overrides.ExplicitManifest, _ = cmd.Flags().GetString("manifest")
-		}
-
-		resolved, err := config.ResolveProjectPaths(overrides)
+		dirs, err := resolveWebDirs(cmd)
 		if err != nil {
 			return err
 		}
-
 		port, _ := cmd.Flags().GetInt("port")
-		host := resolveHost(cmd)
 		openFlag, _ := cmd.Flags().GetBool("open")
 		devMode, _ := cmd.Flags().GetBool("dev")
 
-		outputDir := "_output/runs"
-		if cmd.Flags().Changed("output") {
-			outputDir, _ = cmd.Flags().GetString("output")
-		} else if resolved.ArchiveDir != "" {
-			outputDir = resolved.ArchiveDir
-		}
-
-		tracesDir := ""
-		if resolved.TracesDir != "" {
-			tracesDir = resolved.TracesDir
-		}
-
-		visualizerDir := ""
-		if resolved.VisualizersDir != "" {
-			visualizerDir = resolved.VisualizersDir
-		}
-
 		return webServeCommand(&webArgs{
-			Host:          host,
+			Host:          resolveHost(cmd),
 			Port:          port,
 			Open:          openFlag,
 			DevMode:       devMode,
-			ArchiveDir:    outputDir,
-			TracesDir:     tracesDir,
-			VisualizerDir: visualizerDir,
+			ArchiveDir:    dirs.archive,
+			TracesDir:     dirs.traces,
+			VisualizerDir: dirs.visualizers,
 		})
 	},
 }
@@ -107,34 +83,11 @@ loaded directly into memory — no project setup or manifest is needed.`,
 			}
 		}
 
-		overrides := config.ProjectPaths{}
-		if cmd.Flags().Changed("manifest") {
-			overrides.ExplicitManifest, _ = cmd.Flags().GetString("manifest")
-		}
-
-		resolved, err := config.ResolveProjectPaths(overrides)
+		dirs, err := resolveWebDirs(cmd)
 		if err != nil {
 			return err
 		}
-
-		outputDir := "_output/runs"
-		if cmd.Flags().Changed("output") {
-			outputDir, _ = cmd.Flags().GetString("output")
-		} else if resolved.ArchiveDir != "" {
-			outputDir = resolved.ArchiveDir
-		}
-
-		tracesDir := ""
-		if resolved.TracesDir != "" {
-			tracesDir = resolved.TracesDir
-		}
-
-		visualizerDir := ""
-		if resolved.VisualizersDir != "" {
-			visualizerDir = resolved.VisualizersDir
-		}
-
-		return webViewCommand(host, port, ref, outputDir, tracesDir, visualizerDir)
+		return webViewCommand(host, port, ref, dirs.archive, dirs.traces, dirs.visualizers)
 	},
 }
 
@@ -149,39 +102,16 @@ var webViewTraceCmd = &cobra.Command{
 		port, _ := cmd.Flags().GetInt("port")
 		host := resolveHost(cmd)
 
-		overrides := config.ProjectPaths{}
-		if cmd.Flags().Changed("manifest") {
-			overrides.ExplicitManifest, _ = cmd.Flags().GetString("manifest")
-		}
-
-		resolved, err := config.ResolveProjectPaths(overrides)
+		dirs, err := resolveWebDirs(cmd)
 		if err != nil {
 			return err
 		}
-
-		outputDir := "_output/runs"
-		if cmd.Flags().Changed("output") {
-			outputDir, _ = cmd.Flags().GetString("output")
-		} else if resolved.ArchiveDir != "" {
-			outputDir = resolved.ArchiveDir
-		}
-
-		tracesDir := ""
-		if resolved.TracesDir != "" {
-			tracesDir = resolved.TracesDir
-		}
-
-		visualizerDir := ""
-		if resolved.VisualizersDir != "" {
-			visualizerDir = resolved.VisualizersDir
-		}
-
 		traceRef := ""
 		if len(args) > 0 {
 			traceRef = args[0]
 		}
 
-		return webViewTraceCommand(host, port, traceRef, outputDir, tracesDir, visualizerDir)
+		return webViewTraceCommand(host, port, traceRef, dirs.archive, dirs.traces, dirs.visualizers)
 	},
 }
 
@@ -205,6 +135,34 @@ func init() {
 
 	webCmd.AddCommand(webViewCmd)
 	webCmd.AddCommand(webViewTraceCmd)
+}
+
+// webDirs are the directories a web command serves.
+type webDirs struct {
+	archive, traces, visualizers string
+}
+
+// resolveWebDirs resolves the archive, traces, and visualizers directories of
+// a web command from its --manifest and --output flags and the project
+// manifest. Archives default to _output/runs; --output wins over the
+// manifest's archives key.
+func resolveWebDirs(cmd *cobra.Command) (webDirs, error) {
+	overrides := config.ProjectPaths{}
+	if cmd.Flags().Changed("manifest") {
+		overrides.ExplicitManifest, _ = cmd.Flags().GetString("manifest")
+	}
+	resolved, err := config.ResolveProjectPaths(overrides)
+	if err != nil {
+		return webDirs{}, err
+	}
+
+	dirs := webDirs{archive: "_output/runs", traces: resolved.TracesDir, visualizers: resolved.VisualizersDir}
+	if cmd.Flags().Changed("output") {
+		dirs.archive, _ = cmd.Flags().GetString("output")
+	} else if resolved.ArchiveDir != "" {
+		dirs.archive = resolved.ArchiveDir
+	}
+	return dirs, nil
 }
 
 // hostFlagHelp is the --host help text shared by the web and MCP HTTP servers.
@@ -263,6 +221,20 @@ func webServeCommand(args *webArgs) error {
 		DevMode:       args.DevMode,
 	})
 
+	openURL := ""
+	if args.Open {
+		openURL = args.OpenURL
+		if openURL == "" {
+			openURL = server.BrowseURL(args.Host, args.Port)
+		}
+	}
+	return serveUntilSignal(srv, openURL)
+}
+
+// serveUntilSignal runs srv until SIGINT or SIGTERM, then shuts it down
+// gracefully. When openURL is set, it opens that URL in the browser once the
+// server is listening.
+func serveUntilSignal(srv *server.Server, openURL string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -271,15 +243,9 @@ func webServeCommand(args *webArgs) error {
 		errCh <- srv.ListenAndServe()
 	}()
 
-	if args.Open {
-		if waitForServer(srv, 2*time.Second) {
-			url := args.OpenURL
-			if url == "" {
-				url = server.BrowseURL(args.Host, args.Port)
-			}
-			if err := openURLFunc(url); err != nil {
-				fmt.Fprintf(os.Stderr, "aat web: could not open browser: %s\n", err)
-			}
+	if openURL != "" && waitForServer(srv, 2*time.Second) {
+		if err := openURLFunc(openURL); err != nil {
+			fmt.Fprintf(os.Stderr, "aat web: could not open browser: %s\n", err)
 		}
 	}
 
@@ -606,31 +572,5 @@ func webViewFileCommand(host string, port int, filePath string, ft fileType) err
 		Host: host,
 		Port: port,
 	}, svc)
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- srv.ListenAndServe()
-	}()
-
-	if waitForServer(srv, 2*time.Second) {
-		if err := openURLFunc(viewURL); err != nil {
-			fmt.Fprintf(os.Stderr, "aat web: could not open browser: %s\n", err)
-		}
-	}
-
-	select {
-	case <-ctx.Done():
-		fmt.Fprintln(os.Stderr, "aat web: shutting down...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return srv.Shutdown(shutdownCtx)
-	case err := <-errCh:
-		if err != nil && err != http.ErrServerClosed {
-			return fmt.Errorf("server error: %w", err)
-		}
-		return nil
-	}
+	return serveUntilSignal(srv, viewURL)
 }
