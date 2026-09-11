@@ -17,7 +17,8 @@ import (
 //go:embed examples/shop/README.md examples/shop/aat-project.yaml examples/shop/graph.yaml
 //go:embed examples/shop/domain.yaml examples/shop/env.yaml examples/shop/openapi.yaml
 //go:embed examples/shop/templates examples/shop/workflows examples/shop/layers examples/shop/plans
-//go:embed examples/shop/overlays examples/shop/visualizers
+//go:embed examples/shop/internal examples/shop/overlays examples/shop/visualizers
+//go:embed examples/shop/aat-kit.yaml examples/shop/KIT-README.md examples/shop/package-kit.sh
 //go:embed examples/shop/.gitignore examples/shop/.mcp.json examples/shop/.claude/settings.json
 //go:embed examples/shop/.aat-overrides.yaml.example
 var shopExample embed.FS

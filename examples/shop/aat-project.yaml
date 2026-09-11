@@ -6,7 +6,10 @@ templates: templates/
 domain: domain.yaml
 workflows: workflows/
 layers: layers/
-plans: plans/
+# plans/ holds the reference plans the integration kit ships (see aat-kit.yaml);
+# internal/plans/ holds the suites that stay here: the negative tests, resilience,
+# and giftcard-express, which applies a layer.
+plans: [plans/, internal/plans/]
 visualizers: visualizers/
 oas: openapi.yaml
 environment: env.yaml

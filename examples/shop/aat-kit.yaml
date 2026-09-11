@@ -1,0 +1,18 @@
+# The integration kit: the part of this project the shop API's integrators get.
+# Paths are the ones the files have inside the kit, so package-kit.sh copies this
+# file unchanged as the kit's aat-project.yaml. The internal suites, layers,
+# overlays, and visualizers are not listed and not shipped.
+#
+#   aat validate --strict --manifest aat-kit.yaml
+#   aat mcp serve --manifest aat-kit.yaml --persona api
+name: shop
+description: Integration kit for the offline shop API served by aat-sandbox
+tags: [e-commerce, sandbox, integration-kit]
+graph: graph.yaml
+templates: templates/
+domain: domain.yaml
+workflows: workflows/
+plans: plans/
+environment: env.yaml
+defaultEnvironment: us
+archives: _output/runs

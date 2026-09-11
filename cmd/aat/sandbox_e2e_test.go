@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,14 +21,16 @@ import (
 	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/engine"
 	"github.com/gburgyan/aat/internal/sandbox/shop"
+	aatmcp "github.com/gburgyan/aat/mcp"
 )
 
 // TestShopExample runs the embedded examples/shop project against the
 // in-process sandbox: the checks the CI example-shop job runs with the real
 // binaries (strict validation, every plan in both regions with strict OpenAPI
 // validation, the layer matrix and its dedup counts, the declined-card overlay,
-// a checkpoint handoff) plus the retry demo. Each subtest gets its own sandbox
-// and project copy, so IDs and chaos counters are deterministic.
+// a checkpoint handoff, the packaged integration kit) plus the retry demo. Each
+// subtest gets its own sandbox and project copy, so IDs and chaos counters are
+// deterministic.
 func TestShopExample(t *testing.T) {
 	if testing.Short() {
 		t.Skip("shop example end-to-end test skipped in -short mode")
@@ -83,7 +86,7 @@ func TestShopExample(t *testing.T) {
 		p := newShopProject(t)
 
 		args := p.runArgs(t, "us")
-		args.PlanPath = p.plan("smoke")
+		args.PlanPath = p.plan(t, "smoke")
 		args.EnvOverlay = filepath.Join(p.dir, "overlays", "declined-card.yaml")
 		res := runCommand(context.Background(), &args, io.Discard, TerminalInfo{})
 		require.NoError(t, res.err)
@@ -96,7 +99,7 @@ func TestShopExample(t *testing.T) {
 		p := newShopProject(t)
 
 		args := p.runArgs(t, "us")
-		args.PlanPath = p.plan("full-lifecycle")
+		args.PlanPath = p.plan(t, "full-lifecycle")
 		res := runCommand(context.Background(), &args, io.Discard, TerminalInfo{})
 		require.NoError(t, res.err)
 		require.NotEmpty(t, res.archivePath)
@@ -115,7 +118,7 @@ func TestShopExample(t *testing.T) {
 		p := newShopProject(t)
 
 		args := p.runArgs(t, "us")
-		args.PlanPath = p.plan("resilience")
+		args.PlanPath = p.plan(t, "resilience")
 		res := runCommand(context.Background(), &args, io.Discard, TerminalInfo{})
 		require.NoError(t, res.err)
 		assert.Equal(t, engine.OutcomePassed, res.outcome)
@@ -134,7 +137,7 @@ func TestShopExample(t *testing.T) {
 		// Stop after the payment, which runs on the payments host with its own
 		// API key: the export must still carry the shop session at top level.
 		args := p.runArgs(t, "us")
-		args.PlanPath = p.plan("smoke")
+		args.PlanPath = p.plan(t, "smoke")
 		args.StopAfterStep = "paymentCharge"
 		args.DumpStatePath = filepath.Join(t.TempDir(), "state.json")
 		res := runCommand(context.Background(), &args, io.Discard, TerminalInfo{})
@@ -174,6 +177,53 @@ func TestShopExample(t *testing.T) {
 		}
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&order))
 		assert.Equal(t, "paid", order.Status)
+	})
+
+	t.Run("published kit", func(t *testing.T) {
+		t.Parallel()
+		shell, err := exec.LookPath("sh")
+		if err != nil {
+			t.Skip("packaging the kit needs sh")
+		}
+		if _, err := exec.LookPath("tar"); err != nil {
+			t.Skip("packaging the kit needs tar")
+		}
+		p := newShopProject(t)
+
+		// Package the kit as CI does and unpack the tarball into an empty
+		// directory, so the checks see only what an integrator receives.
+		out := filepath.Join(t.TempDir(), "shop-kit")
+		packaged, err := exec.Command(shell, filepath.Join(p.dir, "package-kit.sh"), out).CombinedOutput()
+		require.NoError(t, err, string(packaged))
+		unpacked := t.TempDir()
+		untarred, err := exec.Command("tar", "-xzf", out+".tar.gz", "-C", unpacked).CombinedOutput()
+		require.NoError(t, err, string(untarred))
+
+		kit := &shopProject{dir: filepath.Join(unpacked, "shop-kit"), apiURL: p.apiURL, payURL: p.payURL}
+		kit.manifest = filepath.Join(kit.dir, "aat-project.yaml")
+		kit.m, err = config.LoadManifest(kit.manifest)
+		require.NoError(t, err)
+		assert.NoDirExists(t, filepath.Join(kit.dir, "internal"), "internal suites stay out of the kit")
+		assert.NoDirExists(t, filepath.Join(kit.dir, "layers"), "layers stay out of the kit")
+
+		var validateOut bytes.Buffer
+		code := validateCommand(&validateArgs{ManifestPath: kit.manifest, Strict: true, Vars: kit.vars()}, &validateOut)
+		assert.Equal(t, 0, code, validateOut.String())
+
+		res := batchCommand(context.Background(), &batchArgs{
+			runArgs:  kit.runArgs(t, "us"),
+			PlanDirs: []string(kit.m.PlanDirs),
+		}, io.Discard)
+		require.NoError(t, res.err)
+		require.NotNil(t, res.summary)
+		assert.Equal(t, "passed", res.summary.Outcome, failedRuns(res.summary))
+		assert.Equal(t, 3, res.summary.Summary.TotalPlans, "the reference plans")
+
+		// An integrator's AI tool loads the whole API from the kit alone.
+		mcpCtx, err := aatmcp.BuildServerContextWithVars(kit.m, kit.vars())
+		require.NoError(t, err)
+		assert.Len(t, mcpCtx.Graph.Nodes, 17)
+		assert.NotEmpty(t, mcpCtx.OASSpecs, "the graph's OpenAPI spec is in the kit")
 	})
 }
 
@@ -237,9 +287,13 @@ func (p *shopProject) runArgs(t *testing.T, env string) runArgs {
 	}
 }
 
-// plan returns the path of a plan in the project's plans directory.
-func (p *shopProject) plan(name string) string {
-	return filepath.Join(p.dir, "plans", name+".yaml")
+// plan returns the path of the named plan, looked up in the manifest's plan
+// directories as `aat run plan <name>` does.
+func (p *shopProject) plan(t *testing.T, name string) string {
+	t.Helper()
+	path, err := config.FindPlan(p.m.PlanDirs, name)
+	require.NoError(t, err)
+	return path
 }
 
 // stepByNode returns the summary of the first step that ran node.

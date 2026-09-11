@@ -7,6 +7,12 @@ the graph and plan formats may still change before 1.0.
 ## [Unreleased]
 
 ### Added
+- The shop example ships an integration kit, the part of an AAT project that an API's integrators get.
+  `aat-kit.yaml` names the graph, templates, OpenAPI spec, domain file, workflows, sandbox environment,
+  and three reference plans. `sh package-kit.sh` copies them into a directory and a tarball, with the kit
+  manifest as its `aat-project.yaml`. The `shop-api` server in `.mcp.json` reads the kit manifest, so it
+  shows what an integrator's AI tool would see. `make example-shop` packages the kit, then validates and
+  runs the unpacked copy.
 - `make demos` regenerates the docs site's recordings and screenshots against a fresh `aat-sandbox`: VHS
   recordings of `aat run plan full-lifecycle` and a parallel layer-group batch, Playwright screenshots of
   the run timeline, a step's request with Copy as cURL, and the batch matrix, plus an MP4 of the plan run
@@ -76,6 +82,9 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- `examples/shop` keeps the suites its integration kit does not ship in `internal/plans/`: the negative
+  tests, `resilience`, and `giftcard-express`. The manifest lists `plans/` and `internal/plans/`, so plan
+  names (`negative/state-machine`) and batch results are unchanged; only the files' paths moved.
 - **BREAKING:** project YAML is decoded strictly. A key that no field accepts — in the manifest,
   environment files and their includes, overlays, the graph, templates, the domain file, visualizers,
   workflows, layers, plans, recipes, and plan YAML given to the MCP plan tools — is an error naming the

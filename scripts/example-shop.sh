@@ -85,4 +85,22 @@ authorization="$(jq -r '.auth.headers.Authorization' "$state")"
 curl -fsS -H "Authorization: $authorization" "http://127.0.0.1:8765/us/v1/orders/$order" >"$out/checkpoint-order.json"
 expect "$out/checkpoint-order.json" '.status == "paid"'
 
+step "sh package-kit.sh, then validate and run the unpacked kit as an integrator would"
+sh package-kit.sh "$out/shop-kit" >&2
+kit_parent="$(mktemp -d)"
+trap 'kill "$sandbox_pid" 2>/dev/null || true; rm -f "$state"; rm -rf "$kit_parent"' EXIT
+tar -xzf "$out/shop-kit.tar.gz" -C "$kit_parent"
+[[ ! -e "$kit_parent/shop-kit/internal" && ! -e "$kit_parent/shop-kit/layers" ]] ||
+  fail "the kit contains producer-only directories"
+(cd "$kit_parent/shop-kit" && "$aat" validate --strict)
+(cd "$kit_parent/shop-kit" && "$aat" run batch --oas-validate strict --no-auto-overrides \
+  --output "$root/examples/shop/$out/kit-runs" --json) >"$out/kit-batch.json" || true
+expect "$out/kit-batch.json" '.outcome == "passed" and .summary.total_plans == 3 and .summary.passed_plans == 3'
+
+step "aat mcp serve from relative manifests: the unpacked kit (api) and the project (test)"
+(cd "$kit_parent" && "$aat" mcp serve --manifest shop-kit/aat-project.yaml --persona api </dev/null) ||
+  fail "the MCP server did not start from the unpacked kit"
+(cd "$root" && "$aat" mcp serve --manifest examples/shop/aat-project.yaml --persona test </dev/null) ||
+  fail "the MCP server did not start from a relative project manifest"
+
 printf '\nexample-shop: all checks passed\n' >&2

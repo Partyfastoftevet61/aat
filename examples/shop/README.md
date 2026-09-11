@@ -122,7 +122,7 @@ checkout with `422 TIER_NOT_AVAILABLE`.
 
 ## Workflows, slots, and addons
 
-Plans in `plans/` are mostly *recipes*: a few lines that pick a workflow and its options.
+Most plans are *recipes*: a few lines that pick a workflow and its options.
 
 ```yaml
 kind: recipe
@@ -146,10 +146,10 @@ selection:
 
 ## Negative tests
 
-- `plans/negative/state-machine.yaml` drives an order through transitions the API must refuse
-  (ship before payment, pay twice, refund twice, …). Each is an `expectFailure` step that passes
-  when the listed status comes back.
-- `plans/negative/add-item-mutations.yaml` turns one `addItem` call into five rejected variants
+- `internal/plans/negative/state-machine.yaml` drives an order through transitions the API must
+  refuse (ship before payment, pay twice, refund twice, …). Each is an `expectFailure` step that
+  passes when the listed status comes back.
+- `internal/plans/negative/add-item-mutations.yaml` turns one `addItem` call into five rejected variants
   with `mutations:` (zero quantity, unknown SKU, out of stock, more than in stock, malformed JSON).
 - `overlays/declined-card.yaml` makes any card payment a negative test without editing a plan:
 
@@ -192,13 +192,31 @@ build while everything else keeps using the sandbox. AAT picks the file up autom
 
 ## MCP: teach an AI coding tool this API
 
-`.mcp.json` registers two MCP servers for tools such as Claude Code: `shop-api` (read-only tools
-that describe operations, data flow, and the OpenAPI contract) and `shop-test` (plan tools,
-including execution). `.claude/settings.json` pre-approves the read-only `shop-api` tools. Open this
-directory in Claude Code with `aat` on your `PATH` and ask, for example:
+`.mcp.json` registers two MCP servers for tools such as Claude Code. `shop-api` reads the
+integration kit (`aat-kit.yaml`, below) and has read-only tools that describe operations, data flow,
+and the OpenAPI contract: what an integrator's AI tool would see. `shop-test` reads the whole project
+and adds plan tools, including execution. `.claude/settings.json` pre-approves the read-only
+`shop-api` tools. Open this directory in Claude Code with `aat` on your `PATH` and ask, for example:
 
 > Using only the `shop-api` MCP server for API knowledge, write a Python client (standard library
 > only) that places an order for two items and then cancels it. Run it against the local sandbox.
+
+## The integration kit
+
+The project that tests the shop API also holds what its integrators need, so part of it ships as a
+kit. `aat-kit.yaml` names that part: the graph, templates, OpenAPI spec, domain file, workflows,
+`env.yaml`, and the reference plans in `plans/`. The suites in `internal/plans/`, the layers, the
+overlays, and the visualizer stay here.
+
+```bash
+aat validate --strict --manifest aat-kit.yaml   # check the kit on its own
+sh package-kit.sh                                # writes _output/shop-kit/ and _output/shop-kit.tar.gz
+```
+
+The package holds the kit manifest as its `aat-project.yaml` and `KIT-README.md` as its README. In the
+repository, `make example-shop` packages the kit, unpacks it into an empty directory, and validates and
+runs it there against the sandbox. [Share Your API with Integrators](https://gburgyan.github.io/aat/integration-kit/)
+describes the layout for your own API.
 
 ## The sandbox
 
@@ -226,16 +244,19 @@ aat run plan smoke --var apiHost=localhost:9765 --var payHost=localhost:9766
 
 ```
 aat-project.yaml               manifest: where everything below lives, default environment
+aat-kit.yaml                   the integration kit's manifest: the part integrators get
 graph.yaml                     17 operations: inputs, outputs, data flow, cleanup, workflows
 openapi.yaml                   the API contract
 templates/                     one HTTP request/response template per operation
 domain.yaml                    concepts, types, and value pools for AI tools
 env.yaml                       us and eu environments, payments routing
 workflows/                     Quick Purchase and Checkout, slot options, addons
+plans/                         reference plans the kit ships: smoke, full-lifecycle, a recipe
+internal/plans/                suites that stay here: resilience, giftcard-express, negative tests
 layers/                        12 layers for batch matrices
-plans/                         smoke, recipes, full-lifecycle, resilience, negative tests
 overlays/declined-card.yaml    negative test without editing a plan
 visualizers/                   the Receipt tab for order responses
+KIT-README.md, package-kit.sh  the kit's README and the script that packages the kit
 .mcp.json, .claude/            MCP servers and Claude Code permissions
 .aat-overrides.yaml.example    local-development routing
 ```

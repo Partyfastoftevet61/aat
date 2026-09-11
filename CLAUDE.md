@@ -184,6 +184,8 @@ cd examples/shop/
 ../../aat run plan smoke --stop-after paymentCharge --dump-state -   # live state for another tool
 ../../aat run plan smoke --var apiHost=localhost:9765                # a sandbox on other ports
 ../../aat web view latest
+../../aat validate --strict --manifest aat-kit.yaml                  # the integration kit on its own
+sh package-kit.sh                                                     # package it: _output/shop-kit/ and .tar.gz
 
 # What CI runs against the shop (starts its own sandbox; needs curl, jq, free ports 8765/8766)
 make example-shop
