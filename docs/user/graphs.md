@@ -6,9 +6,9 @@ A graph is the foundational data model in AAT. It declares what API operations e
 
 An AAT graph is a YAML file that models your API as a set of **nodes**. Each node represents one API operation (e.g., "list products", "create order", "cancel order"). Nodes declare typed **inputs** (what data the operation needs) and typed **outputs** (what data it produces).
 
-The graph does *not* declare how data flows between operations. Data flow is wired in **plans** and **workflows**, where step values reference outputs from earlier steps (e.g., `listProducts.productId`). The graph declares the *signatures*; plans declare the *wiring*.
+An input can default to an earlier node's output (`default: {from: createCart.cartId}`), which covers the common case; **plans** and **workflows** wire the rest, where step values reference outputs from earlier steps (e.g., `listProducts.productId`).
 
-Node ordering is determined by **requires/satisfies tokens** and **conditions**, not by explicit edge declarations. This keeps the graph focused on what each operation *is* rather than how operations compose into specific test scenarios.
+Prerequisites between operations are declared with **requires/satisfies tokens** and **conditions**, not with explicit edges. This keeps the graph focused on what each operation *is* rather than how operations compose into specific test scenarios.
 
 ## Nodes
 
@@ -56,8 +56,9 @@ An input declares one piece of data the operation needs. Inputs are resolved at 
 | `type` | string | yes | Data type (see [Types](#types)) |
 | `description` | string | no | Human-readable description |
 | `optional` | bool | no | If true, the operation can execute without this input (default: false) |
-| `configurable` | bool | no | If true, this input can be set via environment config values |
+| `configurable` | bool | no | Marks an optional input for `aat prompt` to fill: the model is offered it as optional configuration to set from the request, even when it has a default, and `aat docs generate` lists it as `configurable`. Requires `optional: true` |
 | `default` | varies | no | Default value when no plan value or upstream output provides one |
+| `constraints` | map | no | `min`, `max`, `minLength`, `maxLength`, `pattern`, `description`. Documentation only: `aat docs generate` and the MCP tools show them and `aat validate` checks that they are well formed (the pattern compiles, min ≤ max), but the engine does not enforce them. `aat generate` fills them from the spec |
 
 ### Input Defaults
 
@@ -100,10 +101,11 @@ Rich default fields:
 | Field | Description |
 |-------|-------------|
 | `value` | Literal value |
-| `pool` | Array of candidate values |
-| `poolStrategy` | How to pick from the pool (e.g., `"random"`, `"sequential"`) |
+| `pool` | Array of candidate values, used when there is no `value` or the `value` fails `constraint` |
+| `poolStrategy` | How to pick from the pool: `random` (default) or `sequential` |
+| `constraint` | Predicate the value must satisfy, over `value` and the inputs already resolved for the step (see [Fallback Pools](value-flow.md#fallback-pools)) |
 | `from` | Reference to an upstream step output (`step.output`) |
-| `fromResolved` | Pre-resolved reference (internal use) |
+| `fromResolved` | Name of an input declared earlier on the same node; the input takes that input's resolved value (see [Intra-Step References](value-flow.md#intra-step-references)) |
 | `select` | Selection config for array sources: `strategy`, `field`, `filter`, `index`, `sortField` |
 
 ### Outputs
@@ -115,6 +117,7 @@ An output declares one piece of data the operation produces. Outputs are extract
 | `name` | string | yes | Output name, unique within the node |
 | `type` | string | yes | Data type (see [Types](#types)); use `X[]` for arrays |
 | `description` | string | no | Human-readable description |
+| `optional` | bool | no | If true, `aat validate` does not require the node's template to extract this output |
 | `display` | string | no | Label for surfacing this output to the user. When set, the extracted value is printed under the step in console output (`  Locator: ABC123`), included as `display_outputs` in `--json` summaries, and stored in the archive |
 | `elementFields` | list | no | Field definitions for array element structure (see below) |
 
@@ -143,11 +146,11 @@ Each element field has:
 |-------|------|----------|-------------|
 | `name` | string | yes | Logical field name used in plans and selection configs |
 | `type` | string | yes | Data type |
-| `path` | string | no | gjson extraction path within the element; defaults to `name` if omitted |
+| `path` | string | no | gjson path within the element, used only when the template has no `fields` map for the output; defaults to `name` |
 
-The `path` field allows the logical name to differ from the JSON field name. For example, if the API returns `{"id": "abc"}` but you want plans to reference it as `productId`, set `name: productId` and `path: id`.
+The actual extraction mechanics — mapping JSON paths to logical names — are defined in the [template](templates.md): its `fields` map for the output renames each element's fields (for example `productId: id`). The graph declares *what fields exist*; the template declares *how to extract them*.
 
-The actual extraction mechanics — mapping JSON paths to logical names — are defined in the [template](templates.md). The graph declares *what fields exist*; the template declares *how to extract them*.
+The graph-side `path` is an older way to do the same renaming. It is used only when the template gives the output no `fields` map: then a selection that names `productId` reads the element's `id` when the element field sets `name: productId` and `path: id`.
 
 ### Cleanup
 
@@ -157,7 +160,7 @@ The `cleanup` field on a node names another node that should run after the plan 
 nodes:
   createOrder:
     adapter: createOrder
-    cleanup: cancelOrder       # always runs after plan completes
+    cleanup: cancelOrder       # runs after the plan once createOrder succeeds
     inputs: [...]
     outputs: [...]
 
@@ -168,7 +171,7 @@ nodes:
         type: string
 ```
 
-Cleanup steps are automatically placed in the plan's cleanup section by `aat prompt` and run in reverse order of their corresponding creation steps.
+The engine registers the pairing once the creating step succeeds (a status below 400 with outputs extracted and no [error detection](#error-detection) rule triggered), even if the step's assertions then fail, so a plan need not list it. After the main flow, the plan's own `cleanup:` steps run first, in the order listed; then the registered pairings that did not already run there, last created first. Cleanup inputs are matched by name against the outputs of the steps that ran (for a registered pairing, the creating step's outputs first), so `cancelOrder.orderId` takes `createOrder`'s `orderId` output. Recipes and `aat prompt` plans write each pairing into the plan's `cleanup:` section in step order, which means they run in that order.
 
 ### Tags
 
@@ -185,7 +188,9 @@ Tags are metadata — they don't affect execution but can be used by tooling and
 
 ## Node Ordering
 
-AAT uses two mechanisms to determine the valid ordering of operations: **requires/satisfies tokens** and **conditions**. Together, these define prerequisite relationships without coupling nodes to specific data-flow scenarios.
+AAT uses two mechanisms to declare the valid ordering of operations: **requires/satisfies tokens** and **conditions**. Together, these define prerequisite relationships without coupling nodes to specific data-flow scenarios.
+
+These rules describe the API for the tools that trace it: backward chaining in the MCP server (`trace_workflow`, `trace_dependency_chain`, workflow documentation), the dependency sections of `aat docs generate`, and the token and cycle checks in `aat validate`. They do not order a hand-written plan, which runs its steps in `dependsOn` order; when a recipe or `aat prompt` composes a plan from a workflow, AAT adds `dependsOn` entries from them.
 
 ### Requires and Satisfies
 
@@ -225,24 +230,22 @@ nodes:
 
 ### Conditions
 
-Conditions are graph-level rules that express ordering constraints with predicates:
+Conditions are graph-level rules that pull extra nodes into a chain when a predicate holds:
 
 ```yaml
 conditions:
-  - when: submitOrder
-    require: [addShipping, addPayment]
-
-  - when: applyCoupon
+  - when: "order.international == true"
+    require: [addCustomsInfo]
     before: [submitOrder]
 ```
 
 | Field | Description |
 |-------|-------------|
-| `when` | The node this condition applies to |
-| `require` | Nodes that must execute before `when` |
-| `before` | Nodes that `when` must execute before |
+| `when` | Predicate expression, evaluated against a condition context supplied by the caller |
+| `require` | Nodes the chain must include when `when` is true |
+| `before` | Nodes that each `require` node is ordered before |
 
-Conditions and requires/satisfies work together. Conditions are useful for expressing ordering rules that don't fit the token model (e.g., "if you apply a coupon, it must happen before order submission").
+Conditions express rules that don't fit the token model (e.g., "international orders need customs information before submission"). Backward chaining evaluates them only when its caller supplies a predicate evaluator and a context, and no command does today: the MCP tracing tools treat every condition as false. `aat validate` checks that `when` is set and that `require` and `before` name existing nodes, and the MCP `aat://graph` resource lists conditions.
 
 ### Cycle Breaker
 
@@ -261,7 +264,7 @@ This tells the backward chaining algorithm to stop traversing through this node,
 
 APIs sometimes return HTTP 200 with an error payload. Error detection rules let the graph declare patterns that indicate a "successful" response is actually an error.
 
-Rules can be defined at the graph level (apply to all nodes) or at the node level (apply to one node):
+Rules can be defined at the graph level (apply to all nodes) or at the node level. A node's own rules replace the graph-level rules for that node; they are not merged. Rules are checked on responses with a status below 400, after outputs are extracted, and the first rule that triggers fails the step:
 
 ```yaml
 # Graph-level: applies to all nodes
@@ -287,8 +290,8 @@ nodes:
 | Rule | Behavior |
 |------|----------|
 | `exists` | Error if the path exists in the response (non-nil) |
-| `non-empty` | Error if the path exists and is not empty (non-empty string, non-empty array, non-zero number) |
-| `equals` | Error if the value at the path equals the specified `value` |
+| `non-empty` | Error if the path holds a non-empty string, array, or object, or any number or boolean |
+| `equals` | Error if the value at the path equals the specified `value`. Use a string or boolean: a whole-number `value` such as `0` never matches today, because the YAML integer and the JSON number are compared as different types |
 
 ### Detail Mapping
 
@@ -317,7 +320,7 @@ AAT supports these data types for inputs, outputs, and element fields:
 | `X[]` | Array of type X | — |
 | *customName* | Domain-specific type (e.g., `sku`, `postalCode`) | `"WIDGET-100"` |
 
-Custom types integrate with the [domain knowledge](domain.md) layer. The domain file can declare type definitions and value pools for custom types, which the engine uses to produce realistic test data.
+Custom types integrate with the [domain knowledge](domain.md) layer. The domain file can declare type definitions and value pools for custom types, which `aat prompt`, `aat docs generate`, and the MCP tools use to suggest realistic values. The engine does not draw from them; give an input a pool default for varied test data at run time.
 
 ## OAS Integration
 
@@ -325,28 +328,7 @@ AAT can scaffold graphs from OpenAPI specs, reference OAS operations for validat
 
 ### Scaffolding from OpenAPI
 
-Use `aat generate` to create a starting-point graph and templates from an OpenAPI 3.x spec:
-
-```bash
-aat generate \
-  --oas api-spec.yaml \
-  --output-graph graph.yaml \
-  --output-templates templates/
-```
-
-This produces one node per `operationId` with inputs from parameters and request body, outputs from the first 2xx response schema, and a matching template for each node.
-
-The scaffold is intentionally rough — it provides correct HTTP methods, paths, and parameter names but does not generate ordering rules or know which outputs matter for your test flow. Post-scaffold work includes removing unused nodes, refining types, adding requires/satisfies tokens, and configuring array outputs.
-
-**What the scaffold includes:** node names from `operationId`, inputs from path/query/header parameters and request body, output extraction from 2xx response schema, array detection with `elementFields`, OAS links on each node, and template files with placeholders.
-
-**What the scaffold omits:** ordering rules (requires/satisfies), conditions, cleanup pairing, custom types, descriptions (unless the spec has `summary`), and selective output trimming.
-
-To preview without writing files:
-
-```bash
-aat generate --oas api-spec.yaml --output-graph -
-```
+`aat generate --oas api-spec.yaml` writes a starting-point graph (one node per operation, with an `oas` reference on each) and one template per node. The scaffold has no ordering rules, cleanup pairings, or data wiring; you add those by hand. See [Scaffolding from OpenAPI](generate.md) for the flags, what the generator writes, and how to preview it.
 
 ### OAS References
 
@@ -367,35 +349,35 @@ Spec paths are resolved relative to the graph file's directory.
 
 ### OAS Validation
 
-Run `aat validate graph` with an OAS spec to check alignment:
+`aat validate` and `aat validate graph` check every node that has an `oas` reference against its spec:
 
 ```bash
 aat validate graph --graph graph.yaml --strict
 ```
 
-The validator checks 7 rules, classified as errors or warnings:
-
 **Errors** (always fail validation):
 
-- `operationId` not found in any loaded spec
-- Spec path referenced but file not found
+- A referenced spec file cannot be loaded (validation stops there)
+- `oas` is set but `operationId` is empty
+- The node has no spec (neither a node-level `spec` nor a graph-level `oas`)
+- `operationId` not found in the node's spec
 
 **Warnings** (fail only with `--strict`):
 
-- Graph input not in OAS parameters or request body
-- Required OAS parameter missing from graph inputs
-- Graph output not in the 2xx response schema; when templates are loaded (`aat validate`, or `aat validate graph --templates`), each output is looked up at its template extract path, through nested objects and array items
-- HTTP method mismatch between graph adapter and spec
-- Response content type mismatch
+- A graph input that is neither an OAS parameter nor a request body property
+- A required OAS parameter or required request body property that is not a graph input, unless the node's template sends it itself: a query parameter written into `request.path`, a header in `request.headers`, or a top-level body key outside `{{?…}}` blocks
+- A graph output not found in the first 2xx response schema that declares properties. Each output is looked up at its template extract path, through nested objects and array items, and outputs a Lua transform computes are skipped
+
+The template-aware parts of these checks need the templates: `aat validate` always loads them, and `aat validate graph` loads them from `--templates` or the manifest. Without templates, required fields must be graph inputs and outputs must be top-level response properties named after the output.
 
 Warnings are informational — intentional divergence from the spec is normal (e.g., omitting optional parameters or extracting only specific response fields).
 
 ## Graph YAML Reference
 
-Complete annotated example showing all top-level and nested fields:
+An annotated graph with every top-level field except `examples` (few-shot examples for `aat prompt`'s workflow selection) and the common node fields; the tables above list the rest. `version` is required and must be `X.Y.Z`.
 
 ```yaml
-version: "1.0"
+version: "1.0.0"
 title: "E-Commerce API"
 description: "Product catalog, cart, and order operations"
 notes: "Covers browse-to-checkout happy path plus cancellation"
@@ -417,11 +399,10 @@ workflows:
     description: "Browse products, add to cart, and complete checkout"
     template: workflows/standard-checkout.yaml
 
-# Ordering conditions
+# Conditional prerequisites (see Conditions above)
 conditions:
-  - when: submitOrder
-    require: [addShipping, addPayment]
-  - when: applyCoupon
+  - when: "order.international == true"
+    require: [addCustomsInfo]
     before: [submitOrder]
 
 # Node definitions
@@ -464,6 +445,23 @@ nodes:
           - name: rating
             type: float
 
+  addToCart:
+    description: "Add a product to the cart"
+    adapter: addToCart
+    requires: [searchComplete]
+    satisfies: [cartPopulated]
+    inputs:
+      - name: productId
+        type: string
+        default:
+          from: listProducts.products
+          select:
+            strategy: min
+            field: price
+    outputs:
+      - name: cartId
+        type: string
+
   createOrder:
     description: "Create a new order from cart contents"
     adapter: createOrder
@@ -492,6 +490,15 @@ nodes:
     outputs:
       - name: status
         type: string
+
+  addCustomsInfo:
+    description: "Attach customs information to an international order"
+    adapter: addCustomsInfo
+    requires: [orderCreated]
+    inputs:
+      - name: orderId
+        type: string
+    outputs: []
 
   submitOrder:
     description: "Finalize and submit an order for processing"
@@ -526,12 +533,12 @@ aat validate graph --strict
 aat validate graph --graph graph.yaml --oas api-spec.yaml --templates templates/
 ```
 
-Structural checks include: unique node names, valid type syntax, input/output name uniqueness within a node, requires/satisfies token consistency, cleanup node existence, and condition references.
+Structural checks include: `version` present and `X.Y.Z`, `adapter` set on every node, valid type syntax, input/output name uniqueness within a node, `configurable` only on optional inputs, well-formed `constraints` and `errorDetection` rules, every required token satisfied by some node, no requires/satisfies cycles (unless a node in the cycle is a `cycleBreaker`), cleanup node existence, and condition references. Unknown keys are errors, with the file, line, and a suggestion.
 
-When `--templates` is provided, validation also checks that each node's declared outputs match the extract keys in its template, catching mismatches like graph outputs that the template never extracts (will be nil at runtime) or template extract keys the graph doesn't declare (dead extraction).
+When templates are available (`--templates`, or the manifest's `templates`), validation also checks that each node's declared outputs match the extract keys in its template, catching mismatches like graph outputs that the template never extracts (will be nil at runtime) or template extract keys the graph doesn't declare (dead extraction).
 
 See [Validation](validation.md) for the full reference covering all `aat validate` subcommands.
 
 ---
 
-*Source: graph types in `graph/types.go`, parsing in `graph/parse.go`, validation in `graph/validate.go`, scaffolding in `graph/oas/generate.go`.*
+*Source: graph types in `graph/types.go`, parsing in `graph/parse.go`, validation in `graph/validate.go` and `graph/oas/validator.go`, chaining in `graph/chain.go`.*

@@ -50,7 +50,7 @@ request:
     X-Custom-Header: "{{customValue}}"
 ```
 
-Headers support `{{placeholder}}` substitution. Static headers like `Content-Type` are set directly; dynamic headers use placeholders resolved from step inputs.
+Headers support `{{placeholder}}` substitution. Static headers like `Content-Type` are set directly; dynamic headers use placeholders resolved from step inputs. A header whose whole value is a conditional block (`{{?requestId}}{{requestId}}{{/requestId}}`) is not sent when the block resolves to nothing. Template headers are applied last and currently replace any header of the same name, including the auth credential — see [Header Merge Order](#header-merge-order).
 
 ### Body
 
@@ -68,18 +68,28 @@ request:
     }
 ```
 
-The body is a string template with `{{placeholder}}` substitution. Values are substituted using Go's `%v` formatting — string values in JSON should include surrounding quotes in the template; numeric values should not.
+The body is a string template with `{{placeholder}}` substitution. Strings are inserted as-is, arrays as JSON, and other values with Go's `%v` formatting — string values in JSON should include surrounding quotes in the template; numeric values should not.
 
 ## Placeholders
 
 Templates use `{{key}}` placeholders that are resolved at execution time. Whitespace inside braces is tolerated: `{{ key }}` works the same as `{{key}}`.
 
-### Resolution Order
+### Resolution
 
-1. **Step inputs** — values resolved from the plan (literals, upstream step outputs, selections)
-2. **Environment config values** — values from the environment's `values` map
+A placeholder is filled from the **step inputs** — the values resolved for the node's inputs from the plan, graph defaults, layers, and upstream steps. The key is the input name.
 
-If a placeholder can't be resolved from either source, AAT reports an error:
+Environment `values:` from env.yaml do not fill template placeholders (a known gap). They are available through `{{env.KEY}}` expressions in plan and graph values instead, so declare an input for the value and give it a default:
+
+```yaml
+# graph.yaml — the node's input
+- name: postalCode
+  type: string
+  default: "{{env.postalCode}}"   # OS environment first, then env.yaml values
+```
+
+The template then uses `{{postalCode}}`. See [Value Resolution: Environment Variables](value-flow.md#environment-variables).
+
+If a placeholder can't be resolved, AAT reports an error:
 
 ```
 path substitution: unresolved placeholders: productId
@@ -94,7 +104,7 @@ request:
   method: POST
   path: /orders/{{orderId}}/items       # path parameter
   headers:
-    Authorization: Bearer {{token}}     # header value
+    X-Session-Id: "{{sessionId}}"       # header value
     X-Request-Id: "{{requestId}}"
   body: |                               # body fields
     {
@@ -109,7 +119,7 @@ Conditional blocks include or exclude sections of a template based on whether an
 
 **Syntax:** `{{?key}}...{{/key}}`
 
-When `key` is present in the step inputs and has a non-empty value (non-empty string, non-nil value), the block content is included. Otherwise, the entire block — including the tags — is removed.
+When `key` is present in the step inputs and has a non-empty value (non-empty string, non-nil value), the block content is included. Otherwise, the entire block — including the tags — is removed. Block keys may contain letters, digits, underscores, and hyphens, so an input named after a header parameter works: `{{?X-Request-Id}}...{{/X-Request-Id}}`.
 
 ```yaml
 body: |
@@ -193,7 +203,9 @@ Iteration blocks repeat a section of a template for each element in an array inp
 The block body is repeated for each element in the array, with iterations separated by commas. Inside the block:
 
 - **`{{.}}`** — the element value itself (for scalar arrays)
-- **`{{.fieldName}}`** — a named field from a map element
+- **`{{.fieldName}}`** — a named field from a map element (letters, digits, and underscores only)
+
+The input must exist and be an array; otherwise the request fails. Wrap the block in a conditional when the input is optional, as in the second example below.
 
 ```yaml
 body: |
@@ -342,11 +354,23 @@ The response body must be valid JSON for extraction to work. Non-JSON responses 
 response body is not valid JSON
 ```
 
+Mark an output `optional: true` (object form) when the response may leave it out; a missing path then omits the output instead of failing the step:
+
+```yaml
+response:
+  extract:
+    trackingNumber:
+      path: "shipment.tracking"
+      optional: true
+```
+
+Extraction, and any `transform`, runs only for responses with status below 400. An error response produces no outputs.
+
 ## Lua Transforms
 
 Some APIs return complex structures where extracted outputs need post-processing — for example, responses that separate reference data from main results, requiring client-side joins to assemble complete records.
 
-The `response.transform` field takes an inline Lua script that post-processes the extracted outputs before they're stored. The script receives the extracted outputs as a mutable table and can query the raw response body for additional data.
+The `response.transform` field takes an inline Lua script that post-processes the extracted outputs before they're stored. The script receives the extracted outputs as the `outputs` table, can query the raw response body with `json_path()`, and returns the table to store.
 
 ```yaml
 response:
@@ -364,20 +388,19 @@ response:
     return outputs
 ```
 
-See [Lua Transforms](lua-transforms.md) for the full guide covering the sandboxed runtime, available globals, and real-world examples.
+See [Lua Transforms](lua-transforms.md) for the runtime, the available globals and libraries, type conversion, and worked examples.
 
 ## Header Merge Order
 
 When a request is built, headers come from multiple sources and are merged in this order (later values override earlier ones for the same key):
 
 1. **Environment headers** — static headers from the environment file's `headers` section
-2. **Template headers** — headers defined in the template's `request.headers`
-3. **Plan-level headers** — headers set on individual plan steps (see [Plans](plans.md))
-4. **Auth headers** — authentication headers added by the auth system (final precedence)
+2. **Plan headers** — the plan's top-level `headers` (see [Plans: Plan-Level Auth and Headers](plans.md#plan-level-auth-and-headers))
+3. **Auth credential** — `Authorization`, or the API key header, from the effective auth
+4. **Overlay headers** — top-level `headers` from `.aat-overrides.yaml`, then from the `--overlay` file
+5. **Template headers** — the template's `request.headers`
 
-This means you can set common headers like `Accept` in the environment, override per-template when needed, and let auth headers take final precedence.
-
-See [Environments](environments.md) for environment header configuration and [Plans](plans.md) for plan-level header overrides.
+You can set common headers like `Accept` in the environment and add per-operation headers such as `Content-Type` in the template. Because template headers are applied last, a template that sets `Authorization` or an overlay-managed header currently replaces the credential or the overlay's value; this is a known issue, so leave those headers out of templates. For nodes that an override routes elsewhere, see [Environments: Custom Headers](environments.md#custom-headers).
 
 ## Common Patterns
 
@@ -493,6 +516,9 @@ response:
       path: "path.to.array"  #     gjson path to the array in response
       fields:                #     element field mappings
         logicalName: "path"  #       logical name -> gjson path within element
+    maybeOutput:             #   object form with optional: a missing path omits the output
+      path: "path.to.field"
+      optional: true
   transform: |               # optional — Lua post-processing script
     -- receives `outputs` table and `json_path()` function
     return outputs

@@ -70,11 +70,14 @@ validation:
 nav:
   - Home: index.md
   - Getting started:
+      - Install: install.md
       - Quickstart: quickstart.md
       - Petstore walkthrough: petstore-walkthrough.md
       - Tutorial: tutorial.md
   - Examples:
+      - examples/index.md
       - Shop: examples/shop.md
+      - Airline case study: examples/airline-case-study.md
   - Core guides:
       - Project setup: project-setup.md
       - API graphs: graphs.md
@@ -90,12 +93,16 @@ nav:
       - Matrix testing: batch-layers.md
       - Local development: local-dev.md
       - CI/CD: ci-cd.md
-      - Web UI and archives: web-ui.md
+      - Checkpoints: checkpoints.md
+      - Archives: archives.md
+      - Web UI: web-ui.md
       - Visualizers: visualizers.md
       - Validation: validation.md
   - AI and integration:
       - MCP server: mcp-server.md
       - AI assistant primer: llms.md
+      - Scaffolding from OpenAPI: generate.md
+      - Generating API docs: docs-generate.md
       - LLM-assisted planning: prompt.md
   - Reference:
       - Changelog: changelog.md

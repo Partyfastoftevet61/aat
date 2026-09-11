@@ -42,7 +42,7 @@ aat mcp serve --persona api     # API knowledge tools (24 with OAS specs loaded,
 aat mcp serve --persona test    # test lifecycle tools (26)
 ```
 
-The seven OpenAPI tools register only when the graph references an OAS spec, which is why the `api` and all-tools counts vary.
+The seven OpenAPI tools register only when an OAS spec is loaded (from the manifest's `oas` field or the graph's `oas` references), which is why the `api` and all-tools counts vary.
 
 | Persona | Target User | Focus |
 |---------|------------|-------|
@@ -154,15 +154,13 @@ HTTP mode serves the MCP protocol over Streamable HTTP, enabling remote access w
 
 HTTP mode does not enforce authentication by default. For production deployments behind a reverse proxy, use the proxy's auth layer.
 
-AAT ships a `BearerAuth` middleware in the `mcp` package that validates `Authorization: Bearer <token>` headers. It's not wired into the CLI by default but is ready for programmatic use:
+AAT ships an `AuthMiddleware` function in the `mcp` package that validates `Authorization: Bearer <token>` headers. It's not wired into the CLI by default but is ready for programmatic use:
 
 ```go
 handler := server.NewStreamableHTTPServer(mcpServer, opts...)
 protected := mcp.AuthMiddleware([]string{"your-api-key"})(handler)
 http.ListenAndServe(":8080", protected)
 ```
-
-A `--api-key` CLI flag may be added in a future release.
 
 ### Logging
 
@@ -195,7 +193,7 @@ The proxy forwards to `http://localhost:8080/mcp`. AAT does not handle TLS direc
 
 ## Tools — API Persona
 
-The API persona registers 24 tools focused on understanding and integrating with the API — 17 when no OpenAPI spec is loaded, since the OpenAPI group below is registered only when the graph references one. Over `--http`, `get_sample_response` is also excluded, giving 23 (or 16).
+The API persona registers 24 tools focused on understanding and integrating with the API — 17 when no OpenAPI spec is loaded, since the OpenAPI group below is registered only when a spec is loaded. Over `--http`, `get_sample_response` is also excluded, giving 23 (or 16).
 
 ### API Operations (7 tools)
 
@@ -406,10 +404,16 @@ All 6 prompts are registered: `explain_workflow`, `generate_client_code`, `integ
 
 ## Per-Node Documentation
 
-AAT supports per-node Markdown documentation files that enrich the AI's understanding of individual API operations. These files live in a `docs/` directory relative to the graph file, named `<NodeName>.md`.
+AAT supports per-node Markdown documentation files that enrich the AI's understanding of individual API operations. Set the `docs` field in `aat-project.yaml` to a directory (resolved relative to the manifest; there is no default) and name each file `<NodeName>.md`. Files that match no node are ignored, and the server reads the directory when it starts, so restart it to pick up new files.
+
+```yaml
+# aat-project.yaml
+docs: docs/
+```
 
 ```
 my-ecommerce-api/
+  aat-project.yaml
   graph.yaml
   docs/
     listProducts.md
@@ -419,7 +423,7 @@ my-ecommerce-api/
 
 Each doc file can contain whatever context is useful: business rules, edge cases, error codes, example payloads, or integration notes.
 
-The `generate_doc_stub` tool (test persona) creates starter documentation files with input/output tables and placeholders pre-filled from the graph metadata.
+The `generate_doc_stub` tool (test persona) returns starter documentation with input/output tables and placeholders pre-filled from the graph metadata; it does not write a file, so the assistant saves it into the docs directory.
 
 The `list_undocumented_nodes` tool (test persona) shows which nodes don't have doc files yet — useful for tracking documentation coverage.
 
@@ -463,9 +467,9 @@ When the MCP server starts, it loads and caches the project context:
 | Graph | yes | `graph` field in manifest |
 | Templates | yes | `templates` field in manifest |
 | Domain knowledge | no | `domain` field in manifest |
-| OAS specs | no | `oas` field in graph and per-node `oas` references |
-| Environment | no | `environment` field in manifest |
-| Node docs | no | `docs/` directory relative to graph file |
+| OAS specs | no | `oas` field in the manifest, the graph's `oas`, and per-node `oas.spec` references |
+| Environment | no | `environment` field in manifest (`--env`, `AAT_ENV_NAME`, or `defaultEnvironment` picks the environment) |
+| Node docs | no | `docs` field in manifest |
 | Workflows | no | `workflows` field in manifest |
 | Saved plans | no | `plans` field in manifest |
 | Archives | no | `archives` field in manifest |

@@ -27,8 +27,9 @@ credited in the advisory and release notes unless they ask otherwise.
   `X-API-Key`, `X-Auth-Token`, `Cookie`, and `Set-Cookie` values are replaced with `[REDACTED]`
   before an archive or `.aar` export is written, and the resolved value of every configured
   credential (environment, host override, plan, and overlay auth, and the LLM API key) is scrubbed
-  from all headers, step inputs, resolved values, and the archived plan. Request and response
-  *bodies* and step outputs are stored as-is, so review them before sharing an archive.
+  from all headers, step inputs, and resolved values; the archived plan loses its literal credentials
+  and credential headers. Request and response *bodies*, step outputs, and the rest of the plan are
+  stored as-is, so review them before sharing an archive.
 - **`--dump-state` files contain live credentials.** The live-state export written by
   `aat run plan --dump-state FILE` includes each step's base URL and live request headers, the
   default route's auth headers, and step outputs, so an external harness can pick up where a run

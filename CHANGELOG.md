@@ -10,6 +10,10 @@ the graph and plan formats may still change before 1.0.
 - A documentation site built from `docs/user` with Material for MkDocs (`mkdocs.yml`), deployed to GitHub
   Pages by a new Docs workflow that fails on broken links, broken anchors, and pages missing from the
   navigation. `make docs` runs the same strict build locally.
+- Documentation pages for installing, checkpoints, archives, `aat generate`, `aat docs generate`, the
+  examples, and the airline case study; the Lua transforms page is written out. The quickstart (on the
+  public Petstore API) and the tutorial (built by hand against `aat-sandbox`) are rewritten and were run
+  verbatim; the previous versions did not load.
 - Run output lists each failed assertion under its step (`status: expected status 200, got 201`), and the
   `--json` step summary includes them as `failed_assertions`.
 - `aat-sandbox`, a second binary that serves an offline e-commerce demo API (`aat-sandbox serve`:

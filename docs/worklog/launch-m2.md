@@ -148,3 +148,57 @@ warnings.
   creates it, so every commit builds strict.
 
 **Open questions:** the deploy job fails until the author enables Pages (Settings → Pages → Source = GitHub Actions).
+
+## 2026-09-10 — Commit 4: the pages, and the bugs writing them exposed
+
+**What:** Eight new pages (install, checkpoints, archives, generate, docs-generate, lua-transforms, the examples
+index, the airline case study), a new home page, the quickstart and tutorial rewritten, and a claim-by-claim drift
+pass over every other guide. Four authors worked in parallel on disjoint files; each verified claims against the
+code and by running `aat` against the sandbox (on private ports) or the public Petstore, and loaded every
+whole-file YAML example with the strict loaders. A final read-only pass looked for contradictions between pages.
+
+**Decisions:**
+
+- **Fix, don't document around.** Writing verified output exposed bugs. Those on the docs path were fixed in this
+  commit: run output named no failed assertion and never printed the `OAS: N warning(s)` markers the docs promised
+  (the only code that printed them wrote to `io.Discard`); `aat validate` reported `OK` for sections with warnings;
+  counts read "1 files"; the batch header printed `mode=strict`, a leftover of the runtime modes; a failed run's
+  error printed twice; a filter-only `select` failed at run time; a missing `--manifest` was ignored; `aat generate`
+  made every response property a required extract, so scaffolds failed their first run. A manifest found in the
+  working directory inherited fields from the project in `AAT_PROJECT` (found because the author's shell points
+  there), fixed in its own commit before this one. Everything else went to LAUNCH-PLAN as F24–F35.
+- **Archive redaction was a credential leak.** Header redaction matched six names, so an API key under a custom
+  `headerName` was archived in full; host-override and overlay-override credentials were never collected as
+  secrets; and `metadata.plan`/`instantiatedPlan` kept a plan's literal credentials. Archives now scrub every
+  known secret from all header values, collect every auth block that can apply, and redact plan credentials and
+  credential headers, with a test that serializes the archive and finds no secret anywhere. `--verbose-auth` now
+  shows at most half of a short password.
+- **The tutorial is generated from a run.** A script writes each file exactly as the page shows it, runs each
+  command against a fresh `aat-sandbox`, and renders the page with the real output, so the page and a verbatim
+  run cannot disagree. The script lives outside the repository for now; F18 (a docs example guard) is the place
+  to decide whether to keep such a guard in CI. The tutorial deliberately shows two failures and their fixes (a
+  wrong status expectation, and the payment sent to the wrong host) because the new failure output makes both
+  self-explanatory.
+- **The quickstart uses the live Petstore.** It needs network access, and the public API gives every pet created
+  without an `id` the same ID, so a concurrent client can make `verify` read another pet; the page says so.
+  Offline users are pointed at the shop.
+- **MCP leads, `aat prompt` follows.** The author considers `aat prompt` vestigial; pages present the MCP server
+  as the AI path and mention `aat prompt` as a convenience. The AI honesty line stays on the home page.
+- **Case study numbers were recounted.** The private project has 63 workflows (10 bases, 15 slot options, 38
+  addons), not the 64 with 2 bases in LAUNCH-PLAN; the author accepted the measured counts. The page describes
+  only shapes and counts.
+
+- **A last read-only review across pages found contradictions the parallel authors could not see**, all fixed
+  from the code: steps run in `dependsOn` order (tokens become `dependsOn` only when a plan is composed), graph
+  defaults do wire data, domain value pools are never read at run time, composed plans clean up in creation
+  order, and the honesty line's "execution is deterministic" was false because pool defaults pick at random; it
+  now reads "execution never calls an LLM" everywhere, including `aat --help`. It also found that `aat prompt`
+  archives did not collect overlay credentials and that `ABORTED` lines counted only the steps that ran; both
+  fixed. The review was scoped to every page and took about 20 minutes before it was cut short; later reviews
+  should be per topic or limited to changed pages.
+
+**Open questions:** strict decoding rejects four kinds of keys in the private airline project: `llm.reasoningEffort`
+(never read; the author wants it gone rather than wired), `settings.maxRunDuration`/`defaultRetries`,
+`description` on `elementFields` entries, and `enum` under input `constraints` (use an `enum[...]` type). The author
+fixes them there. F24, composed plans cleaning up in creation order, matters for recipes written through MCP and
+is targeted at M5.

@@ -41,10 +41,12 @@ visualizers:
 
   - id: reservation
     name: Reservation Detail
-    file: reservation.html
+    file: reservation-detail.html
     match:
       node: CreateReservation
 ```
+
+`aat validate` loads this file strictly (unknown keys are errors) and checks that every referenced HTML file exists.
 
 ### Fields
 
@@ -56,7 +58,7 @@ visualizers:
 | `match.bodyContains` | no* | Top-level JSON key that must exist in the response body |
 | `match.node` | no* | Graph node name that the step must match |
 
-*At least one match criterion (`bodyContains` or `node`) is required. When both are specified, both must match (AND logic).
+*Give at least one match criterion (`bodyContains` or `node`): a visualizer with neither loads without error but never matches. When both are specified, both must match (AND logic). A step with an empty response body matches nothing.
 
 ### Match Rules
 
@@ -161,7 +163,7 @@ Visualizer                    Web UI
 
 ### Theme Variables
 
-The `theme` object contains CSS custom property names and values that match the web UI's current theme. Common variables:
+The `theme` object maps CSS custom property names to the web UI's current values. It carries these variables:
 
 | Variable | Description |
 |----------|-------------|
@@ -174,14 +176,17 @@ The `theme` object contains CSS custom property names and values that match the 
 | `--color-primary` | Accent/primary color |
 | `--color-success` | Success indicator |
 | `--color-warning` | Warning indicator |
+| `--color-danger` | Error indicator |
+| `--font-sans` | UI font stack |
+| `--font-mono` | Monospace font stack |
 
-Apply these to your CSS to match the web UI's appearance. Define fallback values in your stylesheet for standalone testing.
+A variable the web UI does not define is left out of the object. Apply these to your CSS to match the web UI's appearance. Define fallback values in your stylesheet for standalone testing.
 
 ### Security Constraints
 
 Visualizer iframes run with strict security:
 
-- **Sandbox** — the iframe has the `sandbox` attribute, preventing navigation, form submission, and other capabilities
+- **Sandbox** — the iframe has `sandbox="allow-scripts"`: scripts run, but navigation, form submission, popups, and same-origin access are blocked
 - **CSP** — a Content Security Policy header blocks all network access (`connect-src 'none'`), allows inline scripts and styles, and permits HTTPS/data images
 - **No external resources** — all CSS, JavaScript, and assets must be inline in the HTML file; external URLs are blocked
 
@@ -216,7 +221,7 @@ If the visualizer appears but shows nothing, check:
 
 ## See Also
 
-- [Web UI and Archives](web-ui.md) — the web viewer where visualizers display
+- [Web UI](web-ui.md) — the web viewer where visualizers display
 - [Project Setup](project-setup.md) — the `visualizers` manifest field
 
 ---

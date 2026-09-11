@@ -19,7 +19,7 @@ plans: plans/
 archives: runs/
 ```
 
-Required fields: `name` and `graph`. All paths resolve relative to the manifest file.
+Required fields: `graph` and `templates`. All paths resolve relative to the manifest file. Every project file is decoded strictly: an unknown or misspelled key is an error naming the file, the line, and the nearest valid key, so run `aat validate` after each edit.
 
 Typical directory layout:
 
@@ -32,7 +32,7 @@ my-api/
   templates/              # one YAML file per graph node
   workflows/              # reusable plan templates (optional)
   plans/                  # concrete test plans and recipes
-  runs/                   # execution archives (auto-created)
+  runs/                   # execution archives (auto-created; `archives:` in the manifest)
 ```
 
 Cross-ref: [Project Setup](project-setup.md)
@@ -41,7 +41,7 @@ Cross-ref: [Project Setup](project-setup.md)
 
 The recommended sequence for building an AAT project:
 
-1. **Create the manifest** — `aat-project.yaml` with name and graph path
+1. **Create the manifest** — `aat-project.yaml` with the graph and templates paths
 2. **Define the graph** — nodes (API operations) with typed inputs, outputs, and ordering
 3. **Write templates** — one per node, defining HTTP request shape and response extraction
 4. **Set up the environment** — base URL, auth credentials, secrets
@@ -65,7 +65,7 @@ AAT also has its own MCP server (`aat mcp serve`) that exposes graph introspecti
 
 ## Graph Schema
 
-The graph declares API operations as nodes with typed inputs, outputs, and ordering rules. Nodes have signatures; plans wire data between them.
+The graph declares API operations as nodes with typed inputs, outputs, and ordering rules. An input can default to an earlier node's output (`default: {from: node.output}`); plans wire the rest. A graph file also needs a top-level `version: "X.Y.Z"`.
 
 ```yaml
 nodes:
@@ -81,7 +81,8 @@ nodes:
     outputs:
       - name: orderId
         type: string
-        path: id
+      - name: status
+        type: string
     satisfies: [order]
     cleanup: cancelOrder
 
@@ -94,28 +95,32 @@ nodes:
     outputs:
       - name: status
         type: string
-        path: status
     requires: [order]
 ```
+
+Outputs have no JSON path in the graph: the node's template extracts each output by name (see [Template Schema](#template-schema)).
 
 ### Key Node Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `adapter` | yes | Links to a template file by adapter name |
+| `adapter` | yes | Links to the template whose `adapter` field has this name |
 | `inputs` | no | Typed inputs resolved at runtime from plan values or defaults |
-| `outputs` | no | Named values extracted from the HTTP response |
-| `satisfies` | no | Ordering tokens this node provides |
-| `requires` | no | Ordering tokens this node depends on |
+| `outputs` | no | Named values the template extracts from the HTTP response |
+| `satisfies` | no | Prerequisite tokens this node provides |
+| `requires` | no | Prerequisite tokens this node depends on |
 | `cleanup` | no | Node to run during teardown (e.g., delete what this node created) |
-| `conditions` | no | Error detection rules on response status codes |
+| `errorDetection` | no | Rules that fail a successful response whose body reports an error |
+| `oas` | no | `operationId` (and optional `spec`) linking the node to an OpenAPI operation |
+
+Graph-level `conditions` are a separate top-level list, not a node field.
 
 ### Input Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | yes | Unique within the node |
-| `type` | yes | Data type: `string`, `integer`, `float`, `boolean`, `date`, `money`, custom |
+| `type` | yes | Data type: `string`, `integer`, `float`, `boolean`, `date`, `datetime`, `money`, `enum[a, b]`, `X[]`, or a custom name |
 | `optional` | no | If true, operation can run without this input |
 | `default` | no | Scalar literal, pool (YAML list), or rich default with `from`/`select` |
 
@@ -138,9 +143,10 @@ default:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `name` | yes | Output name, referenced as `nodeName.outputName` in plans |
+| `name` | yes | Output name, referenced as `stepId.outputName` in plans (the step ID defaults to the node name) |
 | `type` | yes | Data type |
-| `path` | no | gjson extraction path into the JSON response |
+| `optional` | no | If true, the template need not extract it |
+| `display` | no | Label that prints the value under the step in run output |
 | `elementFields` | no | For array outputs — describes fields on each element |
 
 ### Array Outputs
@@ -180,30 +186,25 @@ request:
 
 response:
   extract:
-    - name: orderId
-      path: id
-    - name: status
-      path: status
+    orderId: id
+    status: status
 ```
 
 ### Template Rules
 
-- `adapter` must match a graph node's `adapter` field
-- `{{placeholder}}` in path, headers, and body are replaced with resolved input values
-- `response.extract` maps output names to gjson paths into the response JSON
-- For array extraction, use `type: array` with `fields` listing each element field
+- `adapter` must match a graph node's `adapter` field; the file name does not matter
+- `{{placeholder}}` in path, headers, and body are replaced with resolved input values; a placeholder with no value fails the request (`unresolved placeholders: …`), so wrap optional parts in `{{?name}}…{{/name}}`
+- `response.extract` is a map from output name to a gjson path into the response JSON (`$.` prefixes are accepted)
+- For array extraction, give the output a `path` and a `fields` map from element field name to a path within each element; add `optional: true` to an entry whose path may be missing
 
 ```yaml
 response:
   extract:
-    - name: items
-      type: array
+    items:
       path: results
       fields:
-        - name: itemId
-          path: id
-        - name: title
-          path: name
+        itemId: id
+        title: name
 ```
 
 Cross-ref: [Templates](templates.md)
@@ -228,6 +229,8 @@ headers:
   Accept: application/json
 ```
 
+That is the single-environment format. A multi-environment file has top-level `shared:` and `environments:` instead, with `extends`, `vars` (`${name}` substitution), and `include`; select one with `--env` or the manifest's `defaultEnvironment`.
+
 ### Auth Types
 
 | Type | Credentials | Description |
@@ -235,7 +238,7 @@ headers:
 | `none` | — | No authentication |
 | `apikey` | `key` | Sent in the header specified by `headerName` |
 | `bearer` | `token` | Sent as `Authorization: Bearer <token>` |
-| `oauth2` | `username`, `password`, `clientId`, `clientSecret` | ROPC flow via `tokenUrl` |
+| `oauth2` | `username`, `password`, `clientId`, `clientSecret` | Token request to `tokenUrl`. `grantType` defaults to `password`; `client_credentials` also works, but all four credentials are still required and sent, so give unused ones a placeholder such as `{source: literal, value: unused}`. `extraParams` adds form fields |
 
 ### Secrets
 
@@ -277,11 +280,9 @@ overrides:
 Full plans spell out every step:
 
 ```yaml
-metadata:
-  name: create-and-verify-order
-  description: "Create an order and verify it exists"
 intent:
-  summary: "End-to-end order creation test"
+  goal: verify
+  description: "Create an order and verify it exists"
 execution:
   steps:
     - id: create
@@ -295,6 +296,7 @@ execution:
             expect: 201
     - id: verify
       node: getOrder
+      isGoal: true
       values:
         orderId:
           from: create.orderId
@@ -306,11 +308,10 @@ execution:
             value: "confirmed"
   cleanup:
     - node: cancelOrder
-      values:
-        orderId:
-          from: create.orderId
       runOn: always
 ```
+
+A plan's top-level keys are `metadata` (`created`, `prompt`, `graphVersion`), `graph`, `auth`, `headers`, `intent` (`goal` — the step ID of the `isGoal` step — `description`, and `constraints`), and `execution` (`steps`, `verification`, `cleanup`). Anything else is rejected.
 
 ### Step Value Forms
 
@@ -327,11 +328,22 @@ Assertions live under `assertions.mechanical` on each step.
 
 | Type | Fields | Description |
 |------|--------|-------------|
-| `status` | `expect` | HTTP status code |
-| `fieldExists` | `path` | JSON path exists in response |
-| `fieldEquals` | `path`, `value` | JSON path value matches expected |
-| `predicate` | `expr` | Boolean expression (e.g., `status >= 200 && status < 300`) |
+| `status` | `expect` | HTTP status: an exact code (`201`) or a class (`2xx`, `4xx`) |
+| `fieldExists` | `path` | Path exists and is not null |
+| `fieldEquals` | `path`, `value` | Value at the path equals `value` |
+| `predicate` | `expr` | Boolean expression over the same data, such as `total > 0 && currency == "USD"` |
 | `schema` | — | Validate response body against the node's OAS response schema. Requires the project to have OAS specs configured on its graph nodes; otherwise the assertion is reported as `skipped`. |
+
+`fieldExists`, `fieldEquals`, and `predicate` read the step's **extracted outputs**, keyed by output name, not the raw HTTP body (they fall back to the body only on a response with status 400 or above). Add `raw: true` to check the raw response body instead. A predicate cannot see the HTTP status: `status >= 200` reads an output named `status`. Check the status with `type: status`:
+
+```yaml
+assertions:
+  mechanical:
+    - type: status
+      expect: 2xx
+    - type: predicate
+      expr: 'orderStatus == "confirmed"'
+```
 
 ### Cleanup
 
@@ -340,24 +352,24 @@ Cleanup steps run after the plan completes (success or failure) to release resou
 ```yaml
 cleanup:
   - node: cancelOrder
-    values:
-      orderId: {from: create.orderId}
     runOn: always    # always | success | failure
 ```
+
+A cleanup step takes only `node` and `runOn`. Its inputs are matched by name against the outputs of the steps that ran, so `cancelOrder`'s `orderId` input takes the `orderId` output of the step that produced one. A node's graph-level `cleanup:` pairing runs even when the plan does not list it.
 
 Cross-ref: [Plans and Recipes](plans.md)
 
 ## Depth and Negative Testing Primitives
 
-AAT exposes three primitives for authoring per-endpoint error-case suites. All
+AAT exposes four primitives for authoring per-endpoint error-case suites. All
 compose with the normal plan/run pipeline — no separate CLI surface. You, the
 agent, compose them into plans; AAT just runs them.
 
 ### 1. `expectFailure` on a step
 
 Declare that failure is the expected outcome. The step passes when the response
-status matches one of the listed codes and fails if a 2xx is returned. Retries
-are skipped — the first response wins. Cleanup still runs.
+status matches one of the listed codes and fails on any other status, including
+a 2xx. Retries are skipped — the first response wins. Cleanup still runs.
 
 ```yaml
 - node: createOrder
@@ -509,14 +521,15 @@ Semantics:
 
 **Depth test an endpoint that needs setup state:** write a plan whose terminal
 step targets the endpoint under test, with a `mutations:` block covering the
-negative cases. The prereq chain runs once; each mutation runs in isolation.
+negative cases. The prereq chain runs once and each mutation runs as its own
+sibling step (use `mutationScope: isolated` when each needs fresh prereqs).
 
 **Turn an existing happy-path plan into a negative test without touching it:**
 drop an overlay file with `values:` and `expectFailure:` on the target node.
 Useful for local debugging and for layering error cases into a CI matrix.
 
 **Validate response shapes:** add `- type: schema` to the step's mechanical
-assertions. Requires OAS specs wired into the graph (see `OASRef` on nodes).
+assertions. Requires OAS specs wired into the graph (the node's `oas:` reference).
 
 **Mix happy-path and error cases in one archive:** combine `mutations:` with
 schema assertions on the parent. The archive captures the happy-path step, the
@@ -557,16 +570,18 @@ workflows:
 
   - name: Loyalty Points
     kind: addon
-    description: "Apply loyalty points after payment"
-    after: payment
+    description: "Apply loyalty points after the order is created"
+    after: createOrder
     wire:
       orderId: createOrder.orderId
     template: workflows/addons/loyalty.yaml
 ```
 
+An addon's `after` names a node in the base plan (or a list of nodes; the first one present wins), not a slot.
+
 ### Workflow Template Files
 
-Templates look like plan execution blocks — steps with values, assertions, and cleanup:
+Templates are plan files — steps with values, assertions, and cleanup. A base workflow marks each choice point with a `slot:` step that composition replaces with the chosen option's steps:
 
 ```yaml
 # workflows/order-base.yaml
@@ -580,17 +595,16 @@ execution:
         mechanical:
           - type: status
             expect: 201
-    # slot: payment (filled at composition time)
+    - slot: payment
+      dependsOn: [createOrder]
     - id: verifyOrder
       node: getOrder
+      dependsOn: [payment]
       values:
         orderId:
           from: createOrder.orderId
   cleanup:
     - node: cancelOrder
-      values:
-        orderId:
-          from: createOrder.orderId
       runOn: always
 ```
 
@@ -602,7 +616,7 @@ Cross-ref: [Workflows](workflows.md)
 
 ```bash
 aat validate                  # full project validation
-aat validate graph            # graph structure only
+aat validate graph            # graph structure, OAS alignment, template outputs
 aat validate plan --plan X    # single plan
 aat validate workflow         # all workflows
 ```
@@ -617,7 +631,7 @@ aat run batch orders/         # execute plans in a subdirectory
 
 ### Read Output
 
-Archives are written to `runs/` (or the configured archive directory). The directory structure:
+Archives are written to the manifest's `archives` directory (`_output/runs/` when it is not set, or `--output`). The directory structure:
 
 ```
 runs/
@@ -642,18 +656,24 @@ The archive is the primary debugging artifact. Read it to understand what happen
     "runId": "string",
     "timestamp": "RFC3339",
     "plan": { },
+    "instantiatedPlan": { },
     "environment": "string",
     "graphVersion": "string",
-    "toolVersion": "string"
+    "toolVersion": "string",
+    "attempt": 1,
+    "totalAttempts": 2,
+    "layers": ["string"]
   },
   "steps": [ StepRecord ],
   "cleanup": [ StepRecord ],
   "result": {
-    "outcome": "passed | failed | error",
+    "outcome": "passed | failed | error | aborted | stopped",
     "error": "string (omitted if blank)"
   }
 }
 ```
+
+`plan` is the plan as loaded (a recipe's reconstituted plan); `instantiatedPlan` is the plan after graph defaults, layers, and mutations were applied. `attempt`, `totalAttempts`, and `layers` are omitted when unused.
 
 **StepRecord** — one per executed step:
 
@@ -667,6 +687,7 @@ The archive is the primary debugging artifact. Read it to understand what happen
   "request": {
     "method": "POST",
     "url": "https://...",
+    "originalUrl": "string (only when an override changed the host or path)",
     "headers": { "Content-Type": "application/json" },
     "body": { }
   },
@@ -676,13 +697,19 @@ The archive is the primary debugging artifact. Read it to understand what happen
     "body": { }
   },
   "outputs": { "fieldName": "extractedValue" },
+  "transformScript": "string (the template's Lua transform, when it has one)",
+  "displayOutputs": [ { "label": "string", "name": "string", "value": "any" } ],
   "validation": {
     "passed": true,
     "results": [
       {
-        "type": "status | fieldExists | fieldEquals | predicate",
+        "type": "status | fieldExists | fieldEquals | predicate | schema",
         "passed": true,
-        "message": "string"
+        "skipped": false,
+        "message": "string",
+        "path": "string",
+        "expr": "string",
+        "raw": false
       }
     ]
   },
@@ -695,7 +722,8 @@ The archive is the primary debugging artifact. Read it to understand what happen
       "filterExpr": "string",
       "filteredSize": 3,
       "strategy": "first | last | index | random | min | max | match",
-      "selectedIndex": 0
+      "selectedIndex": 0,
+      "selectionName": "string (named selections only)"
     }
   ],
   "resolutions": [
@@ -705,24 +733,43 @@ The archive is the primary debugging artifact. Read it to understand what happen
       "rawValue": "any",
       "finalValue": "any",
       "fromStep": "string",
-      "fromOutput": "string"
+      "fromOutput": "string",
+      "fromInput": "string",
+      "expression": "string",
+      "constraint": "string",
+      "constraintOk": true,
+      "poolIndex": 0,
+      "poolSize": 3,
+      "tried": ["any"]
     }
   ],
   "errorClassification": {
-    "category": "ClientError | ServerError | Timeout | Parsing",
+    "category": "transient | client | auth | server | adapter | network | timeout | response_error",
     "detail": "string",
-    "action": "Retry | Skip | Fail | Relax"
+    "action": "retried | failed | failed_fast",
+    "retryAttempt": 0
   },
   "expectFailure": {
     "expected": [400, 422],
     "actual": 400,
     "passed": true
   },
+  "responseBodyError": {
+    "rulePath": "string",
+    "rule": "exists | non-empty | equals",
+    "message": "string",
+    "code": "string",
+    "category": "string"
+  },
+  "retryCount": 0,
+  "retriedOn": ["transient"],
   "error": "string (omitted if blank)"
 }
 ```
 
-Sensitive headers (Authorization, X-API-Key, Cookie, etc.) are redacted to `"[REDACTED]"`. Request and response bodies are embedded JSON.
+Fields with no value are omitted. `errorClassification.category` uses the same names as a step's `retry.on` and `retry.failOn` lists; `responseBodyError` records the graph `errorDetection` rule that failed a successful response.
+
+Sensitive headers (`Authorization`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`, `Cookie`, `Set-Cookie`) are redacted to `"[REDACTED]"`, and known secret values (every credential configured for the run) are scrubbed from all headers, `inputs`, `resolutions`, and the plan's literal credentials. See [Archives](archives.md). Request and response bodies and outputs are stored as-is. A JSON body is embedded as JSON; any other body is stored as a JSON string.
 
 Mutation-expanded steps use the id format `<parentId>--<mutationName>` (e.g.,
 `createBooking--empty-lastName`). Each mutation sibling appears as a separate
@@ -753,12 +800,16 @@ A lightweight file for scanning run outcomes without reading the full archive:
 {
   "runId": "string",
   "timestamp": "RFC3339",
-  "outcome": "passed | failed | error",
+  "outcome": "passed | failed | error | aborted | stopped",
   "stepCount": 5,
   "passedCount": 4,
   "failedCount": 1,
   "durationMs": 1234,
-  "planName": "string"
+  "planName": "string",
+  "attempt": 1,
+  "totalAttempts": 2,
+  "layers": ["string"],
+  "issues": { "oas": 2 }
 }
 ```
 
@@ -772,40 +823,56 @@ Aggregated results from `aat run batch`:
     "version": "string",
     "batchId": "string",
     "timestamp": "RFC3339",
-    "source": "string"
+    "source": "string",
+    "toolVersion": "string",
+    "layers": ["string"],
+    "layerGroups": [["string"]]
   },
   "runs": [
     {
       "planName": "string",
       "runId": "string",
-      "outcome": "passed | failed | error",
+      "outcome": "passed | failed | error | aborted | skipped",
       "stepCount": 5,
       "passedCount": 5,
       "failedCount": 0,
       "durationMs": 1234,
-      "error": "string (omitted if blank)"
+      "error": "string (omitted if blank)",
+      "attempts": 2,
+      "layers": ["string"],
+      "permutation": "string",
+      "skipped": true,
+      "duplicateOf": "string",
+      "issues": { "oas": 2 }
     }
   ],
   "result": {
-    "outcome": "passed | failed | error",
+    "outcome": "passed | failed | error | aborted",
     "totalRuns": 3,
     "passedRuns": 2,
     "failedRuns": 1,
     "errorRuns": 0,
+    "abortedRuns": 0,
+    "skippedRuns": 0,
     "totalDurationMs": 3456
   }
 }
 ```
 
+In `summary.json` and `batch.json`, optional fields such as `attempt`, `attempts`, `layers`, `issues`, `permutation`, `skipped`, `duplicateOf`, `abortedRuns`, and `skippedRuns` are omitted when unused. `skipped` and `duplicateOf` mark a layer permutation that was skipped as a duplicate of another run.
+
 ### Common Errors
 
 | Error | Cause | Fix |
 |-------|-------|-----|
+| `line N: unknown key "K" in <section> (did you mean "X"?)` | Misspelled or unsupported key in a project file | Use the suggested key, or remove it |
 | `adapter "X" not found` | Template missing or adapter name mismatch | Check `adapter` field in template matches graph node |
-| `unknown node "X"` | Plan references a node not in the graph | Check node name spelling |
-| `unresolved input "X"` | Required input has no value, no default, and no upstream output | Add a value in the plan or a default in the graph |
-| `cycle detected` | Ordering tokens form a circular dependency | Review `requires`/`satisfies` tokens |
-| `template input "X" not in node` | Template placeholder has no matching node input | Add the input to the graph node or remove the placeholder |
+| `step N: node "X" not found in graph` | Plan references a node not in the graph | Check node name spelling |
+| `required input "X" has no plan value` / `has no value` | Required input has no value, no default, and no upstream output | Add a value in the plan or a default in the graph |
+| `requires/satisfies cycle detected: A → B → A` | Prerequisite tokens form a circular dependency | Review `requires`/`satisfies` tokens, or mark a node `cycleBreaker: true` |
+| `dependsOn cycle detected involving "A" and "B"` | Plan steps depend on each other | Fix the steps' `dependsOn` lists |
+| `unresolved placeholders: X` | A template placeholder had no value at run time | Give the input a value or default, or wrap the placeholder in a `{{?X}}…{{/X}}` block |
+| `extract path "X" (…) not found in response` | The response lacks a path the template extracts | Fix the path, or mark the extract entry `optional: true` |
 
 ## Tips for AI Assistants
 
@@ -813,9 +880,10 @@ Aggregated results from `aat run batch`:
 - **Validate early and often**: run `aat validate` after every change to catch typos before execution.
 - **Use default pools**: graph input defaults with pool lists (`default: ["A", "B", "C"]`) provide varied test data without plan-level overrides.
 - **Prefer recipes over full plans** when a workflow exists — recipes are shorter and easier to maintain.
-- **The graph declares signatures; plans declare wiring**: nodes define what an operation accepts and produces, plans wire specific outputs to specific inputs.
+- **Graph defaults wire the common case; plans wire the rest**: nodes define what an operation accepts and produces, an input's `default: {from: ...}` names the output it usually takes, and plans override or add wiring for a specific test.
 - **Read archives on failure**: when a test fails, read `archive.json` — `steps[].request` and `steps[].response` show the actual HTTP exchange, `steps[].validation` shows which assertions failed, and `steps[].errorClassification` explains what went wrong.
-- **Ordering is implicit**: nodes use `requires`/`satisfies` tokens, not explicit edges. If node B needs data from node A, they should share an ordering token.
-- **Cleanup pairing**: if a node creates a resource, set its `cleanup` field to the deletion node. Plans and workflows pick up cleanup automatically.
-- **Template placeholders must match node inputs**: every `{{name}}` in a template must correspond to an input on the linked node.
-- **Secrets are never inline**: credentials always use `source: env` to reference OS environment variables.
+- **Ordering is declared, not wired**: nodes use `requires`/`satisfies` tokens, not explicit edges. If node B needs node A to have run, give A a token that B requires; the MCP tracing tools and `aat validate` use them. A full plan runs its steps in `dependsOn` order, so list dependencies there (composing a recipe adds them from the tokens); data moves through step values (`from`, selections) and graph defaults, not through tokens.
+- **Cleanup pairing**: if a node creates a resource, set its `cleanup` field to the deletion node. The engine runs the pairing after the plan even when the plan does not list it.
+- **Template placeholders must match node inputs**: every `{{name}}` in a template should correspond to an input on the linked node; a placeholder that gets no value fails the request.
+- **Keep secrets out of files**: credentials use `source: env` to read OS environment variables (`source: literal` exists for demo values only).
+- **No LLM at run time**: `aat run` and the MCP `execute_plan` tool never call a model; nothing selects values or workflows with an LLM while a plan runs. Only `aat prompt` and the MCP `generate_plan` tool call an LLM, and only to draft a plan.

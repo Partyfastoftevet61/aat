@@ -8,7 +8,7 @@ AAT validates projects at multiple levels — graph structure, OpenAPI alignment
 aat validate
 ```
 
-Runs all checks against the project manifest. AAT auto-discovers the manifest via the standard [resolution chain](project-setup.md#auto-discovery), or you can specify one explicitly with `--manifest`.
+Runs all checks against the project manifest. AAT auto-discovers the manifest via the standard [resolution chain](project-setup.md#resolution-priority), or you can specify one explicitly with `--manifest`.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -35,6 +35,16 @@ Layers:                 OK (12 layers)
 Plans:                  OK (7 files, 3 recipes)
 
 Project validation: PASSED
+```
+
+A section with warnings but no errors shows `WARN` and lists them. Warnings do not fail validation unless you pass `--strict`:
+
+```
+OAS validation:         WARN
+  Warnings:
+    - node "paymentCharge": output "paymentStatus" not found in OAS 2xx response schema for "paymentCharge"
+...
+Project validation: PASSED with warnings in 1 section (--strict fails on them)
 ```
 
 When sections fail, each error names its file (relative to the working directory) and, for YAML problems, the line:
@@ -95,7 +105,7 @@ Validates graph structure, OAS alignment, and template consistency in isolation.
 |------|------|---------|-------------|
 | `--graph` | path | from manifest | API graph file (required) |
 | `--oas` | path | from graph | Override OpenAPI spec path |
-| `--templates` | path | — | Templates directory (enables adapter/template checks) |
+| `--templates` | path | from manifest | Templates directory (enables adapter/template checks) |
 | `--strict` | bool | `false` | Treat warnings as errors |
 
 ### Structural Checks
@@ -195,7 +205,7 @@ Plan validation catches:
 
 ### Unfed Inputs (`--unfed`)
 
-The `--unfed` flag lists inputs that have no plan value and no graph default. This is useful for checking workflow template completeness — unfed inputs are the values that must be supplied by a recipe, the LLM pipeline, or a runtime value pool.
+The `--unfed` flag lists inputs that have no plan value and no graph default. This is useful for checking workflow template completeness — unfed inputs are the values a recipe, an AI assistant, or `aat prompt` must supply.
 
 ```
 $ aat validate plan --plan workflows/order-lifecycle.yaml --unfed

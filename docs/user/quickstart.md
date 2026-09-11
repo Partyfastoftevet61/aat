@@ -1,8 +1,8 @@
 # Quickstart
 
-Get from zero to a running API test in 5 minutes. This guide uses the [Petstore API](https://petstore.swagger.io/) as an example — substitute your own API to make it real.
+Get from an OpenAPI spec to a passing, self-cleaning API test in about five minutes. This guide uses the public [Swagger Petstore](https://petstore.swagger.io/) API, which needs no account; substitute your own spec and base URL to make it real.
 
-> **Want to watch AAT work before setting it up?** The [shop example](examples/shop.md) needs no API key or network:
+> **Want to watch AAT work before setting anything up?** The [shop example](examples/shop.md) needs no API key or network:
 >
 > ```bash
 > aat-sandbox init shop && cd shop
@@ -12,30 +12,34 @@ Get from zero to a running API test in 5 minutes. This guide uses the [Petstore 
 
 ## Prerequisites
 
-- AAT installed — grab a release binary (see the Install section of the README) or build from source with `make build`
-- An OpenAPI spec for your API (or use the Petstore spec)
-- Optional but recommended: an AI coding assistant (Claude Code, Cursor, etc.) — see [Accelerating with AI Assistance](#accelerating-with-ai-assistance)
+- AAT installed — see [Install](install.md)
+- `curl`, and network access to `petstore.swagger.io`
 
-## Step 1: Create the Project
+## Step 1: Scaffold from the Spec
 
-Create a project directory and scaffold from your OpenAPI spec:
+Create a project directory, download the Petstore spec, and let `aat generate` scaffold a graph and templates from it:
 
 ```bash
 mkdir petstore-tests && cd petstore-tests
+curl -sSLO https://raw.githubusercontent.com/gburgyan/aat/main/examples/petstore/petstore-spec.yaml
 
-aat generate --oas petstore.yaml \
+aat generate --oas petstore-spec.yaml \
   --output-graph graph.yaml \
   --output-templates templates/
 ```
 
-This creates a `graph.yaml` with one node per API operation and a `templates/` directory with one YAML file per operation. The scaffold is a starting point — it includes every operation but has no ordering, cleanup, or workflows.
+```text
+Generated 4 nodes, 4 templates written to templates/
+```
 
-Now create the project manifest:
+`graph.yaml` now has one node per operation (`addPet`, `getPetById`, `deletePet`, `findPetsByStatus`) and `templates/` has one request template per node. The scaffold knows each operation's inputs and outputs, but not the order operations must run in, which operation undoes which, or what you want to call things. The next steps add that. See [Scaffolding from OpenAPI](generate.md) for everything the generator writes.
+
+## Step 2: Add a Manifest and an Environment
+
+The manifest tells every `aat` command where the project's files are. Create `aat-project.yaml`:
 
 ```yaml
-# aat-project.yaml
-name: petstore
-description: Petstore API integration tests
+name: petstore-tests
 graph: graph.yaml
 templates: templates/
 environment: env.yaml
@@ -43,209 +47,221 @@ plans: plans/
 archives: runs/
 ```
 
-Cross-ref: [Project Setup](project-setup.md)
-
-## Step 2: Set Up the Environment
-
-Create an environment file with the API base URL and auth settings:
+The environment says where the API lives and how to authenticate. The Petstore is public, so create `env.yaml` with no auth:
 
 ```yaml
-# env.yaml
-environment: dev
+environment: petstore
 apiBaseUrl: https://petstore.swagger.io/v2
-
 auth:
-  type: apikey
-  headerName: api_key
-  credentials:
-    key:
-      source: env
-      var: PETSTORE_API_KEY
+  type: none
 ```
 
-For a local Petstore instance with no auth, use `auth: { type: none }` instead.
+Real APIs use `oauth2`, `apikey`, or `bearer` auth, with secrets read from environment variables. See [Project Setup](project-setup.md) and [Environments](environments.md).
 
-Cross-ref: [Environments](environments.md)
+## Step 3: Shape the Graph
 
-## Step 3: Refine the Graph
-
-The scaffold includes every operation — trim it to the nodes you need and add ordering. Replace the scaffolded `graph.yaml` with a focused version:
+Replace the scaffolded `graph.yaml` with the three operations this test needs, plus the two facts the spec cannot express — `addPet` must run before the others, and `deletePet` undoes it:
 
 ```yaml
-# graph.yaml
+version: 1.0.0
+oas: petstore-spec.yaml
+
 nodes:
   addPet:
-    description: "Add a new pet to the store"
+    description: Add a new pet to the store
     adapter: addPet
-    inputs:
-      - name: name
-        type: string
-        default: ["Buddy", "Luna", "Max", "Bella"]
-      - name: status
-        type: string
-        default: "available"
-    outputs:
-      - name: petId
-        type: integer
-        path: id
-      - name: petName
-        type: string
-        path: name
+    oas:
+      operationId: addPet
     satisfies: [pet]
     cleanup: deletePet
+    inputs:
+      - name: name
+        type: string
+      - name: status
+        type: string
+        optional: true
+        default: available
+    outputs:
+      - name: petId
+        type: integer
+      - name: name
+        type: string
 
   getPetById:
-    description: "Find a pet by ID"
+    description: Find pet by ID
     adapter: getPetById
+    oas:
+      operationId: getPetById
+    requires: [pet]
     inputs:
       - name: petId
         type: integer
     outputs:
       - name: name
         type: string
-        path: name
       - name: status
         type: string
-        path: status
-    requires: [pet]
 
   deletePet:
-    description: "Delete a pet"
+    description: Deletes a pet
     adapter: deletePet
+    oas:
+      operationId: deletePet
+    requires: [pet]
     inputs:
       - name: petId
         type: integer
-    requires: [pet]
 ```
 
-Key points:
+- `satisfies: [pet]` and `requires: [pet]` record that `addPet` has to come first. A plan still orders its steps with `dependsOn`, as in Step 4; AAT turns the tokens into `dependsOn` when it composes a plan from a workflow, and the MCP tools use them to trace which operations a test needs.
+- `cleanup: deletePet` pairs creation with teardown. Whenever a plan runs `addPet`, AAT runs `deletePet` afterwards — even when a later step fails.
+- `addPet`'s output is called `petId` rather than the API's `id`, so it matches `deletePet`'s input name. That is how the cleanup step finds the ID to delete.
+- `status` defaults to `available`, so plans only have to name the pet.
 
-- `satisfies: [pet]` on addPet means it provides the `pet` ordering token
-- `requires: [pet]` on getPetById and deletePet means they must run after a node that satisfies `pet`
-- `cleanup: deletePet` pairs addPet with its teardown operation
-- `default: ["Buddy", "Luna", "Max", "Bella"]` is a value pool — AAT picks one per run
+Templates translate between these names and HTTP. Update `templates/addPet.yaml` to send an empty `photoUrls` list (the API requires the field; this test does not care about photos) and to extract the new ID as `petId`:
 
-Cross-ref: [API Graphs](graphs.md)
+```yaml
+adapter: addPet
+protocol: http
+request:
+  method: POST
+  path: /pet
+  headers:
+    Content-Type: application/json
+  body: |-
+    {
+      "name": "{{name}}",
+      "photoUrls": []{{?status}},
+      "status": "{{status}}"{{/status}}
+    }
+response:
+  extract:
+    petId: id
+    name: name
+```
+
+`{{?status}}…{{/status}}` is a conditional block: its contents are sent only when `status` has a value. Trim `templates/getPetById.yaml` to the outputs the graph declares, and remove the template for the node you dropped:
+
+```yaml
+adapter: getPetById
+protocol: http
+request:
+  method: GET
+  path: /pet/{{petId}}
+response:
+  extract:
+    name: name
+    status: status
+```
+
+```bash
+rm templates/findPetsByStatus.yaml
+```
+
+The scaffolded `templates/deletePet.yaml` is already right. See [API Graphs](graphs.md) and [Templates](templates.md).
 
 ## Step 4: Write a Plan
 
-Create a plan that adds a pet, verifies it exists, then cleans up:
+A plan is the test itself. Create `plans/create-and-verify.yaml`:
 
 ```yaml
-# plans/create-and-verify.yaml
-metadata:
-  name: create-and-verify
-  description: "Add a pet, verify it was created, clean up"
 intent:
-  summary: "Basic pet creation smoke test"
+  goal: verify
+  description: Add a pet, read it back, and delete it
+
 execution:
   steps:
     - id: add
       node: addPet
       values:
-        name: "Buddy"
-        status: "available"
-      assertions:
-        mechanical:
-          - type: status
-            expect: 200
-      isGoal: true
+        name: Buddy
+
     - id: verify
       node: getPetById
+      dependsOn: [add]
+      isGoal: true
       values:
         petId:
           from: add.petId
-      dependsOn: [add]
       assertions:
         mechanical:
           - type: status
             expect: 200
           - type: fieldEquals
             path: name
-            value: "Buddy"
-  cleanup:
-    - node: deletePet
-      runOn: always
+            value: Buddy
 ```
 
-The plan says: create a pet named "Buddy", then fetch it by the returned ID and verify the name matches, then delete it regardless of outcome. Cleanup steps take no `values:` — `deletePet` needs a `petId`, and AAT fills it by matching the input name against the outputs of the steps that ran (here, `add`'s `petId`).
+The `add` step creates a pet named Buddy. The `verify` step fetches it by the ID `add` returned (`from: add.petId`) and asserts that the API answers `200` with the same name. There is no cleanup in the plan: the graph's `cleanup: deletePet` pairing supplies it. See [Plans and Recipes](plans.md).
 
-Cross-ref: [Plans and Recipes](plans.md)
-
-## Step 5: Run It
-
-Validate the project structure, then execute:
+## Step 5: Validate and Run
 
 ```bash
-aat validate
+aat validate --strict
+```
+
+```text
+Manifest:        OK (project: petstore-tests)
+Environment:     OK (single environment)
+Graph structure: OK (3 nodes)
+OAS validation:  OK
+Adapter outputs: OK (3 templates)
+Template inputs: OK
+Plans:           OK (1 file)
+
+Project validation: PASSED
+```
+
+`aat validate` checks every file against the others and against the spec — an output the template never extracts, a required body field the template never sends, a misspelled key in any YAML file. Then run the plan:
+
+```bash
 aat run plan create-and-verify
 ```
 
-Expected output:
-
-```
+```text
 aat: loading environment...
-aat: loaded environment "dev"
+aat: loaded environment "petstore"
 aat: loaded graph (3 nodes)
 aat: loaded 3 templates
-aat: authenticated via apikey
+aat: loaded 1 OAS spec(s) for runtime validation
+aat: authenticated via none
 aat: executing plan (2 steps)...
 
-  [1/2] addPet               200  145ms
-  [2/2] getPetById           200  89ms
+  [1/2] addPet               200  231ms
+  [2/2] getPetById           200  39ms
 
   cleanup:
-    deletePet              200  52ms
+    deletePet              200  45ms
 
-PASSED (2/2 steps, 286ms)
-Archive: runs/run-20260910-143052-a1b2c3d4/archive.json
+PASSED (2/2 steps, 315ms)
+Archive: /home/you/petstore-tests/runs/run-20260910-225657-d50b86b9/archive.json
 ```
 
-Each step line shows the index, node name, HTTP status, and duration; the `cleanup:` block lists the teardown that ran afterwards. The `deletePet` cleanup appears once even though it is declared both in the plan and on the `addPet` node — a graph-level pairing whose node already ran as a plan-level cleanup step is skipped.
+Each line shows the step, its HTTP status, and its duration. Because the graph references the spec, every request and response was also checked against it; a mismatch would show as an `OAS: N warning(s)` marker on the step.
 
-The full request/response archive is written to `runs/`. Use `aat web` to browse it visually (or `aat web view run-20260910-143052-a1b2c3d4` to jump straight to this run).
-
-## Accelerating with AI Assistance
-
-An AI coding assistant can dramatically speed up the authoring loop. Instead of writing YAML by hand, you describe what you want and the AI edits files, runs validation, reads output, and iterates.
-
-The loop becomes:
-
-1. Describe the test you want (natural language)
-2. AI edits graph, templates, plans — directly in YAML
-3. AI runs `aat validate` to check structure
-4. AI runs `aat run plan` to execute
-5. AI reads the output or archive, fixes issues, repeats
-
-To give the AI structural context, point it at the [AI Assistant Primer](llms.md).
-
-Example prompts to try:
-
-- "Refine graph.yaml — add ordering and cleanup for the pet operations"
-- "Create a workflow for adding and verifying a pet"
-- "Write three recipe variations that test with different pet names and statuses"
-- "Run aat validate and fix any errors"
-
-The AI benefits from direct access to your API specification. Companion MCP servers make this seamless:
-
-- **[exoas](https://github.com/gburgyan/exoas)** — serves OpenAPI specs so the AI can look up operations, schemas, and parameters
-- **[expost](https://github.com/gburgyan/expost)** — serves Postman collections so the AI can browse requests and saved examples
-
-Configure these alongside your coding assistant so it can query the API spec directly rather than guessing at request/response shapes.
+> **About the public Petstore:** it gives every pet created without an `id` the same ID, and anyone on the internet can write to it. If another client creates a pet between your two steps, `verify` can read their pet and fail. Rerun, or point the quickstart at your own API.
 
 ## What Just Happened
 
-AAT loaded the plan, resolved input values (literals and `{from: ...}` references), made HTTP calls in dependency order, checked assertions against the responses, and ran cleanup. The full archive with request/response pairs, timing, and status codes is in `runs/`.
+AAT ordered the steps, resolved each input (the literal `Buddy`, the `status` default, the `petId` from the first response), sent the requests, checked the assertions, and deleted the pet. The archive in `runs/` records every request and response, how each value was resolved, and each assertion's result. Browse it with `aat web view latest` (the web UI needs a release or `make build` binary), or see [Archives](archives.md).
+
+## Let an AI Assistant Take It from Here
+
+AAT's MCP server gives AI coding assistants such as Claude Code the graph, the templates, and tools to validate and run plans, so you can ask for tests in plain language and review the YAML they write:
+
+```bash
+aat mcp serve
+```
+
+Try prompts such as "add a test that finds pets by status and reads one back" or "write a negative test for getting a pet that does not exist". [MCP Server](mcp-server.md) shows how to register the server with your assistant, and the [AI Assistant Primer](llms.md) is the reference it reads.
 
 ## Next Steps
 
 | Topic | Link |
 |-------|------|
-| Build a complete project from scratch | [Tutorial](tutorial.md) |
-| AI-facing schema reference | [AI Assistant Primer](llms.md) |
-| How values are resolved at runtime | [Value Resolution](value-flow.md) |
-| Reusable test patterns | [Workflows](workflows.md) |
-| Compact test format | [Plans: Recipes](plans.md#recipes) |
-| Project validation | [Validation](validation.md) |
-| CI/CD pipeline integration | [CI/CD Integration](ci-cd.md) |
-| IDE AI integration | [MCP Server](mcp-server.md) |
+| A complete project built step by step, offline | [Tutorial](tutorial.md) |
+| Every file of a finished example explained | [Petstore Walkthrough](petstore-walkthrough.md) |
+| Everything AAT can do, in one project | [Shop example](examples/shop.md) |
+| How inputs get their values | [Value Resolution](value-flow.md) |
+| Reusable test patterns and compact recipes | [Workflows](workflows.md), [Plans: Recipes](plans.md#recipes) |
+| Running in CI | [CI/CD Integration](ci-cd.md) |

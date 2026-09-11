@@ -19,7 +19,7 @@ When the engine resolves an input for a step, it checks these sources in order a
 
 Priorities 5 and 6 are merged during plan instantiation — graph defaults (including value pools) are copied into the plan's step values before execution, so the engine sees them at priority 5. Layers (when applied) override graph defaults at the same level. This means a well-designed graph with pools on configurable inputs can handle most values automatically — plans only need to specify values that the test requires to be specific.
 
-The explicit-absence marker `{}` short-circuits this chain: it tells the engine to skip the input entirely, bypassing graph defaults and auto-wiring.
+The explicit-absence marker `{}` short-circuits this chain for an optional input: it tells the engine to skip the input entirely, bypassing graph defaults and auto-wiring. On a required input, a plain literal graph default still applies, and without one the step fails.
 
 ## Literal Values
 
@@ -59,7 +59,7 @@ When the referenced output is a scalar, the value is used directly. When the out
 
 ### Dependency Inference
 
-Any `from` reference implies an execution dependency. During plan instantiation, the engine automatically adds the referenced step to `dependsOn` if it's not already listed. You can still declare `dependsOn` explicitly for clarity, but it's not required for `from` references.
+Any `from` reference implies an execution dependency, and the referenced step must appear in the step's `dependsOn`. In a hand-written full plan, list it yourself: `aat validate plan` (and `aat run`) reject a `from`, `fromInput`, or named selection whose step is missing from `dependsOn`. Workflow composition adds the entry for recipes and workflow templates, and plan instantiation adds it for `from` references that come from graph input defaults, so those need no `dependsOn` entry written out.
 
 ## Array Selection
 
@@ -109,7 +109,7 @@ The `fromSelection` syntax is `selectionName.fieldName`. If the field part is om
 
 | Strategy | Required Fields | Description |
 |----------|----------------|-------------|
-| `first` | *(none)* | First element (after filtering). This is the default. |
+| `first` | *(none)* | First element (after filtering). This is the default when there is no `filter`; with a `filter` and no `strategy`, the selection works like `match`. |
 | `last` | *(none)* | Last element (after filtering) |
 | `index` | `index` | Element at the specified zero-based index (after filtering) |
 | `random` | *(none)* | Random element (after filtering) |
@@ -186,7 +186,7 @@ steps:
 
 This differs from `from` (which references step *outputs* extracted from API responses). `fromInput` references the *inputs* that were sent to a previous step. This is useful when multiple steps need consistent input values — for example, using the same origin city for both a search and a booking.
 
-The syntax is `stepId.inputName`. The referenced step must be listed in `dependsOn` (or a dependency ancestor), and the input name must exist on the source step's graph node.
+The syntax is `stepId.inputName`. The referenced step must be listed directly in `dependsOn` (a transitive dependency is not enough), and the input name must exist on the source step's graph node.
 
 `fromInput` is mutually exclusive with `from`, `fromSelection`, `fromResolved`, `default`, and `pool`.
 
@@ -213,7 +213,7 @@ values:
   region: "{{env.TEST_REGION}}"
 ```
 
-Environment variables are read from the OS environment. An error is raised if the variable is not set or empty.
+`{{env.KEY}}` checks the OS environment variable `KEY` first, then the `values:` map of the selected environment in env.yaml. An error is raised if neither provides a non-empty value. This works wherever a value is resolved — plan step values, graph input defaults, layer values, and pool entries — but not in request templates: a template placeholder is filled only from step inputs, and env.yaml `values:` do not reach templates. To send an environment value, give the input a default such as `"{{env.postalCode}}"` in the graph and use `{{postalCode}}` in the template.
 
 ### Reference Arithmetic
 
@@ -239,13 +239,20 @@ When an expression is the entire value (no surrounding text), the result retains
 
 ## Fallback Pools
 
-A pool provides alternative values when the default isn't suitable. The engine tries each pool entry (evaluating any expressions) and returns the first valid one:
+A pool is a list of candidate values. The engine uses it in two cases only:
+
+- **There is no `default`.** The engine picks from the pool. This is what the list shorthand `default: [a, b, c]` on a graph input produces: a random pick on each run.
+- **The `default` fails its `constraint`.** The engine then tries the pool entries (evaluating any expressions) and uses the first one that passes.
+
+A `default` without a `constraint` always wins, so a pool next to it is never used:
 
 ```yaml
 values:
-  currency:
-    default: "EUR"
-    pool: ["USD", "GBP", "JPY", "CHF"]
+  origin: "JFK"
+  destination:
+    default: "JFK"
+    pool: ["LAX", "ORD", "SFO"]
+    constraint: "value != origin"   # "JFK" fails, so a pool entry is used
 ```
 
 Pool iteration order depends on `poolStrategy`:
@@ -255,7 +262,11 @@ Pool iteration order depends on `poolStrategy`:
 | `random` | Shuffled order (default) |
 | `sequential` | Declaration order |
 
-If the default value is provided, it is tried first. If it doesn't work, the engine iterates through the pool.
+A pool entry whose expression cannot be evaluated is skipped. When no entry passes the constraint, the step fails with an error naming the constraint. An expression in the `default` itself that cannot be evaluated is an error, not a reason to fall back.
+
+### Constraints
+
+`constraint` is a [predicate expression](#predicate-expression-syntax) that a candidate value must satisfy. The candidate is available as `value`, and every input of the same step resolved before this one is available by name — inputs resolve in the order the graph node declares them, so `origin` must come before `destination` in the example above. The constraint is checked against the `default` and against pool entries; it is not applied to `from`, `fromSelection`, `fromInput`, or `fromResolved` values. Graph input defaults and layer entries accept the same `pool`, `poolStrategy`, and `constraint` fields (a graph default writes its literal as `value:` instead of `default:`).
 
 ## Type Coercion
 
@@ -273,7 +284,7 @@ Coercion is best-effort — if parsing fails, the original value is passed throu
 
 ## Predicate Expression Syntax
 
-Predicate expressions are used in selection filters and `predicate` assertions. They support standard comparison and logical operators:
+Predicate expressions are used in selection filters, value `constraint`s, and `predicate` assertions. They support standard comparison and logical operators:
 
 ### Operators
 
@@ -292,13 +303,19 @@ Predicate expressions are used in selection filters and `predicate` assertions. 
 
 ### Value Types
 
-- **Strings**: `"quoted"` (double quotes required)
-- **Numbers**: `42`, `3.14` (integer and float)
+- **Strings**: `"double"` or `'single'` quotes — single quotes avoid escaping inside a double-quoted YAML string, as in `filter: "status == 'available'"`. There are no escape sequences.
+- **Numbers**: `42`, `3.14`, `-5` (integer and float)
 - **Booleans**: `true`, `false`
-- **Identifiers**: `fieldName`, `nested.path` (dot notation for nested fields)
+- **Identifiers**: `fieldName`, `nested.path` (dot notation through nested objects; no array indexes or queries)
 - **Parentheses**: `(a || b) && c`
 
-Predicates evaluate against a context map. In selection filters, the context is the array element. In `predicate` assertions, the context is the response body parsed as a map.
+Predicates evaluate against a context map:
+
+- In selection filters, the context is the array element.
+- In a `constraint`, it is `value` plus the step's inputs resolved so far.
+- In `predicate` assertions, it is the step's extracted outputs, keyed by output name — or the raw response body when the assertion sets `raw: true`, or when the response status is 400 or above (nothing is extracted then). See [Plans: Assertions](plans.md#assertions).
+
+A field that does not exist in the context is an error rather than `false`, so a filter or assertion that names a missing field fails with `unknown field`. Comparing values of different types (a string with a number) is an error too.
 
 ## Debugging Value Resolution
 
@@ -311,6 +328,8 @@ Every input resolution is recorded in the run archive with a `ValueResolution` e
 | `rawValue` | Value before expression evaluation |
 | `finalValue` | Value after evaluation and type coercion |
 | `expression` | The `{{...}}` template if evaluated |
+| `constraint` | The constraint checked, if any |
+| `constraintOk` | Whether the chosen value passed it |
 | `poolIndex` | Which pool entry was used (-1 if not from pool) |
 | `poolSize` | Total pool size |
 | `tried` | Values that were tried and rejected before the winning value |

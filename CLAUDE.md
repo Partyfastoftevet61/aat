@@ -1,6 +1,6 @@
 # AAT — Adaptive API Toolkit
 
-AAT is a Go CLI that models an API as a graph and executes long, multi-step test plans against it: automatic data wiring between steps, layers for matrix testing, multi-environment routing, run archives with a full decision trail, an embedded web UI, and an MCP server so AI coding tools can integrate with the API. Execution is deterministic; LLMs are optional and only draft plans (`aat prompt`).
+AAT is a Go CLI that models an API as a graph and executes long, multi-step test plans against it: automatic data wiring between steps, layers for matrix testing, multi-environment routing, run archives with a full decision trail, an embedded web UI, and an MCP server so AI coding tools can integrate with the API. Execution never calls an LLM; AI coding tools author plans through the MCP server, and `aat prompt` can draft one.
 
 ## Module
 
@@ -108,7 +108,7 @@ environment: env.yaml
 defaultEnvironment: pp
 ```
 
-Key type: `config.ProjectManifest`. Fields: `Name` (required), `GraphPath` (required), `TemplatesPath` (required), `DomainPath`, `WorkflowsDir`, `PlanDirs`, `ArchiveDir`, `TracesDir`, `EnvPath`, `DefaultEnvironment`.
+Key type: `config.ProjectManifest`. Fields: `Name` (required), `GraphPath` (required), `TemplatesPath` (required), `DomainPath`, `DocsDir`, `WorkflowsDir`, `LayersDir`, `PlanDirs`, `OASPaths`, `ArchiveDir`, `TracesDir`, `VisualizersDir`, `EnvPath`, `DefaultEnvironment`. The highest-priority manifest found (`--manifest`, CWD walk-up, `AAT_PROJECT`, user config `default_project`) describes the whole project; lower levels never fill in fields it leaves out.
 
 Used by: `aat validate`, `aat web`, `aat mcp serve`, `aat plan list`, `aat env list`, and as defaults for `aat run`/`aat prompt` when explicit flags are omitted.
 
@@ -134,7 +134,7 @@ The environment file supports two formats: **single-environment** (legacy, one `
 
 - `context.Context` as first parameter to functions that do I/O or cross package boundaries
 - Errors as values; wrap with `fmt.Errorf("...: %w", err)` for context
-- No `init()` functions; no global mutable state
+- No `init()` functions; no global mutable state. The one exception is cobra wiring in `cmd/`: command variables and their `init()` flag registration
 - Exported types and functions get doc comments
 - Use `errors.Is` / `errors.As` for error inspection
 - Prefer returning concrete types; accept interfaces

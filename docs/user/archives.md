@@ -1,0 +1,229 @@
+# Archives
+
+Every plan execution writes a JSON archive: `aat run plan`, each plan in `aat run batch`, `aat prompt` when it executes the plan, and the MCP server's execution tool. An archive records each request and response, how every input got its value, every assertion result, cleanup, and the outcome, so you can inspect a run long after it finished. The [web UI](web-ui.md) is the viewer; the files are plain JSON for scripts too.
+
+## Where Archives Go
+
+Archives are written to the directory given by `--output`, else the manifest's `archives:` entry, else `_output/runs` in the working directory. `aat web`, `aat web view`, `aat import`, `aat run clean`, and `aat run rebuild-summaries` look for them the same way.
+
+## Layout
+
+A single run gets its own directory:
+
+```
+_output/runs/
+  run-20260910-225958-d819f460/
+    archive.json
+    attempt-01.json
+    summary.json
+```
+
+A batch gets a directory holding `batch.json` and one run directory per executed plan (duplicate permutations skipped by [dedup](batch-layers.md#duplicate-detection) appear in `batch.json` but get no directory):
+
+```
+_output/runs/
+  batch-20260910-225919-0754c0ea/
+    batch.json
+    run-20260910-225919-5a04ca45/
+      archive.json
+      summary.json
+    run-20260910-225921-80a38128/
+      archive.json
+      summary.json
+    ...
+```
+
+Directory names are `run-` or `batch-`, the local date and time (`YYYYMMDD-HHMMSS`), and eight random hex characters.
+
+| File | Contents |
+|------|----------|
+| `archive.json` | The full record of the run. With `--retries`, the final attempt |
+| `attempt-NN.json` | An earlier attempt that `--retries` retried (`attempt-01.json`, `attempt-02.json`, …), in the same format as `archive.json`. Present only when the run was retried |
+| `summary.json` | A small summary the web UI reads for its lists: run ID, timestamp, outcome, step counts, duration, plan name, attempt numbers, layers, and `issues` counts. Derived from `archive.json`; see [Rebuilding Summaries](#rebuilding-summaries-aat-run-rebuild-summaries) |
+| `batch.json` | Batch metadata (batch ID, source directory, layers, layer groups), one entry per run including skipped duplicates (plan name, run ID, outcome, counts, layers, permutation, `duplicateOf`), and the aggregate result |
+
+## What an Archive Contains
+
+`archive.json` has four top-level keys:
+
+| Key | Contents |
+|-----|----------|
+| `metadata` | Run ID, timestamp, environment name, graph version, AAT version, the plan as loaded (`plan`), the plan after graph defaults and layers were merged in (`instantiatedPlan`), the layers applied, and `attempt`/`totalAttempts` for retried runs |
+| `steps` | One record per main and verification step (see below) |
+| `cleanup` | Cleanup step records in the same format; absent when no cleanup ran |
+| `result` | `outcome` (`passed`, `failed`, `error`, `aborted`, or `stopped`) and `error` |
+
+Each step record holds:
+
+| Field | Contents |
+|-------|----------|
+| `stepId`, `node`, `startTime`, `duration_ms` | Which step ran, and when |
+| `inputs` | The resolved input values |
+| `request` | Method, full URL, headers, and body. When an override routed the step elsewhere, `originalUrl` holds the URL it would have used |
+| `response` | Status, headers, and body |
+| `outputs`, `displayOutputs` | Extracted outputs (after any [Lua transform](lua-transforms.md), whose script is in `transformScript`) and the plan's display outputs |
+| `resolutions` | How each input got its value: `source` (such as `plan_default`, `expression`, `plan_from`, `select_edge`, `fallback_pool`, or `graph_default`), the raw and final value, the step and output it came from, and whether a `constraint` passed |
+| `selections` | For inputs picked from an array: source step and field, array size, filter and how many elements passed it, strategy, and the selected index |
+| `validation` | Each assertion's type, pass or fail, and message |
+| `expectFailure` | For negative steps: expected statuses, actual status, pass or fail |
+| `oasValidation` | Request and response checks against the OpenAPI spec |
+| `errorClassification`, `error`, `retryCount`, `retriedOn` | Error category and detail for a failed step, and the category of each step-level retry |
+
+## What Is Redacted, and What Is Not
+
+Archives are not scrubbed clean of sensitive data, so an archive, an exported `.aar`/`.aab`, or a CI artifact is not automatically safe to commit or share. Before you attach one to a ticket, check what it holds.
+
+Redacted:
+
+- **Credential headers, by name.** In requests and responses, the values of `Authorization`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`, `Cookie`, and `Set-Cookie` (any capitalization) are replaced with `[REDACTED]`. The header name stays.
+- **Known secret values in headers, `inputs`, and `resolutions`.** AAT collects the resolved credentials of every `auth` block that can apply to the run — the environment's, its host overrides' (such as the shop's payments key), the plan's, and those of overlays and their overrides — plus the LLM API key. Where one of those values appears in any header, input, or resolution, alone or inside a longer string, it is replaced with `[REDACTED]`, so an API key sent under a custom `auth.headerName` is redacted too.
+- **Plan credentials.** In `metadata.plan` and `metadata.instantiatedPlan`, the value of every `source: literal` credential in the plan's `auth` block and the plan's credential headers are replaced with `[REDACTED]`. `source: env` references keep their variable names.
+
+Stored as-is:
+
+- Request and response **bodies**, including tokens or personal data an API returns.
+- **Outputs** and display outputs.
+- **URLs**, including query parameters.
+- **Tokens AAT obtains at run time** anywhere other than a credential header, such as an OAuth2 access token an API echoes in a body.
+- **The rest of the plan**, including step values. A secret written as a literal step value is not a credential AAT knows about.
+
+`summary.json` holds no request data. The live-state dump written by `--dump-state` redacts nothing at all; see [Checkpoints: Security](checkpoints.md#security).
+
+## Viewing Archives
+
+`aat web` serves the archive directory; `aat web view` opens one run or batch in the browser:
+
+```
+aat web view                                    # the run list
+aat web view latest                             # the newest run or batch
+aat web view run-20260910-225958-d819f460       # a run
+aat web view batch-20260910-225919-0754c0ea     # a batch
+```
+
+A reference is a directory name in the archive directory, saved names included; AAT treats it as a batch when the directory holds `batch.json`. `latest` opens whichever run or batch in the archive directory has the newest timestamp. If a server is already listening on the port (`--port`, default `9119`), `aat web view` opens the page there; otherwise it starts a temporary server that runs until you press Ctrl+C.
+
+### Viewing a File
+
+The reference can also be a file: an exported `.aar` or `.aab`, or a bare `archive.json` or `batch.json`, for example from a downloaded CI artifact. AAT loads it into memory and serves it from a temporary server, with no project, manifest, or archive directory needed, and writes nothing to disk:
+
+```
+aat web view exported-run.aar
+aat web view nightly.aab
+aat web view downloaded-artifacts/run-20260910-225958-d819f460/archive.json
+```
+
+Next to an `archive.json`, sibling `attempt-NN.json` files are loaded so the attempt selector works; next to a `batch.json`, the member run directories are loaded. A file is read-only: save, rename, export, and import are unavailable.
+
+Known issue: `aat web view <file>` always starts its own server, so it fails with `bind: address already in use` while `aat web` (or another `aat web view`) holds the port. Pass a different `--port`.
+
+## Exporting and Importing
+
+A run or batch can travel as a single zip file.
+
+### Export
+
+Export is a web UI feature; there is no CLI command for it. In the run list, each row has a download arrow (**Export run** or **Export batch**), and run and batch detail pages have an **Export** button.
+
+- A run exports as `.aar`, a zip of its directory's JSON files: `archive.json`, `summary.json`, and any `attempt-NN.json`.
+- A batch exports as `.aab`: `batch.json` plus every member run's directory.
+
+The file is named after the run or batch ID, or its saved name (`run-20260910-225958-d819f460.aar`, `checkout-baseline.aar`). The content is the archive as written, so the redaction limits above apply to exports too. The same downloads are available at `GET /api/runs/{id}/export` and `GET /api/batches/{id}/export`.
+
+### Import
+
+- **Web UI**: the **Import** button on the run list accepts `.aar` and `.aab` files, adds them to the served archive directory, and opens the imported run or batch.
+- **CLI**: `aat import FILE` extracts into the archive directory.
+- **API**: `POST /api/import` with a multipart form whose `file` field holds the archive (100 MB limit). The response is `{"ref": …, "name": …, "type": "run"|"batch"}`; a name that already exists returns `409`.
+
+```
+$ aat import "nightly run #3.aar"
+Imported run "nightly-run-3" → /path/to/shop/_output/runs/nightly-run-3
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--name` | string | derived from the file name | Directory name for the imported archive |
+| `--output` | path | manifest `archives`, else `_output/runs` | Archive directory to import into |
+| `--manifest` | path | auto-discovered | Explicit path to `aat-project.yaml` |
+
+Without `--name`, the web UI, the API, and the CLI derive the directory name from the file name: the `.aar`/`.aab` extension is dropped, every character other than letters, digits, `.`, `_`, and `-` becomes `-`, repeated dashes collapse, and leading and trailing dashes go. A result that starts with `run-` or `batch-` gets a `!` prefix, so `run-20260910-225958-d819f460.aar` imports as `!run-20260910-225958-d819f460`. An archive imported without `--name` is therefore always a [named run](#naming-and-saving-runs) that `aat run clean` never deletes.
+
+Known issue: `--name` is used exactly as given, without that clean-up. A name containing `../` can place the import outside the archive directory, and a name starting with `run-` or `batch-` looks auto-generated to `aat run clean`. Pass a plain name.
+
+An import never overwrites or merges. If the target directory exists, it fails (exit code `1` from the CLI):
+
+```
+aat: import: directory "nightly-run-3" already exists
+```
+
+The file must be a zip with `archive.json` (a run) or `batch.json` (a batch) at its root. Symlinks, absolute paths, and `..` entries are rejected, as are zips with more than 10,000 entries or more than 500 MB uncompressed.
+
+## Naming and Saving Runs
+
+A directory whose name starts with `run-` or `batch-` is auto-generated and a candidate for `aat run clean`. Any other name, or a name starting with `!`, marks a *named* (saved) run or batch: it is never deleted by `aat run clean` and shows under the **Saved** filter in the web UI's run list.
+
+On a run or batch detail page in the web UI:
+
+- **Save** opens a name field, prefilled with the plan name (for a batch, its source). **Save** in that form renames the directory to the name you typed; **Save as-is** keeps the ID and adds the `!` prefix (`!run-20260910-225829-a4c05ee5`). A typed name that starts with `run-` or `batch-` also gets the `!` prefix.
+- A saved run shows its name, a pencil (**Edit name**) to rename it again, and **Unsave**, which restores the original ID from the archive's metadata.
+
+A name cannot contain `/` or `\` or be `.` or `..`, and renaming fails if a directory with the new name exists. Naming works only when serving a directory, not a [file](#viewing-a-file).
+
+The same operations are `PUT /api/runs/{id}/name` with a body such as `{"name": "run-keep"}` (an empty name saves as-is) and `DELETE /api/runs/{id}/name` to unsave; batches use `/api/batches/{id}/name`. The response carries the new directory name to use in URLs:
+
+```json
+{"ref":"!run-keep","name":"run-keep"}
+```
+
+Because only the directory name matters, renaming a directory by hand works too. Quote a `!` name in the shell, for example `'!run-20260910-225829-a4c05ee5'`.
+
+## Pruning Old Runs (`aat run clean`)
+
+The archive directory grows by one directory per run or batch. `aat run clean` deletes auto-generated run and batch directories older than a cutoff:
+
+```
+aat run clean                # delete runs older than 7 days
+aat run clean --days 30      # keep a month
+aat run clean --dry-run      # list what would be deleted, remove nothing
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--days` | int | `7` | Delete runs older than this many days |
+| `--dry-run` | bool | `false` | Preview without deleting |
+| `--output` | path | manifest `archives`, else `_output/runs` | Archive directory to clean |
+| `--manifest` | path | auto-discovered | Explicit path to `aat-project.yaml` |
+
+Only top-level directories whose names start with `run-` or `batch-` are candidates, and their age comes from the timestamp in the name, not from file times. Deleting a batch directory deletes its member runs with it. Named directories are skipped and counted:
+
+```
+$ aat run clean --dry-run --days 0
+aat: dry run — previewing cleanup in _output/runs (older than 0 days)...
+  would delete: batch-20260910-225858-2e1dcfc5 (age: < 1 day)
+  would delete: batch-20260910-225919-0754c0ea (age: < 1 day)
+  would delete: run-20260910-225742-06f1a24d (age: < 1 day)
+  ...
+  would delete: run-20260910-230834-1a340655 (age: < 1 day)
+  warning: run-garbage: cannot parse timestamp: unrecognized format: run-garbage
+aat: would delete 16 run(s), skipped 2 saved, 1 errors
+```
+
+Known issue: a `run-` or `batch-` directory whose name carries no parseable timestamp, like `run-garbage` above, is reported as an error and left alone, but the command still exits `0`. In scripts, check the summary line for `errors`.
+
+## Rebuilding Summaries (`aat run rebuild-summaries`)
+
+The web UI builds its lists from each run's `summary.json`. After an AAT upgrade adds summary fields, older summaries lack them. Rebuild every summary from the full archives without re-running anything:
+
+```
+$ aat run rebuild-summaries
+aat: rebuilding summaries in /path/to/shop/_output/runs...
+aat: rebuilt 3 summaries
+```
+
+It rewrites `summary.json` for every top-level run directory with an `archive.json` and for every run inside a batch directory (auto-generated or named), using `--output` or the manifest's `archives` like the other commands. The next web UI listing picks the new summaries up. A run with no `summary.json` at all does not need this: the web UI computes and writes the summary the first time it lists the run.
+
+Known issue: `batch.json` is not recomputed, so batch-level counts stay as they were written.
+
+---
+
+*Source: `archive/types.go`, `archive/writer.go`, `archive/redact.go`, `archive/transfer.go`, `archive/naming.go`, `archive/clean.go`, `archive/rebuild.go`, `engine/archive.go`, `cmd/aat/run_shared.go`, `cmd/aat/import_cmd.go`, `cmd/aat/run_clean_cmd.go`, `cmd/aat/run_rebuild_cmd.go`, `cmd/aat/web_cmd.go`, `server/handlers.go`, `server/service.go`, `server/web/src/routes/*.svelte`.*

@@ -40,7 +40,7 @@ workflows:
         default: Standard
 ```
 
-The Airline booking workflow uses a similar structure with two slots:
+An airline booking workflow uses a similar structure with two slots:
 
 ```yaml
 workflows:
@@ -65,7 +65,7 @@ Each slot in a base workflow defines a choice point with named options:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | yes | Slot name — referenced by recipes and used as a step marker in the template |
-| `description` | string | no | Human-readable description for LLM selection and documentation |
+| `description` | string | no | Human-readable description, shown when choosing a workflow and in documentation |
 | `options` | list | yes | Workflow names (each must be a `kind: slot` workflow) |
 | `default` | string | no | Option used when the recipe doesn't specify a choice |
 
@@ -87,7 +87,7 @@ A slot option is a workflow with `kind: slot` and a template:
 
 Slot options have no `after`, `wire`, or `slots` fields. Their template contains the steps that replace the slot marker in the base workflow.
 
-A slot option may also carry an `inject` map. After every slot has been filled, each `inject` entry is applied across the **whole composed plan**: any step whose graph node declares an input with that name receives the value as its default — unless the step already sets that input explicitly (a `default`, `from`, `fromSelection`, `select`, `fromResolved`, or a locked value). This is how a choice made in one slot reaches steps that live outside it:
+A slot option may also carry an `inject` map. After every slot has been filled, each `inject` entry is applied to **every step of the base workflow and the chosen slot options**: any step whose graph node declares an input with that name receives the value as its default — unless the step already sets that input explicitly (a `default`, `from`, `fromSelection`, `select`, `fromResolved`, or a locked value). Addon steps are spliced in afterwards, so they do not receive injected values. This is how a choice made in one slot reaches steps that live outside it:
 
 ```yaml
   - name: Two Travelers
@@ -138,6 +138,8 @@ An addon is a workflow with `kind: addon`. It declares where to insert (`after`)
 | `after` | addon only | string or list | Node name(s) to insert after; first match wins |
 | `wire` | addon only | map | Explicit input wiring overrides (see [The Wire Map](#the-wire-map)) |
 | `priority` | addon only | int | Composition ordering — lower values compose first (default: 0) |
+| `selectionHint` | all | string | Extra guidance shown to the LLM when `aat prompt` chooses a workflow |
+| `deprecated` | all | bool | Hides the workflow from `aat prompt`'s menu and rejects it when the LLM selects it; recipes that name it still compose |
 
 ## Workflow Templates
 
@@ -152,16 +154,16 @@ execution:
     - node: createCart
       description: "Initialize a shopping cart"
 
-    - slot: product-selection
+    - slot: shipping
 
     - node: applyDiscount
-      dependsOn: [product-selection]
+      dependsOn: [shipping]
       values:
         cartId: {from: createCart.cartId}
         discountCode: AUTOWIRE
 
     - slot: payment
-      dependsOn: [product-selection]
+      dependsOn: [shipping]
 
     - node: confirmOrder
       dependsOn: [applyDiscount, payment]
@@ -179,7 +181,7 @@ Steps use `node:` to reference graph nodes, just like plan steps. They also supp
 
 ### Graph Default Pools and Workflow Templates
 
-Notice that the template above only provides values for inputs that need explicit wiring (`from` references and AUTOWIRE). Inputs like `origin`, `destination`, and `departureDate` are absent — the engine fills them from **graph default pools** declared on the node's inputs.
+Notice that the template above only provides values for inputs that need explicit wiring (`from` references and AUTOWIRE). Other inputs, such as a quantity or a shipping address, are absent — the engine fills them from **graph default pools** declared on the node's inputs.
 
 For example, a graph node might declare:
 
@@ -219,7 +221,7 @@ A step with `slot:` instead of `node:` is a **slot marker** — a placeholder th
 
 ```yaml
     - slot: payment
-      dependsOn: [product-selection]
+      dependsOn: [shipping]
 ```
 
 The slot marker carries `dependsOn` entries that are propagated to the root steps of whichever option fills the slot. This ensures the option's steps run at the right point in the execution order.
@@ -241,7 +243,7 @@ Steps in workflow templates often need inputs that come from the base workflow's
 
 1. **Explicit Wire map** — if the addon's `wire` map provides a mapping for this input name, use it
 2. **Output name match** — scan all earlier steps for an output with the same name as the input
-3. **Leave unresolved** — if no match is found, the AUTOWIRE marker stays for the LLM or user to fill
+3. **Leave unresolved** — if no match is found, the AUTOWIRE marker stays for a recipe's `overrides.values` (or `aat prompt`) to fill; `aat validate workflow` reports addon AUTOWIRE inputs that cannot be wired
 
 ### Cleanup in Templates
 
@@ -296,7 +298,9 @@ The `after` field tells the composition pipeline where to insert the addon's ste
 ```yaml
 # Scalar — insert after this specific node
 after: confirmOrder
+```
 
+```yaml
 # List — try each in order, use first match
 after: [priceOfferFull, priceOfferByRef]
 ```
@@ -324,7 +328,7 @@ Wire map entries take the form `inputName: stepId.outputName`. Two special synta
 | Syntax | Meaning |
 |--------|---------|
 | `$after.fieldName` | Resolves to `matchedNode.fieldName` — the actual node that the addon attached to |
-| `MANUAL` | Clears the AUTOWIRE marker, leaving the input for the LLM or user to fill |
+| `MANUAL` | Clears the AUTOWIRE marker, leaving the input for a recipe override (or `aat prompt`) to fill |
 
 The `$after.` prefix is essential when the addon's `after` field is a list. The pipeline substitutes the actual matched node at composition time, so `$after.offerRef` might become `priceOfferByRef.offerRef` or `priceOfferFull.offerRef` depending on which slot option was chosen.
 
@@ -334,7 +338,7 @@ For each `AUTOWIRE` placeholder in an addon's steps, the composition pipeline fo
 
 1. **Explicit Wire** — the addon's `wire` map provides a direct mapping
 2. **Output name match** — an earlier step (from the base plan or previous addons) produces an output with the same name as the input
-3. **Leave unresolved** — no match found; the AUTOWIRE marker remains for the LLM or user
+3. **Leave unresolved** — no match found; the AUTOWIRE marker remains for a recipe override (or `aat prompt`)
 
 ### Priority and Ordering
 
@@ -368,7 +372,7 @@ To avoid name collisions between addon steps and the base plan, each addon's ste
 - Addon 1: `inc1_retrieveReservation`
 - Addon 2: `inc2_cancelReservation`
 
-All internal references (`dependsOn`, `from`, `fromSelection`) are rewritten to use the prefixed IDs. References to base plan steps remain unchanged.
+All internal references (`dependsOn`, `from`, `fromInput`, and a named selection's `from`) are rewritten to use the prefixed IDs. References to base plan steps remain unchanged.
 
 Cleanup step node names are *not* prefixed because they reference graph node names directly.
 
@@ -421,28 +425,55 @@ The pipeline scans all `from` references and ensures corresponding `dependsOn` e
 
 ### Step 6: Apply Recipe Overrides
 
-Finally, [recipe overrides](plans.md#value-overrides) are applied — value overrides, selection strategy overrides, assertion additions, and description updates.
+Finally, [recipe overrides](plans.md#value-overrides) are applied — value overrides, selection strategy overrides, and assertion additions. A value override on an input that composition wired with `from` currently has no effect. Post-processing then settles `dependsOn` again, adds the default `status: 2xx` assertion to steps that declare none (unless they expect failure), and adds a cleanup step for each node whose graph entry declares `cleanup:`.
 
 The result is a standard `plan.Plan` ready for [execution](running.md).
 
-## Repetitions
+## Repeated Steps
 
-Recipes can specify `selection.repetitions` to duplicate steps for a given node. This is useful when you need multiple instances of an operation — for example, adding two travelers or making three product additions:
+There is no repeat count in a recipe. When a test needs the same operation more than once — two travelers, three cart items — make the count a slot and give each option the steps it needs, with distinct `id`s. An `inject` map on the option carries the count to other steps that take it as an input:
 
 ```yaml
-selection:
-  workflow: Booking
-  repetitions:
-    addTraveler: 2
+workflows:
+  - name: Booking
+    description: "Book a flight for one or two travelers"
+    template: workflows/booking-base.yaml
+    slots:
+      - name: travelers
+        description: "How many travelers to add"
+        options: [One Traveler, Two Travelers]
+        default: One Traveler
+
+  - name: One Traveler
+    kind: slot
+    description: "A single passenger"
+    template: workflows/slots/travelers/one.yaml
+
+  - name: Two Travelers
+    kind: slot
+    description: "Two passengers"
+    template: workflows/slots/travelers/two.yaml
+    inject:
+      passengers: 2          # e.g. the search step's passenger count
 ```
 
-The `ExpandMultiplicity` function creates numbered copies:
+```yaml
+# workflows/slots/travelers/two.yaml
+execution:
+  steps:
+    - id: addTraveler1
+      node: addTraveler
+      values:
+        itineraryId: AUTOWIRE
 
-- `addTraveler` → `addTraveler_1`, `addTraveler_2`
-- Copy 1 inherits the original `dependsOn`
-- Copy N depends on copy N-1 (sequential execution)
-- Literal values are cleared on copies 2+ so distinct values can be provided
-- Downstream references to `addTraveler` are rewritten to `addTraveler_2` (the last copy)
+    - id: addTraveler2
+      node: addTraveler
+      dependsOn: [addTraveler1]
+      values:
+        itineraryId: AUTOWIRE
+```
+
+A recipe selects the option with `choices: {travelers: Two Travelers}`. Steps that depended on the `travelers` slot now depend on `addTraveler2`, the option's last step, and an addon declared `after: addTraveler` attaches after `addTraveler2`. Each copy's other inputs come from graph default pools, or a recipe can set them per copy (`addTraveler2.surname: Jones`).
 
 ## How Recipes Drive Composition
 
@@ -453,21 +484,24 @@ A [recipe](plans.md#recipes) provides the inputs to the composition pipeline:
 | `selection.workflow` | Which base workflow to load |
 | `selection.choices` | Slot name → option name mappings for slot filling |
 | `selection.addons` | List of addon workflow names to compose |
-| `selection.repetitions` | Node → count for step duplication |
+| `selection.layers` | Layers applied to the composed plan, before any `--layer` flags |
 | `overrides.*` | Applied after composition completes |
 
-The pipeline runs in this order: load base → fill slots → splice addons → expand repetitions → apply overrides.
+The pipeline runs in this order: load base → fill slots → splice addons → apply overrides → post-process.
 
-## LLM Workflow Selection
+## Choosing a Workflow from a Description
 
-When you run `aat prompt "place an order with express shipping"`, the LLM analyzes the prompt against the available workflows and produces a `WorkflowSelection`:
+Recipes are usually written by an AI coding tool connected to the [MCP server](mcp-server.md): it lists the workflows with their slots and addons, picks a workflow, choices, and addons for the test you describe, and validates and saves the recipe. The composition pipeline is the same whoever writes the recipe.
+
+`aat prompt` is a built-in shortcut for the same job using the LLM configured in the environment file. Its first call returns a `WorkflowSelection` for a prompt such as `aat prompt "place an order with express shipping"`:
 
 - **workflow**: which base workflow to use (e.g., "Create Order")
+- **description**: a one-line summary of the test
 - **choices**: which slot options to select (e.g., `{shipping: Express}`)
 - **addons**: which addons to include (e.g., `["Loyalty Points"]`)
-- **repetitions**: which steps to duplicate (e.g., `{addItem: 3}`)
+- **layers**: which layers to apply, when the project has layers
 
-This selection drives the same composition pipeline that recipes use. The LLM then fills literal values and assertions in a second call. See [LLM-Assisted Planning](prompt.md) for details.
+A second call fills literal values and assertions. `selectionHint` and `deprecated` on a workflow shape the menu that the first call chooses from. See [LLM-Assisted Planning](prompt.md) for details.
 
 ## Writing Workflows
 
@@ -509,7 +543,7 @@ See [Validation](validation.md) for the full list of checks.
 
 ### Base Workflow with Slots
 
-The Airline Booking workflow uses two slots — `trip-search` and `payment`:
+The airline Booking workflow uses two slots — `trip-search` and `payment`:
 
 ```yaml
 # Graph declaration

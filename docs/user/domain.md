@@ -10,16 +10,16 @@ A domain file (`domain.yaml`) has three sections:
 - **Types** — custom data type definitions with formats and validation patterns
 - **Value Pools** — curated sets of realistic test data tied to specific types
 
-Domain knowledge is optional but recommended for complex APIs. It improves value resolution in the engine, gives the LLM planning pipeline business context, and enriches generated documentation.
+Domain knowledge is optional but recommended for complex APIs. It gives the LLM planning pipeline (`aat prompt`) business context and example values, feeds the MCP server's domain tools and resources, and adds example values to generated documentation. It does not affect plan execution: `aat run` never draws values from domain pools (value pools for execution live in graph defaults and plan values; see [Value Resolution](value-flow.md)).
 
 ## When to Use Domain Knowledge
 
 Domain knowledge is most valuable when:
 
 - **Multiple endpoints share business concepts** — e.g., "order status" appears in create, update, and query operations, and valid transitions matter
-- **Values need to be realistic** — random strings won't do; you need actual SKUs, currency codes, or postal codes
+- **Values need to be realistic** — random strings won't do; you want `aat prompt` and AI assistants to use actual SKUs, currency codes, or postal codes
 - **The LLM needs business context** — `aat prompt` generates better plans when it understands what your API does
-- **You want enriched documentation** — `aat docs generate --domain` annotates graph docs with concept descriptions and type details
+- **You want enriched documentation** — `aat docs generate --domain` fills an Examples column for inputs from concepts and pools
 
 If your API is simple or you're only running pre-written plans with hardcoded values, you can skip the domain file entirely.
 
@@ -48,7 +48,7 @@ valuePools:
       - JPY
 ```
 
-The pool `currencies` provides values for the type `currency-code`. When the engine needs a currency value and no upstream step supplies one, it draws from this pool.
+The pool `currencies` provides values for the type `currency-code`. When `aat prompt` asks the model for a value of an input typed `currency-code`, it shows sample values from this pool. To have runs draw from a list of values, give the graph input a pool default instead (`default: [USD, EUR, GBP]`).
 
 ## Concepts
 
@@ -80,7 +80,7 @@ The `applies_to` field uses **bare field names** (e.g., `status`, `orderTotal`) 
 |-------|----------|-------------|
 | `description` | Yes | What this concept means and why it matters |
 | `applies_to` | Yes | List of field names this concept governs |
-| `constraint` | No | Machine-readable constraint description |
+| `constraint` | No | Constraint in prose, shown to the model (not evaluated) |
 | `examples` | No | Named example groups (map of name to string list) |
 
 ## Types
@@ -127,7 +127,7 @@ types:
 | `pool` | No | Name of the value pool to draw from |
 | `fields` | No | Sub-fields for composite types |
 
-When a type references a `pool`, the engine can draw values from that pool during resolution. When `validation` is set, the regex is compiled at parse time — invalid patterns cause a validation error.
+When a type references a `pool`, `aat prompt`, `aat docs generate`, and the MCP tools show values from that pool for inputs of that type. The `validation` regex is descriptive: it is compiled when the file loads (an invalid pattern is a validation error), but no value is checked against it.
 
 ### Composite Types
 
@@ -154,7 +154,7 @@ types:
 
 ## Value Pools
 
-Value pools provide curated test data for specific types. The engine uses pools as a fallback in the value resolution chain when no upstream step or literal value is available.
+Value pools provide curated test data for specific types. They are context for people and models choosing values — `aat prompt` samples them into the model's prompt, and the MCP server lists them — not a source the engine resolves inputs from.
 
 ### Flat Pools
 
@@ -195,7 +195,7 @@ valuePools:
         - intl-express
 ```
 
-Both `values` and `groups` can be present on the same pool. All values are combined when the engine samples from the pool.
+Both `values` and `groups` can be present on the same pool. All values are combined when a pool is sampled or listed.
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -206,7 +206,7 @@ Both `values` and `groups` can be present on the same pool. All values are combi
 
 ### Annotations
 
-YAML inline comments on pool values are extracted as annotations and included in LLM prompts. Head comments above a value mark section boundaries.
+YAML inline comments on pool values are extracted as annotations, and head comments above a value mark section boundaries. Both appear when the MCP server formats the domain for a model (the `aat://domain` resource and its prompts); `aat prompt` shows plain sample values.
 
 ```yaml
 valuePools:
@@ -224,7 +224,7 @@ valuePools:
       - HOME-KITCHEN   # Kitchen appliances
 ```
 
-When formatted for LLM prompts, this produces:
+When formatted for a model, this produces:
 
 ```
 Values: [Electronics] ELEC-TV (Televisions and displays), ELEC-AUDIO (Audio equipment),
@@ -238,51 +238,31 @@ Section labels (from head comments) are shown in brackets. Annotations (from inl
 
 ### Value Resolution
 
-Value pools participate in the engine's resolution chain. When a step input has a matching domain type and no value is available from upstream steps or plan literals, the engine samples a random value from the corresponding pool.
-
-See [Value Flow](value-flow.md) for the full resolution priority chain and how pools interact with other value sources.
+The engine does not use the domain file: `aat run` loads it (an invalid file stops the run) but resolves inputs only from plan values, step outputs, and graph defaults. To give runs varied realistic data, put a pool in the graph input's default (`default: ["USD", "EUR"]`) or in the plan. See [Value Flow](value-flow.md) for the resolution chain.
 
 ### Planning Context
 
-When you run `aat prompt`, the domain knowledge is formatted as structured text and included in the LLM's context. The `FormatForPrompt` method serializes concepts, types, and pools — pool values are truncated to 10 entries for readability, with annotations and section labels preserved.
+When `aat prompt` asks the model to fill in values, it describes each input it asks about with domain knowledge:
 
-This gives the LLM enough context to generate plans that use realistic values and respect business rules, without overwhelming the prompt with raw data.
+- An input whose `type` names a domain type gets that type's description and `format`, plus up to 8 sampled values from the type's `pool`
+- An input whose name is in a concept's `applies_to` gets the concept's description and `constraint`; when no type pool supplied values, it gets samples from a type named like the concept, or else the concept's `examples`
+
+The MCP server gives assistants the whole file instead: the `aat://domain` resource and several MCP prompts include every concept, type, and pool, with pool values truncated to 10 entries and annotations and section labels preserved, and the domain tools (`list_concepts`, `list_types`, `list_value_pools`, `explain_concept`) query it.
+
+This gives the model enough context to generate plans that use realistic values and respect business rules, without overwhelming the prompt with raw data.
 
 ### Documentation
 
-`aat docs generate --domain domain.yaml` enriches generated documentation with:
+`aat docs generate --domain domain.yaml` adds an Examples column to each node's input table. For each input it uses the first source that has values, up to 5 of them:
 
-- Concept descriptions for fields that match `applies_to` entries
-- Type format and validation details for typed inputs/outputs
-- Value pool examples for fields with matching types
+- The `examples` of concepts whose `applies_to` lists the input name
+- The pool of a domain type named like the input's `type`
+- The pool of a domain type named like the input
+- The values of an `enum[...]` type
 
 ## Merge Behavior
 
-When multiple knowledge bases are merged (e.g., a shared base plus project-specific extensions), the merge rules are:
-
-- **Concepts** — later entries override earlier ones with the same key
-- **Types** — later entries override earlier ones with the same key
-- **Value pools** — merged additively: `values` lists are appended, `groups` entries are appended (new group keys are added, existing group keys have their values combined)
-
-```yaml
-# base-domain.yaml
-valuePools:
-  currencies:
-    description: "Common currencies"
-    type: currency-code
-    values: [USD, EUR, GBP]
-
-# project-domain.yaml (merged on top)
-valuePools:
-  currencies:
-    description: "Common currencies"
-    type: currency-code
-    values: [JPY, CAD]
-
-# Result after merge: currencies.values = [USD, EUR, GBP, JPY, CAD]
-```
-
-This means you can maintain a shared domain file with common types and pools, then extend it per-project without duplicating the base content.
+A project has one domain file: the manifest's `domain` and the `--domain` flag each take a single path, and no command merges several. The `domain` package's `Merge` function, for Go callers, combines knowledge bases: concepts and types with the same key are replaced by later ones, and value pools are merged additively (`values` appended, `groups` entries added or appended).
 
 ## Complete Example
 
@@ -390,8 +370,9 @@ valuePools:
 
 ## Validation
 
-`aat validate` checks domain files for structural correctness:
+`aat validate` checks the manifest's domain file for structural correctness:
 
+- Unknown keys are errors, reported with the line and a suggestion
 - The knowledge base must define at least one concept, type, or value pool
 - Concepts require `description` and at least one `applies_to` entry
 - Types require `description` and `format`
@@ -445,4 +426,4 @@ valuePools:                                # curated test data
 
 ---
 
-*Source: `domain/types.go`, `domain/parse.go`, `domain/validate.go`, `domain/query.go`, `domain/merge.go`.*
+*Source: `domain/types.go`, `domain/parse.go` (including `Merge`), `domain/validate.go`, `domain/query.go`; used by `intent/targeted.go`, `cmd/aat/docs_cmd.go`, and `mcp/`.*

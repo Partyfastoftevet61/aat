@@ -150,9 +150,9 @@ selection:
   with `mutations:` (zero quantity, unknown SKU, out of stock, more than in stock, malformed JSON).
 - `overlays/declined-card.yaml` makes any card payment a negative test without editing a plan:
 
-  ```bash
-  aat run plan smoke --overlay overlays/declined-card.yaml   # paymentCharge 402, PASSED
-  ```
+    ```bash
+    aat run plan smoke --overlay overlays/declined-card.yaml   # paymentCharge 402, PASSED
+    ```
 
 ## Checkpoints: hand a live order to another tool
 

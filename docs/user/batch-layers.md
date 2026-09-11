@@ -10,7 +10,7 @@ With layer groups:
 
 - **5 plans** define the test logic
 - **5 layer files** define the variations (3 regions + 2 payment methods)
-- AAT generates **5 &times; 6 = 30 runs** at batch time
+- AAT generates **5 &times; 12 = 60 runs** at batch time: the 30 combinations, plus the runs with no region, no payment method, or neither
 
 Add a third dimension (say, currency) and the layer group approach scales linearly while the per-file approach explodes combinatorially.
 
@@ -97,8 +97,8 @@ score = symmetric_difference × 100 + effective_layer_count
 
 Where:
 
-- **Symmetric difference** = layers declared in the permutation but not actually effective, plus layers that are effective but not declared. Lower is better — it means the label matches reality.
-- **Effective layer count** = tiebreaker; fewer layers = simpler = preferred.
+- **Symmetric difference** = the layers that differ between the permutation's label and the layers the run actually applies (the permutation's layers plus any a recipe embeds in `selection.layers`). Lower is better — it means the label matches reality.
+- **Effective layer count** = tiebreaker; fewer applied layers = simpler = preferred.
 
 The run with the lowest score is canonical; the rest are skipped.
 
@@ -112,15 +112,13 @@ execution:
     - id: create-order
       node: CreateOrder
       values:
-        - name: region
-          value: "US"
-        - name: currency
-          value: "USD"
+        region: "US"
+        currency: "USD"
 ```
 
 When this plan runs against permutations `(base)`, `us`, `eu`, `apac`, all four produce the same fingerprint because the layer overrides have nothing to override — the plan already specifies everything.
 
-AAT picks `(base)` as canonical (score = 0 &times; 100 + 0 = 0) and skips the `us`, `eu`, and `apac` permutations. The `us` permutation scores 1 &times; 100 + 1 = 101 (one effective layer that had no effect). The `eu` and `apac` permutations score similarly.
+AAT picks `(base)` as canonical (score = 0 &times; 100 + 0 = 0) and skips the `us`, `eu`, and `apac` permutations. For a plan that is not a recipe, the applied layers are exactly the permutation's layers, so the symmetric difference is 0 and the tiebreaker decides: the `us` permutation scores 0 &times; 100 + 1 = 1, and so do `eu` and `apac`.
 
 ### Scenario: Irrelevant layer
 
@@ -128,8 +126,6 @@ A plan `inventory-check.yaml` tests product search and stock levels — it never
 
 ```yaml
 kind: recipe
-metadata:
-  name: inventory-check
 selection:
   workflow: inventory-flow
 overrides:
@@ -149,8 +145,6 @@ A recipe `checkout-eu.yaml` already includes `eu` in its layer list:
 
 ```yaml
 kind: recipe
-metadata:
-  name: checkout-eu
 selection:
   workflow: checkout-flow
   layers:
@@ -217,7 +211,7 @@ Runs up to 4 plans concurrently. Combine with `--shuffle` to avoid correlated ti
 With layer groups, the initial output shows the matrix dimensions:
 
 ```
-aat: batch run — 5 plans x 12 permutations = 60 total runs (parallel=4)
+aat: batch run — 5 plans x 12 permutations = 60 total runs
 
 aat: dedup — 8 duplicate permutations detected:
   quick-test [us] → duplicate of quick-test [(base)]
@@ -230,14 +224,21 @@ aat: dedup — 8 duplicate permutations detected:
 Each executed run shows its permutation label in brackets:
 
 ```
-[1/52] checkout [(base)]
-  [1/3] CreateOrder → 201 (245ms)
-  [2/3] ProcessPayment → 200 (189ms)
-  [3/3] ConfirmOrder → 200 (134ms)
-  PASSED (623ms)
+  ── checkout [(base)] (3 steps) [plan 1/52] ──
+    [1/3] CreateOrder          201  245ms
+    [2/3] ProcessPayment       200  189ms
+    [3/3] ConfirmOrder         200  134ms
+  ── checkout [(base)]: PASSED (3 steps, 623ms) [plan 1/52] ──
 
-[2/52] checkout [credit-card, us]
+  ── checkout [credit-card, us] (3 steps) [plan 2/52] ──
   ...
+```
+
+The run ends with a summary line and the batch archive path:
+
+```
+Batch: 52/60 PASSED, 8 SKIPPED (41.2s)
+Archive: runs/batch-20260301-143022-a1b2c3d4
 ```
 
 ### Quiet mode
@@ -246,12 +247,14 @@ Each executed run shows its permutation label in brackets:
 aat run batch --layer-group "us,eu" --quiet
 ```
 
-Shows one line per run:
+Shows one line per run — executed runs first, then the skipped duplicates — followed by the summary:
 
 ```
-PASSED  checkout [(base)]                    623ms
-PASSED  checkout [credit-card, us]           714ms
-SKIPPED quick-test [us] → quick-test [(base)]
+checkout [(base)]: PASSED
+checkout [credit-card, us]: PASSED
+quick-test [us]: SKIPPED (duplicate of quick-test [(base)])
+Batch: 52/60 PASSED, 8 SKIPPED
+Archive: runs/batch-20260301-143022-a1b2c3d4
 ```
 
 ### JSON mode
@@ -260,38 +263,50 @@ SKIPPED quick-test [us] → quick-test [(base)]
 aat run batch --layer-group "us,eu" --json
 ```
 
-Produces a machine-readable `BatchSummary` to stdout (implies `--quiet`). Each run entry includes `permutation`, `layers`, `skipped`, and `duplicateOf` fields:
+Produces a machine-readable `BatchSummary` to stdout (implies `--quiet`). Each run entry includes `permutation`, `layers`, `skipped`, and `duplicate_of` fields (the `(base)` permutation with no `--layer` flags has no `layers`). The batch ID key is `batchId`, while the other keys are snake_case:
 
 ```json
 {
   "outcome": "passed",
-  "batch_id": "batch-20260301-143022-a1b2c3d4",
+  "batchId": "batch-20260301-143022-a1b2c3d4",
   "runs": [
     {
       "plan_name": "checkout",
       "outcome": "passed",
-      "permutation": "(base)",
-      "layers": ["premium"]
+      "step_count": 3,
+      "passed_steps": 3,
+      "failed_steps": 0,
+      "duration_ms": 623,
+      "archive_path": "runs/batch-20260301-143022-a1b2c3d4/run-20260301-143022-e5f6a7b8/archive.json",
+      "layers": ["premium"],
+      "permutation": "(base)"
     },
     {
       "plan_name": "quick-test",
       "outcome": "skipped",
-      "permutation": "us",
+      "step_count": 0,
+      "passed_steps": 0,
+      "failed_steps": 0,
+      "duration_ms": 0,
       "layers": ["premium", "us"],
+      "permutation": "us",
       "skipped": true,
       "duplicate_of": "quick-test [(base)]"
     }
   ],
   "summary": {
     "total_plans": 60,
-    "passed_plans": 47,
-    "failed_plans": 1,
+    "passed_plans": 52,
+    "failed_plans": 0,
     "error_plans": 0,
-    "skipped_plans": 12,
-    "duration_ms": 34521
-  }
+    "skipped_plans": 8,
+    "duration_ms": 41230
+  },
+  "archive_path": "runs/batch-20260301-143022-a1b2c3d4"
 }
 ```
+
+`batch.json` in the batch archive records the same runs with camelCase keys (`planName`, `duplicateOf`).
 
 ### Batch archives
 
@@ -301,16 +316,16 @@ Batch runs produce an archive directory with `batch.json` and per-run subdirecto
 runs/
   batch-20260301-143022-a1b2c3d4/
     batch.json                          # aggregate results
-    run-20260301-143022-e5f6g7h8/       # checkout [(base)]
+    run-20260301-143022-e5f6a7b8/       # checkout [(base)]
       archive.json
-    run-20260301-143023-i9j0k1l2/       # checkout [credit-card, us]
+    run-20260301-143023-c9d0e1f2/       # checkout [credit-card, us]
       archive.json
     ...
 ```
 
 Skipped runs appear in `batch.json` but have no run directory — there's nothing to archive since they weren't executed.
 
-See [Web UI and Archives](web-ui.md) for inspecting archives in the browser.
+See [Archives](archives.md) for what an archive contains and [Web UI](web-ui.md) for inspecting archives in the browser.
 
 ### Reading the matrix in the web UI
 
@@ -367,13 +382,11 @@ inputs:
 
 ### Plans
 
-A recipe that relies on layers for region/payment data:
+A plan's name is its file name under the plans directory, so `plans/checkout.yaml` runs as `checkout`. A recipe that relies on layers for region/payment data:
 
 ```yaml
 # plans/checkout.yaml
 kind: recipe
-metadata:
-  name: checkout
 selection:
   workflow: checkout-flow
 ```
@@ -383,8 +396,6 @@ A recipe that embeds a specific region:
 ```yaml
 # plans/checkout-eu.yaml
 kind: recipe
-metadata:
-  name: checkout-eu
 selection:
   workflow: checkout-flow
   layers:
@@ -396,8 +407,6 @@ A plan that doesn't touch payments — the payment layer group is irrelevant:
 ```yaml
 # plans/inventory-check.yaml
 kind: recipe
-metadata:
-  name: inventory-check
 selection:
   workflow: inventory-flow
 overrides:
@@ -409,17 +418,13 @@ A fully explicit plan that ignores all layers:
 
 ```yaml
 # plans/quick-test.yaml
-metadata:
-  name: quick-test
 execution:
   steps:
     - id: create-order
       node: CreateOrder
       values:
-        - name: region
-          value: "US"
-        - name: amount
-          value: 99.99
+        region: "US"
+        amount: 99.99
 ```
 
 ### Running the matrix
@@ -444,6 +449,15 @@ Two groups of two values each produce (2+1) &times; (2+1) = **9 permutations** (
 aat: batch run — 4 plans x 9 permutations = 36 total runs (parallel=4)
 
 aat: dedup — 17 duplicate permutations detected:
+  checkout-eu [(base)] → duplicate of checkout-eu [eu]
+  checkout-eu [credit-card] → duplicate of checkout-eu [credit-card, eu]
+  checkout-eu [paypal] → duplicate of checkout-eu [eu, paypal]
+  inventory-check [credit-card] → duplicate of inventory-check [(base)]
+  inventory-check [credit-card, eu] → duplicate of inventory-check [eu]
+  inventory-check [credit-card, us] → duplicate of inventory-check [us]
+  inventory-check [eu, paypal] → duplicate of inventory-check [eu]
+  inventory-check [paypal] → duplicate of inventory-check [(base)]
+  inventory-check [paypal, us] → duplicate of inventory-check [us]
   quick-test [credit-card] → duplicate of quick-test [(base)]
   quick-test [credit-card, eu] → duplicate of quick-test [(base)]
   quick-test [credit-card, us] → duplicate of quick-test [(base)]
@@ -452,15 +466,6 @@ aat: dedup — 17 duplicate permutations detected:
   quick-test [paypal] → duplicate of quick-test [(base)]
   quick-test [paypal, us] → duplicate of quick-test [(base)]
   quick-test [us] → duplicate of quick-test [(base)]
-  inventory-check [credit-card] → duplicate of inventory-check [(base)]
-  inventory-check [credit-card, eu] → duplicate of inventory-check [eu]
-  inventory-check [credit-card, us] → duplicate of inventory-check [us]
-  inventory-check [eu, paypal] → duplicate of inventory-check [eu]
-  inventory-check [paypal] → duplicate of inventory-check [(base)]
-  inventory-check [paypal, us] → duplicate of inventory-check [us]
-  checkout-eu [(base)] → duplicate of checkout-eu [eu]
-  checkout-eu [credit-card] → duplicate of checkout-eu [credit-card, eu]
-  checkout-eu [paypal] → duplicate of checkout-eu [eu, paypal]
 
 Batch: 19/36 PASSED, 17 SKIPPED (12.4s)
 Archive: runs/batch-20260301-143022-a1b2c3d4

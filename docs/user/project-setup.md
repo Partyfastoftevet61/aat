@@ -4,7 +4,7 @@ The project manifest (`aat-project.yaml`) marks your project root and tells AAT 
 
 ## Overview
 
-AAT separates **what to test** (graph, templates, domain knowledge) from **where things live** (file paths, directory layout). The manifest bridges these — it declares artifact locations once so every command can find them automatically. When a manifest is discoverable, you can run `aat prompt "..."` or `aat run batch` without passing `--graph`, `--templates`, or `--env` flags.
+AAT separates **what to test** (graph, templates, domain knowledge) from **where things live** (file paths, directory layout). The manifest bridges these — it declares artifact locations once so every command can find them automatically. When a manifest is discoverable, you can run `aat run batch` or `aat mcp serve` without passing `--graph`, `--templates`, or `--env-config` flags.
 
 ## Project Directory Layout
 
@@ -53,7 +53,7 @@ archives: runs/
 traces: traces/
 ```
 
-All paths are resolved relative to the manifest file's directory. Absolute paths are also accepted and used as-is.
+All paths are resolved relative to the manifest file's directory. Absolute paths are also accepted and used as-is. Unknown keys are errors: a typo such as `plan:` fails with the file, the line, and a suggestion (`did you mean "plans"?`).
 
 ### Required vs Optional Fields
 
@@ -73,14 +73,16 @@ Everything else is optional. When omitted, commands that need those paths will e
 | Name | `name` | string | Project name (for display and identification) |
 | Description | `description` | string | Brief project description |
 | Tags | `tags` | list | Freeform tags for categorization |
-| Graph | `graph` | string | Path to the API graph YAML file |
-| Templates | `templates` | string | Path to the templates directory |
+| Graph | `graph` | string | Path to the API graph YAML file (required) |
+| Templates | `templates` | string | Path to the templates directory (required) |
 | Domain | `domain` | string | Path to the domain knowledge YAML file |
+| Docs | `docs` | string | Directory of per-node Markdown docs (`<node>.md`) for the MCP server; no default (see [MCP Server: Per-Node Documentation](mcp-server.md#per-node-documentation)) |
 | Workflows | `workflows` | string | Path to the workflows directory |
 | Layers | `layers` | string | Path to the graph layers directory |
 | Plans | `plans` | string or list | Path(s) to plan directories |
-| Archives | `archives` | string | Path to the run archive directory |
-| Traces | `traces` | string | Path to the planning trace directory |
+| OAS | `oas` | string or list | OpenAPI spec file(s) the MCP server loads for its OpenAPI tools, in addition to the specs the graph references. Static and runtime validation use only the graph's `oas` references |
+| Archives | `archives` | string | Path to the run archive directory (default: `_output/runs` in the working directory) |
+| Traces | `traces` | string | Path to the planning trace directory (default: `traces/` next to the manifest) |
 | Visualizers | `visualizers` | string | Path to the visualizer plugins directory |
 | Environment | `environment` | string | Path to the default environment YAML file |
 | Default Environment | `defaultEnvironment` | string | Default environment name for multi-env files |
@@ -106,7 +108,7 @@ AAT automatically finds your manifest by walking up from the current working dir
 /home/user/projects/ecommerce/         # aat-project.yaml found here
 ```
 
-Commands that use auto-discovery: `aat run`, `aat prompt`, `aat validate`, `aat web`, `aat mcp serve`, `aat plan list`, `aat env list`, and `aat docs generate`.
+Commands that use auto-discovery: `aat run`, `aat prompt`, `aat validate`, `aat web`, `aat mcp serve`, `aat plan list`, `aat env list`, `aat import`, and `aat docs generate`.
 
 To override auto-discovery, pass the `--manifest` flag:
 
@@ -116,14 +118,18 @@ aat validate --manifest /path/to/other-project/aat-project.yaml
 
 ## Resolution Priority
 
-AAT resolves project paths through a 4-level priority chain. Each level overwrites paths from the previous level:
+AAT looks for a manifest at four levels, from lowest to highest priority:
 
 1. **User config** — a persistent `default_project` setting in your user-level config file
 2. **`AAT_PROJECT` environment variable** — a directory or manifest path
 3. **CWD walk-up** — automatic discovery from the current working directory
 4. **`--manifest` flag** — explicit manifest path (overrides discovery)
 
-After manifest resolution, **explicit CLI flags** (`--graph`, `--templates`, `--env-config`, etc.) always take final precedence over any manifest-derived path.
+The highest-priority manifest found describes the whole project: lower levels do not fill in fields it leaves out, so a CWD manifest without `domain:` has no domain file even if the `AAT_PROJECT` project has one.
+
+A discovered level whose manifest does not exist is skipped, so a stale `default_project` or `AAT_PROJECT` does not block a run. A `--manifest` path that does not exist is an error (`manifest not found: ...`). A manifest that exists but fails to load, such as one with an unknown key, is an error, unless a higher-priority level loads a manifest.
+
+After manifest resolution, **explicit CLI flags** (`--graph`, `--templates`, `--env-config`, etc.) always take final precedence over the matching manifest-derived path.
 
 ### User Config
 
@@ -152,7 +158,7 @@ export AAT_PROJECT=/home/user/projects/ecommerce
 aat validate   # uses that project's manifest
 ```
 
-This is useful in CI/CD environments where you want to pin the project root without relying on the working directory.
+This is useful in CI/CD environments that run AAT from outside the project directory. A manifest found by walking up from the working directory still takes priority over `AAT_PROJECT`.
 
 ## Overriding Manifest Paths
 
@@ -207,15 +213,7 @@ See [Environments](environments.md) for the full environment file reference.
 
 ## Bootstrapping from OpenAPI
 
-If you have an OpenAPI specification, `aat generate` scaffolds an initial graph and templates directory:
-
-```bash
-aat generate --oas openapi.yaml --output-graph graph.yaml --output-templates templates/
-```
-
-This creates one graph node per operation and one template per node. You then add edges, domain knowledge, and the manifest by hand.
-
-See [Graphs](graphs.md) for details on OpenAPI integration and the generated graph structure.
+If you have an OpenAPI specification, `aat generate --oas openapi.yaml` scaffolds a graph and one template per operation. It writes nothing else: you add the manifest, the environment, ordering (`requires`/`satisfies`), cleanup pairings, and domain knowledge by hand. See [Scaffolding from OpenAPI](generate.md).
 
 ## Schema Reference
 
@@ -229,11 +227,13 @@ tags: [orders, inventory]          # freeform tags (optional)
 graph: graph.yaml                  # required — path to API graph
 templates: templates/              # required — path to templates directory
 domain: domain.yaml                # optional — domain knowledge file
+docs: docs/nodes/                  # optional — per-node Markdown docs for the MCP server
 environment: env.yaml              # optional — default environment file
 defaultEnvironment: dev            # optional — default env name (multi-env files)
 workflows: workflows/              # optional — workflow templates directory
 layers: layers/                    # optional — graph layers directory
 plans: plans/                      # optional — plan directory (string or list)
+oas: openapi.yaml                  # optional — extra OpenAPI spec(s) for MCP tools (string or list)
 archives: runs/                    # optional — run archive output directory
 traces: traces/                    # optional — planning trace output directory
 visualizers: visualizers/          # optional — visualizer plugins directory

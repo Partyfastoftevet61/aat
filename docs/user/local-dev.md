@@ -6,21 +6,21 @@ When you're developing a service and want AAT's integration tests to hit your lo
 
 1. Create a `.aat-overrides.yaml` file in your project root (next to `aat-project.yaml`):
 
-```yaml
-overrides:
-  - match: searchFlights
-    baseUrl: http://localhost:8080
-```
+    ```yaml
+    overrides:
+      - match: searchFlights
+        baseUrl: http://localhost:8080
+    ```
 
 2. Run normally — the override is picked up automatically:
 
-```bash
-aat run plan smoke-test
-# aat: auto-discovered overrides: /path/to/project/.aat-overrides.yaml
-# aat: override: searchFlights → http://localhost:8080
-```
+    ```bash
+    aat run plan smoke-test
+    # aat: auto-discovered overrides: /path/to/project/.aat-overrides.yaml
+    # aat: override: searchFlights
+    ```
 
-The file is already in AAT's `.gitignore`, so it won't be committed.
+Add `.aat-overrides.yaml` to your project's `.gitignore` so it isn't committed (the shop example's `.gitignore` already lists it).
 
 > **Tip:** The overlay file also supports top-level `auth` and `headers` fields that apply to all API calls. See the examples below.
 
@@ -116,7 +116,7 @@ overrides:
 
 ### Add transaction-level headers
 
-Headers at the top level are merged into every request, useful for access-group tokens or other cross-cutting headers:
+Headers at the top level are merged into every request, useful for access-group tokens or other cross-cutting headers. They win over environment headers, plan headers, and the auth credential, but a header that a node's template sets in `request.headers` still keeps the template's value (a known issue):
 
 ```yaml
 headers:
@@ -169,7 +169,7 @@ Top-level `environment`, `auth`, `headers`, and `overrides` can all be combined 
 
 ### Discovery
 
-AAT walks up from your current working directory looking for `.aat-overrides.yaml`, the same way it finds `aat-project.yaml`. The first file found wins. This means you can place the file:
+AAT walks up from your current working directory looking for `.aat-overrides.yaml` (or `aat-overrides.yaml` without the dot; the dotfile wins when a directory has both), the same way it finds `aat-project.yaml`. The first file found wins. Like every project file, it is decoded strictly: an unknown key is an error. This means you can place the file:
 
 - In the project root (most common)
 - In a subdirectory for scope-specific overrides
@@ -212,7 +212,7 @@ aat: auto-discovered overrides: /path/to/project/.aat-overrides.yaml
 
 ### Git
 
-`.aat-overrides.yaml` is included in AAT's default `.gitignore`. If your project has its own `.gitignore`, add it there too.
+AAT does not create a `.gitignore` for your project, so add `.aat-overrides.yaml` to it yourself. The AAT repository and the shop example (`aat-sandbox init`) already ignore it.
 
 ### CI/CD
 

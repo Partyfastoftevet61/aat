@@ -1,746 +1,966 @@
-# Tutorial: Testing Your API
+# Tutorial: Build a Test Project by Hand
 
-This tutorial walks you through building a complete AAT project from scratch. By the end, you'll have a graph, templates, an environment, a plan with assertions, a workflow, a recipe, and a batch run.
+This tutorial builds an AAT project file by file for a small e-commerce API that runs on your machine. By the end you will have a graph, request templates, two environments, plans with assertions, a reusable workflow, a recipe, and a layer matrix, and you will have seen what each piece is for by watching it run. Everything runs offline against `aat-sandbox`; allow about 45 minutes.
 
-The example uses a fictional **Task Tracker API** — simple enough to teach every concept, rich enough to demonstrate real patterns. Substitute your own API's operations to make it real.
+The API is the one the [shop example](examples/shop.md) tests. The example is the finished, larger version of what you build here, so you can compare your files with it at any point.
 
 ## What You'll Build
 
-The Task Tracker API has five operations:
+A test that buys a product end to end, using seven of the shop's operations:
 
-| Operation | Method | Path | Description |
-|-----------|--------|------|-------------|
-| createUser | POST | /users | Create a user, returns userId |
-| createTask | POST | /tasks | Create a task for a user, returns taskId |
-| listTasks | GET | /tasks?userId={userId} | List a user's tasks (array) |
-| completeTask | PUT | /tasks/{taskId}/complete | Mark a task complete |
-| deleteTask | DELETE | /tasks/{taskId} | Delete a task |
+| Operation | Method and path | Host |
+|-----------|-----------------|------|
+| `listProducts` | `GET /products` | shop API |
+| `createCart` | `POST /carts` | shop API |
+| `addItem` | `POST /carts/{cartId}/items` | shop API |
+| `checkoutCart` | `POST /carts/{cartId}/checkout` | shop API |
+| `paymentCharge` | `POST /payments/charges` | payments API |
+| `deleteOrder` | `DELETE /orders/{orderId}` | shop API |
+| `deleteCart` | `DELETE /carts/{cartId}` | shop API |
 
-By the end of this tutorial, you'll have:
+The shop API authenticates with OAuth2 bearer tokens and the payments API with an API key, on a different port — the same split a real service and its payment provider usually have.
 
-- A graph modeling all five operations with ordering and cleanup
-- Templates defining the HTTP requests and response extraction
-- An environment file with auth configuration
-- A plan with assertions and value references
-- A workflow capturing the common test pattern
-- Recipes that instantiate the workflow with different data
-- A batch run executing all recipes
+## Prerequisites
 
-## Step 1: Create the Project
+- `aat` and `aat-sandbox` installed — see [Install](install.md)
+- Two terminals
 
-Create a project directory and manifest:
+## Step 1: Start the Sandbox
+
+In the first terminal, start the sandbox and leave it running:
 
 ```bash
-mkdir task-tracker-tests && cd task-tracker-tests
+aat-sandbox serve
 ```
 
+```text
+aat-sandbox: shop API      http://127.0.0.1:8765/{us,eu}/v1
+aat-sandbox: payments API  http://127.0.0.1:8766/{us,eu}/v1   (header X-API-Key: pay-demo-key)
+  token:    POST http://127.0.0.1:8765/oauth/token  grant_type=password username=demo password=demo client_id=aat-shop client_secret=aat-shop-secret
+  regions:  us (USD, sales tax added at checkout)  ·  eu (EUR, VAT included, no overnight tier)
+  chaos:    GET /inventory/SKU-1004 -> STALE_READ once per token; GET /shipments/{id} -> 503 for the first 2 calls
+  latency:  x1 (shipOrder 600 ms, paymentCharge 350 ms)
+  reset:    POST http://127.0.0.1:8765/admin/reset
+```
+
+The banner lists everything this tutorial needs: the two base URLs (the region, `us` or `eu`, is part of the path), the OAuth2 token endpoint and its demo credentials, and the payments API key.
+
+## Step 2: Create the Project
+
+In the second terminal, extract the finished shop example next to your project — you need its OpenAPI spec now and may want its files for comparison later — and create the project directory:
+
+```bash
+aat-sandbox init shop-reference
+mkdir shop-tutorial && cd shop-tutorial
+cp ../shop-reference/openapi.yaml .
+mkdir templates plans
+```
+
+Every AAT project starts with a manifest that tells `aat` where its files are. Create `aat-project.yaml`:
+
 ```yaml
-# aat-project.yaml
-name: task-tracker
-description: Task Tracker API integration tests
+name: shop-tutorial
+description: Tutorial project for the aat-sandbox shop API
 graph: graph.yaml
 templates: templates/
 environment: env.yaml
+defaultEnvironment: us
 plans: plans/
 archives: runs/
 ```
 
-The manifest marks this directory as an AAT project root. When you run any `aat` command from here (or a subdirectory), AAT auto-discovers the manifest by walking up from the current directory.
+Any `aat` command run in this directory (or below it) finds the manifest by itself. See [Project Setup](project-setup.md).
 
-> **AI shortcut**: "Create an AAT project manifest for a task tracker API with five operations: createUser, createTask, listTasks, completeTask, deleteTask"
+## Step 3: Describe the Environment
 
-Cross-ref: [Project Setup](project-setup.md)
-
-## Step 2: Define the API Graph
-
-Start with two nodes — createUser and createTask — to learn the model before expanding.
+An environment says where the API is and how to authenticate. The shop has two regions, so use the multi-environment format: an abstract `_base` environment (the underscore means it cannot be selected on its own) holds everything the regions share, and each region extends it. Create `env.yaml`:
 
 ```yaml
-# graph.yaml
+environments:
+  _base:
+    vars:
+      apiHost: "localhost:8765"
+    apiBaseUrl: http://${apiHost}/${region}/v1
+    headers:
+      Accept: application/json
+    auth:
+      type: oauth2
+      tokenUrl: http://${apiHost}/oauth/token
+      credentials:
+        username: {source: literal, value: demo}
+        password: {source: literal, value: demo}
+        clientId: {source: literal, value: aat-shop}
+        clientSecret: {source: literal, value: aat-shop-secret}
+
+  us:
+    extends: _base
+    vars:
+      region: us
+```
+
+- `${apiHost}` and `${region}` are filled from `vars` after inheritance, so `us` only has to set its region. `--var apiHost=localhost:9000` would point every environment at a sandbox on another port without editing the file.
+- `oauth2` fetches a token from `tokenUrl` before the first request and sends it as a bearer token. The sandbox's credentials are demo values, so they are written as `literal` secrets; for a real API use `{source: env, var: SHOP_PASSWORD}` so no secret lives in the file.
+
+Check that the file loads:
+
+```bash
+aat env list
+```
+
+```text
+  us           http://localhost:8765/us/v1
+```
+
+See [Environments](environments.md).
+
+## Step 4: Model the First Operations
+
+The graph describes the API as operations (nodes) with named inputs and outputs, plus the facts a spec cannot express: which operations must run before which, which operation undoes which, and where an input's value normally comes from. Start with browsing, a cart, and adding an item. Create `graph.yaml`:
+
+```yaml
+version: "1.0.0"
+title: Shop tutorial
+oas: openapi.yaml
+
 nodes:
-  createUser:
-    description: "Create a new user"
-    adapter: createUser
+  listProducts:
+    description: List the catalog, optionally filtered by category
+    adapter: listProducts
+    oas:
+      operationId: listProducts
     inputs:
-      - name: userName
-        type: string
-      - name: email
-        type: string
+      - name: category
+        type: enum[gear, apparel, footwear]
+        optional: true
     outputs:
-      - name: userId
+      - name: currency
         type: string
-        path: id
-    satisfies: [user]
-
-  createTask:
-    description: "Create a task for a user"
-    adapter: createTask
-    inputs:
-      - name: userId
-        type: string
-      - name: title
-        type: string
-      - name: priority
-        type: string
-        default: ["high", "medium", "low"]
-    outputs:
-      - name: taskId
-        type: string
-        path: id
-      - name: status
-        type: string
-        path: status
-    requires: [user]
-    satisfies: [task]
-```
-
-Each node declares:
-
-- **`adapter`** — links to a template file that defines the actual HTTP call
-- **`inputs`** — typed parameters resolved at runtime from plan values or defaults
-- **`outputs`** — named values extracted from the response using gjson paths
-- **`satisfies`/`requires`** — ordering tokens that determine execution order
-
-The `requires: [user]` on createTask means it runs after any node that `satisfies: [user]`. This is how AAT knows createUser must run before createTask — they share the `user` ordering token.
-
-The `default: ["high", "medium", "low"]` on priority is a value pool. When no plan value is provided, AAT picks one per run, giving you varied test data automatically.
-
-> **AI shortcut**: "Given this API spec, create a graph.yaml with ordering tokens and cleanup pairing for all operations"
-
-Cross-ref: [API Graphs](graphs.md)
-
-## Step 3: Write Templates
-
-Create a `templates/` directory and add one YAML file per node. The `adapter` field links the template to its graph node.
-
-```yaml
-# templates/createUser.yaml
-adapter: createUser
-
-request:
-  method: POST
-  path: /users
-  headers:
-    Content-Type: application/json
-  body: |
-    {
-      "name": "{{userName}}",
-      "email": "{{email}}"
-    }
-
-response:
-  extract:
-    - name: userId
-      path: id
-```
-
-```yaml
-# templates/createTask.yaml
-adapter: createTask
-
-request:
-  method: POST
-  path: /tasks
-  headers:
-    Content-Type: application/json
-  body: |
-    {
-      "userId": "{{userId}}",
-      "title": "{{title}}",
-      "priority": "{{priority}}"
-    }
-
-response:
-  extract:
-    - name: taskId
-      path: id
-    - name: status
-      path: status
-```
-
-Key rules:
-
-- The `adapter` field must match the graph node's `adapter` value exactly
-- `{{placeholder}}` names must match input names on the linked graph node
-- `response.extract` maps output names to gjson paths into the JSON response body
-- Output names must match the graph node's declared outputs
-
-> **AI shortcut**: "Write AAT templates for each node in graph.yaml based on the API spec"
-
-Cross-ref: [Templates](templates.md)
-
-## Step 4: Set Up the Environment
-
-The environment file tells AAT where the API lives and how to authenticate.
-
-```yaml
-# env.yaml
-environment: dev
-apiBaseUrl: http://localhost:3000
-
-auth:
-  type: none
-```
-
-For a staging environment with API key auth:
-
-```yaml
-# env-staging.yaml
-environment: staging
-apiBaseUrl: https://api.staging.example.com
-
-auth:
-  type: apikey
-  headerName: X-API-Key
-  credentials:
-    key:
-      source: env
-      var: TASK_TRACKER_API_KEY
-
-headers:
-  Accept: application/json
-```
-
-Secrets are never hardcoded in YAML. The `source: env` directive reads from OS environment variables at runtime. Set the variable before running:
-
-```bash
-export TASK_TRACKER_API_KEY="your-key-here"
-```
-
-> **AI shortcut**: "Create an env.yaml for the staging environment with API key auth"
-
-Cross-ref: [Environments](environments.md)
-
-## Step 5: Write Your First Plan
-
-A plan tells AAT exactly what steps to run, what values to use, and what to check.
-
-```yaml
-# plans/first-plan.yaml
-metadata:
-  name: first-plan
-  description: "Create a user, then create a task for that user"
-intent:
-  summary: "Basic user and task creation"
-execution:
-  steps:
-    - id: user
-      node: createUser
-      values:
-        userName: "Alice"
-        email: "alice@example.com"
-    - id: task
-      node: createTask
-      values:
-        userId:
-          from: user.userId
-        title: "Write documentation"
-        priority: "high"
-      dependsOn: [user]
-```
-
-The plan wires two steps together:
-
-- `user` calls createUser with literal values
-- `task` calls createTask, with `userId` pulled from the user step's output (`from: user.userId`)
-- `dependsOn: [user]` ensures the user step completes before the task step runs
-
-### Run It
-
-```bash
-aat run plan first-plan
-```
-
-Expected output:
-
-```
-Step user (createUser)     ... PASSED (201)
-Step task (createTask)     ... PASSED (201)
-
-Plan first-plan: PASSED
-```
-
-### Iterate
-
-If something fails, AAT tells you which step failed and why. Common issues:
-
-- **`adapter "X" not found`** — template file missing or `adapter` name doesn't match
-- **`unresolved input "X"`** — plan doesn't provide a value and the graph has no default
-- **HTTP 4xx/5xx** — check the archive in `runs/` for the actual request and response
-
-The archive contains the full HTTP request (method, URL, headers, body) and response (status, headers, body) for every step. Use `aat web` to browse archives visually.
-
-> **AI shortcut**: "Run aat run plan first-plan and fix any errors you find"
-
-Cross-ref: [Plans and Recipes](plans.md), [Running Tests](running.md)
-
-## Step 6: Add Assertions
-
-Assertions verify that API responses meet your expectations. Add them to the plan:
-
-```yaml
-# plans/first-plan.yaml (updated)
-metadata:
-  name: first-plan
-  description: "Create a user and task with assertions"
-intent:
-  summary: "Basic user and task creation with verification"
-execution:
-  steps:
-    - id: user
-      node: createUser
-      values:
-        userName: "Alice"
-        email: "alice@example.com"
-      assertions:
-        mechanical:
-          - type: status
-            expect: 201
-          - type: fieldExists
-            path: userId
-    - id: task
-      node: createTask
-      values:
-        userId:
-          from: user.userId
-        title: "Write documentation"
-        priority: "high"
-      dependsOn: [user]
-      assertions:
-        mechanical:
-          - type: status
-            expect: 201
-          - type: fieldEquals
-            path: status
-            value: "pending"
-```
-
-Assertions live under `assertions.mechanical`. AAT supports four mechanical assertion types:
-
-| Type | Fields | What it checks |
-|------|--------|---------------|
-| `status` | `expect` | HTTP status code matches expected value |
-| `fieldExists` | `path` | JSON path exists in the response |
-| `fieldEquals` | `path`, `value` | JSON path value equals expected value |
-| `predicate` | `expr` | Boolean expression evaluates to true |
-
-Run again — assertions now show pass/fail detail:
-
-```bash
-aat run plan first-plan
-```
-
-Cross-ref: [Plans and Recipes: Assertions](plans.md#assertions)
-
-## Step 7: Expand the Graph
-
-Add the remaining three operations to the graph: listTasks (array output), completeTask, and deleteTask.
-
-```yaml
-# graph.yaml (complete)
-nodes:
-  createUser:
-    description: "Create a new user"
-    adapter: createUser
-    inputs:
-      - name: userName
-        type: string
-        default: ["Alice", "Bob", "Carol", "Dave"]
-      - name: email
-        type: string
-        default: ["alice@test.com", "bob@test.com", "carol@test.com"]
-    outputs:
-      - name: userId
-        type: string
-        path: id
-    satisfies: [user]
-
-  createTask:
-    description: "Create a task for a user"
-    adapter: createTask
-    inputs:
-      - name: userId
-        type: string
-      - name: title
-        type: string
-      - name: priority
-        type: string
-        default: ["high", "medium", "low"]
-    outputs:
-      - name: taskId
-        type: string
-        path: id
-      - name: status
-        type: string
-        path: status
-    requires: [user]
-    satisfies: [task]
-    cleanup: deleteTask
-
-  listTasks:
-    description: "List tasks for a user"
-    adapter: listTasks
-    inputs:
-      - name: userId
-        type: string
-    outputs:
-      - name: tasks
-        type: task[]
-        path: tasks
+      - name: products
+        type: product[]
         elementFields:
-          - name: taskId
+          - name: sku
             type: string
-          - name: title
+          - name: name
             type: string
-          - name: status
-            type: string
-    requires: [task]
+          - name: price
+            type: integer
+          - name: inStock
+            type: boolean
+    satisfies: [catalogBrowsed]
 
-  completeTask:
-    description: "Mark a task as complete"
-    adapter: completeTask
-    inputs:
-      - name: taskId
-        type: string
+  createCart:
+    description: Open a guest cart
+    adapter: createCart
+    oas:
+      operationId: createCart
     outputs:
-      - name: status
+      - name: cartId
         type: string
-        path: status
-    requires: [task]
+    cleanup: deleteCart
+    satisfies: [cartOpen]
 
-  deleteTask:
-    description: "Delete a task"
-    adapter: deleteTask
+  addItem:
+    description: Add a product to a cart
+    adapter: addItem
+    oas:
+      operationId: addItem
     inputs:
-      - name: taskId
+      - name: cartId
         type: string
-    requires: [task]
+        default:
+          from: createCart.cartId
+      - name: sku
+        type: string
+        default:
+          from: listProducts.products
+          select:
+            strategy: match
+            field: sku
+            filter: inStock == true
+      - name: quantity
+        type: integer
+        default: 1
+    outputs:
+      - name: lineCount
+        type: integer
+      - name: subtotal
+        type: integer
+    requires: [catalogBrowsed, cartOpen]
+    satisfies: [cartPopulated]
+
+  deleteCart:
+    description: Delete a cart (the cleanup for createCart)
+    adapter: deleteCart
+    oas:
+      operationId: deleteCart
+    inputs:
+      - name: cartId
+        type: string
 ```
 
-Key additions:
+- **`oas:`** at the top points at the spec, and each node's `oas.operationId` ties it to an operation, so `aat validate` can check the graph and templates against the contract and runs can check every request and response.
+- **`satisfies` and `requires`** record ordering: `addItem` needs a node that satisfies `catalogBrowsed` and `cartOpen` to have run first. Plans still order their steps with `dependsOn`; AAT turns the tokens into `dependsOn` when it composes a plan from a workflow (Step 9), and the MCP tools use them to trace what a test needs.
+- **`cleanup: deleteCart`** pairs creation with teardown: whenever a plan creates a cart, AAT deletes it afterwards, even when a later step fails.
+- **`default: {from: createCart.cartId}`** means a plan does not have to wire `cartId` by hand; it comes from the `createCart` step.
+- **`select`** picks one element of an array output. `strategy: match` with `filter: inStock == true` takes the first product that is in stock, and `field: sku` takes its SKU. The sandbox's `SKU-1005` is always out of stock, so a naive "first product" would eventually pick it.
 
-- **Default value pools** on createUser inputs — varied test data per run
-- **`cleanup: deleteTask`** on createTask — pairs creation with deletion
-- **`elementFields`** on listTasks — declares the structure of each array element, enabling selection strategies in plans
-- **Ordering tokens** chain the operations: `user` -> `task`
+See [API Graphs](graphs.md) and [Value Resolution](value-flow.md).
 
-Now write templates for the new nodes:
+## Step 5: Write Templates
+
+A template turns a node's inputs into an HTTP request and its response into the node's outputs. Create one file per node in `templates/`:
+
+`templates/listProducts.yaml`:
 
 ```yaml
-# templates/listTasks.yaml
-adapter: listTasks
-
+adapter: listProducts
+protocol: http
 request:
   method: GET
-  path: /tasks?userId={{userId}}
-
+  path: /products{{?category}}?category={{category}}{{/category}}
 response:
   extract:
-    - name: tasks
-      type: array
-      path: tasks
+    currency: currency
+    products:
+      path: products
       fields:
-        - name: taskId
-          path: id
-        - name: title
-          path: title
-        - name: status
-          path: status
+        sku: sku
+        name: name
+        price: price
+        inStock: inStock
 ```
 
-```yaml
-# templates/completeTask.yaml
-adapter: completeTask
+`templates/createCart.yaml`:
 
+```yaml
+adapter: createCart
+protocol: http
 request:
-  method: PUT
-  path: /tasks/{{taskId}}/complete
+  method: POST
+  path: /carts
   headers:
     Content-Type: application/json
-
+  body: "{}"
 response:
   extract:
-    - name: status
-      path: status
+    cartId: cartId
 ```
+
+`templates/addItem.yaml`:
 
 ```yaml
-# templates/deleteTask.yaml
-adapter: deleteTask
-
+adapter: addItem
+protocol: http
 request:
-  method: DELETE
-  path: /tasks/{{taskId}}
+  method: POST
+  path: /carts/{{cartId}}/items
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "sku": "{{sku}}",
+      "quantity": {{quantity}}
+    }
+response:
+  extract:
+    lineCount: lineCount
+    subtotal: subtotal
 ```
 
-### Validate
+`templates/deleteCart.yaml`:
 
-Run validation to check everything fits together:
+```yaml
+adapter: deleteCart
+protocol: http
+request:
+  method: DELETE
+  path: /carts/{{cartId}}
+```
+
+- `{{name}}` placeholders take input values. `{{?category}}…{{/category}}` is a conditional block: the query string is sent only when `category` has a value.
+- `extract` maps each output to a path in the JSON response. For an array, `fields` names the element fields the graph declared, so `select` and assertions can use them.
+- `quantity` has no quotes in the body because it is a number; the base URL, auth, and `Accept` header come from the environment.
+
+Now validate. `--strict` also fails on warnings, which is how you want to run it while building:
+
+```bash
+aat validate --strict
+```
+
+```text
+Manifest:        OK (project: shop-tutorial)
+Environment:     OK (1 environment: us)
+Graph structure: OK (4 nodes)
+OAS validation:  OK
+Adapter outputs: OK (4 templates)
+Template inputs: OK
+
+Project validation: PASSED
+```
+
+See [Templates](templates.md) and [Validation](validation.md).
+
+## Step 6: Write and Run a Plan
+
+A plan is a test: steps, the values they use, and what must be true afterwards. Create `plans/first-cart.yaml`:
+
+```yaml
+intent:
+  goal: addItem
+  description: Browse the catalog and put two of the first in-stock product in a cart
+
+execution:
+  steps:
+    - node: listProducts
+    - node: createCart
+    - node: addItem
+      dependsOn: [listProducts, createCart]
+      isGoal: true
+      values:
+        quantity: 2
+      assertions:
+        mechanical:
+          - type: status
+            expect: 200
+          - type: fieldEquals
+            path: lineCount
+            value: 1
+          - type: predicate
+            expr: subtotal > 0
+```
+
+Steps without an `id` are named after their node. `addItem` gets `cartId` and `sku` from the graph defaults and only overrides `quantity`. Run it:
+
+```bash
+aat run plan first-cart
+```
+
+```text
+aat: loading environment...
+aat: loaded environment "us"
+aat: loaded graph (4 nodes)
+aat: loaded 4 templates
+aat: loaded 1 OAS spec(s) for runtime validation
+aat: authenticated via oauth2
+aat: executing plan (3 steps)...
+
+  [1/3] listProducts         200  0ms
+  [2/3] createCart           201  0ms
+  [3/3] addItem              201  0ms  ASSERTIONS FAILED
+        status: expected status 200, got 201
+
+  cleanup:
+    deleteCart             204  0ms
+
+FAILED: step "addItem" failed mechanical validation
+Archive: /home/you/shop-tutorial/runs/run-20260910-235242-31bacd01/archive.json
+```
+
+The request worked — the API answered `201 Created` — but the plan expected `200`. The line under the step says exactly which assertion failed, and the cart was still deleted. Two of the same SKU make one cart line, so `lineCount` is 1. Fix the expectation in `plans/first-cart.yaml`:
+
+```yaml
+          - type: status
+            expect: 201
+```
+
+```bash
+aat run plan first-cart
+```
+
+```text
+aat: loading environment...
+aat: loaded environment "us"
+aat: loaded graph (4 nodes)
+aat: loaded 4 templates
+aat: loaded 1 OAS spec(s) for runtime validation
+aat: authenticated via oauth2
+aat: executing plan (3 steps)...
+
+  [1/3] listProducts         200  0ms
+  [2/3] createCart           201  0ms
+  [3/3] addItem              201  0ms
+
+  cleanup:
+    deleteCart             204  0ms
+
+PASSED (3/3 steps, 0ms)
+Archive: /home/you/shop-tutorial/runs/run-20260910-235242-6e5b95fa/archive.json
+```
+
+Every run writes an archive under `runs/` with each request and response, how every input got its value, and each assertion's result. See [Plans and Recipes](plans.md) and [Running Tests](running.md).
+
+## Step 7: Check Out and Pay
+
+Add checkout, payment, and the order's cleanup to the end of `graph.yaml`, under `nodes:`:
+
+```yaml
+  checkoutCart:
+    description: Price the cart and create an unpaid order
+    adapter: checkoutCart
+    oas:
+      operationId: checkoutCart
+    inputs:
+      - name: cartId
+        type: string
+        default:
+          from: createCart.cartId
+      - name: shippingTier
+        type: enum[standard, express, overnight]
+        default: standard
+      - name: postalCode
+        type: string
+        default: "78701"
+    outputs:
+      - name: orderId
+        type: string
+        display: Order
+      - name: total
+        type: integer
+      - name: currency
+        type: string
+      - name: totalDisplay
+        type: string
+        display: Total
+    cleanup: deleteOrder
+    requires: [cartPopulated]
+    satisfies: [orderCreated]
+
+  paymentCharge:
+    description: Charge the order on the payments API
+    adapter: paymentCharge
+    oas:
+      operationId: paymentCharge
+    inputs:
+      - name: orderId
+        type: string
+        default:
+          from: checkoutCart.orderId
+      - name: amount
+        type: integer
+        default:
+          from: checkoutCart.total
+      - name: currency
+        type: string
+        default:
+          from: checkoutCart.currency
+      - name: cardNumber
+        type: string
+        default: "4242424242424242"
+    outputs:
+      - name: paymentId
+        type: string
+      - name: paymentStatus
+        type: string
+      - name: orderStatus
+        type: string
+    requires: [orderCreated]
+    satisfies: [orderPaid]
+
+  deleteOrder:
+    description: Delete an order (the cleanup for checkoutCart)
+    adapter: deleteOrder
+    oas:
+      operationId: deleteOrder
+    inputs:
+      - name: orderId
+        type: string
+```
+
+`display:` labels an output for run output, so each checkout will print its order ID and total. The payment's `amount` and `currency` come straight from the order, which is what the payments API requires. Add the three templates:
+
+`templates/checkoutCart.yaml`:
+
+```yaml
+adapter: checkoutCart
+protocol: http
+request:
+  method: POST
+  path: /carts/{{cartId}}/checkout
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "shippingTier": "{{shippingTier}}",
+      "postalCode": "{{postalCode}}"
+    }
+response:
+  extract:
+    orderId: orderId
+    total: total
+    currency: currency
+    totalDisplay: totalDisplay
+```
+
+`templates/paymentCharge.yaml`:
+
+```yaml
+adapter: paymentCharge
+protocol: http
+request:
+  method: POST
+  path: /payments/charges
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "orderId": "{{orderId}}",
+      "amount": {{amount}},
+      "currency": "{{currency}}",
+      "method": "card",
+      "cardNumber": "{{cardNumber}}"
+    }
+response:
+  extract:
+    paymentId: paymentId
+    paymentStatus: paymentStatus
+    orderStatus: orderStatus
+```
+
+`templates/deleteOrder.yaml`:
+
+```yaml
+adapter: deleteOrder
+protocol: http
+request:
+  method: DELETE
+  path: /orders/{{orderId}}
+```
 
 ```bash
 aat validate
 ```
 
-Expected output:
+```text
+Manifest:        OK (project: shop-tutorial)
+Environment:     OK (1 environment: us)
+Graph structure: OK (7 nodes)
+OAS validation:  WARN
+  Warnings:
+    - node "paymentCharge": output "paymentStatus" not found in OAS 2xx response schema for "paymentCharge"
+Adapter outputs: OK (7 templates)
+Template inputs: OK
+Plans:           OK (1 file)
 
-```
-Manifest:              OK (project: task-tracker)
-Graph structure:       OK (5 nodes)
-Adapter outputs:       OK (5 templates)
-Template inputs:       OK
-
-Project validation: PASSED
-```
-
-If something is wrong, validation tells you exactly what:
-
-```
-Template inputs:       FAILED
-  - createTask: template placeholder "userId" has no matching node input "userID" (case mismatch)
+Project validation: PASSED with warnings in 1 section (--strict fails on them)
 ```
 
-> **AI shortcut**: "Add listTasks, completeTask, and deleteTask nodes to graph.yaml and create their templates. Then run aat validate to check."
-
-Cross-ref: [Validation](validation.md)
-
-## Step 8: Create a Workflow
-
-A workflow captures a common test pattern so you can reuse it with different data. Declare it in the graph and write a template file.
-
-Add to the bottom of `graph.yaml`:
+The payments API calls the charge's state `status`, not `paymentStatus`, and validation caught the mismatch before any request was sent. Without `--strict` a warning does not fail validation, but it is shown. The fix is the point of `extract`: the graph keeps the clearer name, and only the template knows what the API calls it. In `templates/paymentCharge.yaml`:
 
 ```yaml
-# graph.yaml (add after nodes:)
-workflows:
-  - name: Task Lifecycle
-    description: "Create a user, create a task, complete it, verify via list"
-    template: workflows/task-lifecycle.yaml
+response:
+  extract:
+    paymentId: paymentId
+    paymentStatus: status
+    orderStatus: orderStatus
 ```
 
-Create the workflow template:
+Now a plan for the whole purchase. Create `plans/purchase.yaml`:
 
 ```yaml
-# workflows/task-lifecycle.yaml
+intent:
+  goal: pay
+  description: Buy the first in-stock product and pay by card
+
 execution:
   steps:
-    - id: user
-      node: createUser
+    - node: listProducts
+    - node: createCart
+    - node: addItem
+      dependsOn: [listProducts, createCart]
+    - node: checkoutCart
+      dependsOn: [addItem]
       assertions:
         mechanical:
           - type: status
             expect: 201
-    - id: task
-      node: createTask
-      values:
-        userId:
-          from: user.userId
-      dependsOn: [user]
+          - type: predicate
+            expr: total > 0
+    - id: pay
+      node: paymentCharge
+      dependsOn: [checkoutCart]
+      isGoal: true
       assertions:
         mechanical:
           - type: status
             expect: 201
-    - id: complete
-      node: completeTask
-      values:
-        taskId:
-          from: task.taskId
-      dependsOn: [task]
-      assertions:
-        mechanical:
-          - type: status
-            expect: 200
           - type: fieldEquals
-            path: status
-            value: "completed"
-    - id: list
-      node: listTasks
-      values:
-        userId:
-          from: user.userId
-      dependsOn: [complete]
-      assertions:
-        mechanical:
-          - type: status
-            expect: 200
-  cleanup:
-    - node: deleteTask
-      values:
-        taskId:
-          from: task.taskId
-      runOn: always
+            path: paymentStatus
+            value: captured
 ```
 
-The workflow template looks like a plan's execution block — steps with values, references, assertions, and cleanup. The key difference: workflows omit values that graph defaults handle (like `userName` and `priority`), letting the engine fill them automatically.
+```bash
+aat run plan purchase
+```
 
-> **AI shortcut**: "Create a 'Task Lifecycle' workflow that creates a user, creates a task, completes it, verifies via list, and cleans up"
+```text
+aat: loading environment...
+aat: loaded environment "us"
+aat: loaded graph (7 nodes)
+aat: loaded 7 templates
+aat: loaded 1 OAS spec(s) for runtime validation
+aat: authenticated via oauth2
+aat: executing plan (5 steps)...
 
-Cross-ref: [Workflows](workflows.md)
+  [1/5] listProducts         200  0ms
+  [2/5] createCart           201  0ms
+  [3/5] addItem              201  0ms
+  [4/5] checkoutCart         201  0ms
+        Order: ord_0001
+        Total: $103.40
+  [5/5] paymentCharge        404  0ms  ASSERTIONS FAILED  OAS: 1 warning(s)
+        status: expected status 201, got 404
+        fieldEquals: field "paymentStatus" does not exist
+
+  cleanup:
+    deleteOrder            204  0ms
+    deleteCart             204  0ms
+
+FAILED: step "paymentCharge" returned status 404
+OAS: 1 warning(s)
+Archive: /home/you/shop-tutorial/runs/run-20260910-235242-8e0a1311/archive.json
+```
+
+The payment went to the shop API, which does not serve `/payments/charges` (its error body, in the archive, says so), and the `OAS: 1 warning(s)` marker is runtime OpenAPI validation noticing that the request lacked the `X-API-Key` header the spec requires. Both cleanups ran anyway, in reverse order of creation. The payments API lives on its own host with its own credential, so route it there. Add `payHost` to the `_base` vars and an `overrides` entry to `_base` in `env.yaml`:
+
+```yaml
+environments:
+  _base:
+    vars:
+      apiHost: "localhost:8765"
+      payHost: "localhost:8766"
+    apiBaseUrl: http://${apiHost}/${region}/v1
+    headers:
+      Accept: application/json
+    auth:
+      type: oauth2
+      tokenUrl: http://${apiHost}/oauth/token
+      credentials:
+        username: {source: literal, value: demo}
+        password: {source: literal, value: demo}
+        clientId: {source: literal, value: aat-shop}
+        clientSecret: {source: literal, value: aat-shop-secret}
+    overrides:
+      - match: "payment*"
+        baseUrl: http://${payHost}/${region}/v1
+        auth:
+          type: apikey
+          headerName: X-API-Key
+          credentials:
+            key: {source: literal, value: pay-demo-key}
+
+  us:
+    extends: _base
+    vars:
+      region: us
+```
+
+An override matches node names — here every `payment*` operation — and changes where those requests go and how they authenticate. Headers the environment sets still apply; the shop's bearer token is not sent to the payments host, because the override declares its own auth.
+
+```bash
+aat run plan purchase
+```
+
+```text
+aat: loading environment...
+aat: loaded environment "us"
+aat: loaded graph (7 nodes)
+aat: loaded 7 templates
+aat: loaded 1 OAS spec(s) for runtime validation
+aat: authenticated via oauth2
+aat: override: payment*
+aat: executing plan (5 steps)...
+
+  [1/5] listProducts         200  0ms
+  [2/5] createCart           201  0ms
+  [3/5] addItem              201  0ms
+  [4/5] checkoutCart         201  0ms
+        Order: ord_0002
+        Total: $103.40
+  [5/5] paymentCharge        201  351ms
+
+  cleanup:
+    deleteOrder            204  0ms
+    deleteCart             204  0ms
+
+PASSED (5/5 steps, 352ms)
+Archive: /home/you/shop-tutorial/runs/run-20260910-235242-60968cd7/archive.json
+```
+
+Both hosts, both credentials, one plan. The order and cart were deleted afterwards, so the run left nothing behind.
+
+## Step 8: Capture the Pattern as a Workflow
+
+Most tests of this API start the same way: browse, fill a cart, check out, pay. A workflow names that sequence once so tests can reuse it. Register it at the top of `graph.yaml`, after the `oas:` line:
+
+```yaml
+workflows:
+  - name: Purchase
+    description: Buy the first in-stock product as a guest and pay by card
+    template: workflows/purchase.yaml
+```
+
+The template is an ordinary plan without the test-specific parts. Create `workflows/purchase.yaml`:
+
+```bash
+mkdir workflows
+```
+
+```yaml
+intent:
+  goal: pay
+  description: Buy the first in-stock product as a guest and pay by card
+
+execution:
+  steps:
+    - node: listProducts
+    - node: createCart
+    - node: addItem
+      dependsOn: [listProducts, createCart]
+    - node: checkoutCart
+      dependsOn: [addItem]
+    - id: pay
+      node: paymentCharge
+      dependsOn: [checkoutCart]
+      isGoal: true
+```
+
+Tell the manifest where workflows live by adding a line to `aat-project.yaml`:
+
+```yaml
+workflows: workflows/
+```
+
+See [Workflows](workflows.md) for slots (choice points such as the payment method) and addons (optional steps spliced in), which the shop example uses heavily.
 
 ## Step 9: Write a Recipe
 
-A recipe instantiates a workflow with specific overrides. Compare the size:
+A recipe is a test written against a workflow: it names the workflow and states only what differs. Create `plans/two-items.yaml`:
 
 ```yaml
-# plans/lifecycle-recipe.yaml
 kind: recipe
-metadata:
-  created: 2026-02-23T10:00:00Z
 selection:
-  workflow: Task Lifecycle
-  description: "Task lifecycle with user Bob"
+  workflow: Purchase
+  description: Buy two of a product; the payment is captured
 overrides:
   values:
-    user.userName: "Bob"
-    user.email: "bob@example.com"
-    task.title: "Write documentation"
-    task.priority: "high"
+    addItem.quantity: 2
+  assertions:
+    pay:
+      - type: fieldEquals
+        path: paymentStatus
+        value: captured
 ```
 
-That's it — 12 lines vs the ~40-line full plan. The recipe names the workflow and provides only the values that differ from defaults. Everything else (step wiring, assertions, cleanup) comes from the workflow template.
-
-Run it the same way as a full plan:
+Override keys are `stepId.input` for values and step IDs for assertions. Steps composed from a workflow also get a default `status: 2xx` assertion. Run it like any plan:
 
 ```bash
-aat run plan lifecycle-recipe
+aat run plan two-items
 ```
 
-Expected output:
+```text
+aat: loading environment...
+aat: loaded environment "us"
+aat: loaded graph (7 nodes)
+aat: loaded 7 templates
+aat: loaded 1 OAS spec(s) for runtime validation
+aat: reconstituting recipe "Purchase"...
+aat: authenticated via oauth2
+aat: override: payment*
+aat: executing plan (5 steps)...
 
+  [1/5] listProducts         200  0ms
+  [2/5] createCart           201  0ms
+  [3/5] addItem              201  0ms
+  [4/5] checkoutCart         201  0ms
+        Order: ord_0003
+        Total: $200.82
+  [5/5] paymentCharge        201  351ms
+
+  cleanup:
+    deleteCart             204  0ms
+    deleteOrder            204  0ms
+
+PASSED (5/5 steps, 353ms)
+Archive: /home/you/shop-tutorial/runs/run-20260910-235242-ee8e9b6f/archive.json
 ```
-Step user (createUser)         ... PASSED (201)
-Step task (createTask)         ... PASSED (201)
-Step complete (completeTask)   ... PASSED (200)
-Step list (listTasks)          ... PASSED (200)
-Cleanup deleteTask             ... OK (200)
 
-Plan lifecycle-recipe: PASSED
+AAT composed the workflow into a full plan, applied the overrides, and ran it. When the workflow changes — a new step, a different cleanup — every recipe built on it follows. The cleanup order differs from `purchase`: composition lists a workflow's cleanup pairings in step order, so the cart is deleted before the order (see [Running Tests: Cleanup](running.md#cleanup)).
+
+## Step 10: Multiply with Layers
+
+A layer is a named set of input values applied on top of a plan. Layers turn one test into a matrix without copying it. Add a `layers/` directory, one file per shipping tier, and register it in `aat-project.yaml`:
+
+```bash
+mkdir layers
 ```
 
-> **AI shortcut**: "Write a recipe for the Task Lifecycle workflow with user name 'Bob' and task title 'Write documentation'"
-
-Cross-ref: [Plans: Recipes](plans.md#recipes)
-
-## Step 10: Batch Runs
-
-Create a few recipe variations to test different scenarios:
+`layers/standard.yaml`:
 
 ```yaml
-# plans/lifecycle-alice.yaml
-kind: recipe
-selection:
-  workflow: Task Lifecycle
-  description: "Task lifecycle with user Alice, low priority"
-overrides:
-  values:
-    user.userName: "Alice"
-    user.email: "alice@example.com"
-    task.title: "Review pull request"
-    task.priority: "low"
+name: standard
+description: Standard shipping
+inputs:
+  shippingTier: standard
 ```
+
+`layers/express.yaml`:
 
 ```yaml
-# plans/lifecycle-carol.yaml
-kind: recipe
-selection:
-  workflow: Task Lifecycle
-  description: "Task lifecycle with user Carol, urgent task"
-overrides:
-  values:
-    user.userName: "Carol"
-    user.email: "carol@example.com"
-    task.title: "Fix production bug"
-    task.priority: "high"
+name: express
+description: Express shipping
+inputs:
+  shippingTier: express
 ```
 
-Run all plans in the `plans/` directory as a batch:
+`layers/overnight.yaml`:
+
+```yaml
+name: overnight
+description: Overnight shipping
+inputs:
+  shippingTier: overnight
+```
+
+And in `aat-project.yaml`:
+
+```yaml
+layers: layers/
+```
+
+`aat run batch` runs every plan in `plans/`. Each `--layer-group` adds a dimension: a group of three layers runs every plan as-is and once per layer. `--quiet` prints one line per run:
 
 ```bash
-aat run batch
+aat run batch --layer-group standard,express,overnight --quiet
 ```
 
-Expected output:
-
+```text
+first-cart [(base)]: PASSED
+purchase [(base)]: PASSED
+purchase [express]: PASSED
+purchase [overnight]: PASSED
+two-items [(base)]: PASSED
+two-items [express]: PASSED
+two-items [overnight]: PASSED
+first-cart [express]: SKIPPED (duplicate of first-cart [(base)])
+first-cart [overnight]: SKIPPED (duplicate of first-cart [(base)])
+first-cart [standard]: SKIPPED (duplicate of first-cart [(base)])
+purchase [standard]: SKIPPED (duplicate of purchase [(base)])
+two-items [standard]: SKIPPED (duplicate of two-items [(base)])
+Batch: 7/12 PASSED, 5 SKIPPED
+Archive: /home/you/shop-tutorial/runs/batch-20260910-235243-e2267d6a
 ```
-Running 3 plans...
 
-lifecycle-recipe     ... PASSED
-lifecycle-alice      ... PASSED
-lifecycle-carol      ... PASSED
+Twelve permutations, seven runs. `standard` is already the graph default, so those permutations would send exactly the same requests as the plans themselves, and `first-cart` never checks out, so no shipping tier changes it. AAT detects such duplicates before running anything and skips them. Add a second `--layer-group` (card types, customers, basket contents) and the runs multiply; see [Matrix Testing](batch-layers.md).
 
-Batch: 3/3 PASSED
+## Step 11: Add a Second Region
+
+The EU region prices in euros with VAT included, and its checkout needs an EU postal code. Environment `values` are available to inputs as `{{env.NAME}}`, so each region can supply its own. Add a `values` block to `us` and a new `eu` environment at the end of `env.yaml`:
+
+```yaml
+  us:
+    extends: _base
+    vars:
+      region: us
+    values:
+      postalCode: "78701"
+
+  eu:
+    extends: _base
+    vars:
+      region: eu
+    values:
+      postalCode: "10115"
 ```
 
-You can also run a subset by passing a subdirectory:
+Then make the graph default read it — in `graph.yaml`, change `checkoutCart`'s `postalCode` input:
+
+```yaml
+      - name: postalCode
+        type: string
+        default: "{{env.postalCode}}"
+```
 
 ```bash
-aat run batch lifecycle/
+aat validate --strict
 ```
 
-> **AI shortcut**: "Create three recipe variations with different users and task priorities, then run them as a batch"
-
-Cross-ref: [Running Tests](running.md)
-
-## Step 11: Validate Everything
-
-Run full project validation to check all artifacts together:
-
-```bash
-aat validate
-```
-
-```
-Manifest:              OK (project: task-tracker)
-Graph structure:       OK (5 nodes)
-Adapter outputs:       OK (5 templates)
-Template inputs:       OK
+```text
+Manifest:               OK (project: shop-tutorial)
+Environment:            OK (2 environments: eu, us)
+Graph structure:        OK (7 nodes)
+OAS validation:         OK
+Adapter outputs:        OK (7 templates)
+Template inputs:        OK
 Workflow compatibility: OK (1 workflow)
-Plans:                 OK (3 files, 3 recipes)
+Workflows:              OK (1 file, 1 template)
+Layers:                 OK (3 layers)
+Plans:                  OK (3 files, 1 recipe)
 
 Project validation: PASSED
 ```
 
-Validation catches structural issues without making any HTTP calls:
-
-- **Graph**: ordering cycles, missing cleanup nodes, duplicate names
-- **Templates**: adapter mismatches, placeholder/input misalignment, missing extraction
-- **Workflows**: undefined slot options, template/graph inconsistencies
-- **Plans**: unknown nodes, unresolvable references, invalid assertions
-
-When validation fails, it tells you exactly what's wrong and where:
-
-```
-Plans:                 FAILED
-  - lifecycle-recipe.yaml: unknown workflow "Task Lifecycl" (did you mean "Task Lifecycle"?)
+```bash
+aat run plan purchase --env eu
 ```
 
-Fix the typo, run `aat validate` again, and confirm it passes before executing.
+```text
+aat: loading environment...
+aat: loaded environment "eu"
+aat: loaded graph (7 nodes)
+aat: loaded 7 templates
+aat: loaded 1 OAS spec(s) for runtime validation
+aat: authenticated via oauth2
+aat: override: payment*
+aat: executing plan (5 steps)...
 
-Cross-ref: [Validation](validation.md)
+  [1/5] listProducts         200  0ms
+  [2/5] createCart           201  0ms
+  [3/5] addItem              201  0ms
+  [4/5] checkoutCart         201  0ms
+        Order: ord_0001
+        Total: €87.78
+  [5/5] paymentCharge        201  351ms
+
+  cleanup:
+    deleteOrder            204  0ms
+    deleteCart             204  0ms
+
+PASSED (5/5 steps, 352ms)
+Archive: /home/you/shop-tutorial/runs/run-20260910-235245-a3cb7e02/archive.json
+```
+
+Same plan, same files, a different region: the base URL, prices, currency, and postal code all changed through the environment alone. `aat run batch --env eu --layer-group standard,express,overnight` would run the matrix there too — and show that the EU has no overnight tier.
+
+## Step 12: Look at the Results
+
+Open the newest run in the web UI (it needs a release or `make build` binary):
+
+```bash
+aat web view latest
+```
+
+The run view shows each step on a timeline with its request, response, resolved inputs, and assertion results; batches show as a permutation matrix. See [Web UI](web-ui.md) and [Archives](archives.md).
 
 ## Recap
 
-Here's what you built and the concepts you learned:
+| File | What it does |
+|------|--------------|
+| `aat-project.yaml` | Tells every `aat` command where the project's files are |
+| `env.yaml` | Base URLs, auth, and per-host overrides for each region |
+| `graph.yaml` | Operations, their inputs and outputs, ordering, cleanup, defaults, and workflows |
+| `templates/*.yaml` | HTTP requests and response extraction, one per operation |
+| `plans/first-cart.yaml`, `plans/purchase.yaml` | Full plans: steps, values, assertions |
+| `workflows/purchase.yaml` | The reusable purchase sequence |
+| `plans/two-items.yaml` | A recipe: a test stated as the difference from a workflow |
+| `layers/*.yaml` | Input values that multiply plans into a matrix |
 
-| Concept | What you learned | Reference |
-|---------|-----------------|-----------|
-| Project manifest | `aat-project.yaml` marks the root and declares artifact paths | [Project Setup](project-setup.md) |
-| Graph | Nodes with typed inputs, outputs, and ordering tokens | [API Graphs](graphs.md) |
-| Templates | HTTP request/response YAML with placeholders and extraction | [Templates](templates.md) |
-| Environment | Base URL, auth, secrets via environment variables | [Environments](environments.md) |
-| Plans | Explicit steps with values, references, and assertions | [Plans and Recipes](plans.md) |
-| Workflows | Reusable patterns declared in the graph | [Workflows](workflows.md) |
-| Recipes | Compact plans that instantiate a workflow with overrides | [Plans: Recipes](plans.md#recipes) |
-| Batch runs | Execute all plans in a directory | [Running Tests](running.md) |
-| Validation | Structural checks across the entire project | [Validation](validation.md) |
+## Where to Go Next
 
-## Next Steps
+The [shop example](examples/shop.md) (your `shop-reference` directory) covers what this tutorial left out, on the same API:
 
-| Topic | Link |
-|-------|------|
-| How values flow from defaults to selections | [Value Resolution](value-flow.md) |
-| Business concepts and value pools | [Domain Knowledge](domain.md) |
-| LLM-assisted plan generation | [LLM-Assisted Planning](prompt.md) |
-| CI/CD pipeline integration | [CI/CD Integration](ci-cd.md) |
-| Visual archive browser | [Web UI and Archives](web-ui.md) |
-| IDE AI integration | [MCP Server](mcp-server.md) |
-| AI-facing schema reference | [AI Assistant Primer](llms.md) |
+- **Slots and addons** — the Checkout workflow with a customer slot, a payment slot, and coupon, tracking, and return addons
+- **Negative tests** — `expectFailure` steps, `mutations` that send broken payloads, and an overlay that turns a payment into a declined card
+- **Retries** — steps that retry the sandbox's stale inventory read and its warming-up carrier
+- **Checkpoints** — stopping after a step and handing the live session to another tool; see [Checkpoints](checkpoints.md)
+- **Visualizers** — a receipt rendered in the web UI; see [Visualizers](visualizers.md)
+- **AI assistants** — `aat mcp serve` gives Claude Code and other MCP clients the graph and tools to write and run plans like these; see [MCP Server](mcp-server.md)

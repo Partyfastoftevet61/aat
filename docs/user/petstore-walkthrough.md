@@ -1,10 +1,10 @@
 # The Petstore Walkthrough
 
-Trace from a 21-line recipe to a fully automated, self-cleaning API test.
+Trace from a 20-line recipe to a fully automated, self-cleaning API test.
 
 This walkthrough takes you through every file in the [Petstore example](https://github.com/gburgyan/aat/tree/main/examples/petstore) and explains how they compose into working tests. By the end, you will understand how AAT models an API, wires data between steps, runs cleanup automatically, and keeps test plans short.
 
-**Prerequisites:** Go 1.25+, internet access (the Petstore API is public).
+**Prerequisites:** Go 1.25+ and Node.js (`make build` also builds the web UI), internet access (the Petstore API is public). Without Node, `make cli` builds everything this walkthrough uses except `aat web view`.
 
 **Time:** ~15 minutes to read in full. Pass 1 is 2 minutes if you just want to run something.
 
@@ -39,7 +39,7 @@ Archive: _output/runs/run-XXXXXXXX-XXXXXX-XXXXXXXX/archive.json
 
 That is the entire test. Two API calls, both passed, and a cleanup step deleted the pet afterward.
 
-Here is the thing: you did not write cleanup logic. You did not wire the pet ID between steps. You did not pick a pet name. AAT did all of that. The recipe that drove this run is 21 lines of YAML, and most of those are assertions.
+Here is the thing: you did not write cleanup logic. You did not wire the pet ID between steps. You did not pick a pet name. AAT did all of that. The recipe that drove this run is 20 lines of YAML, and most of those are assertions.
 
 ### Run the second plan
 
@@ -55,17 +55,17 @@ This one searches for pets by status, picks the first result from the array, and
 ../../aat run batch
 ```
 
-This discovers and runs every plan in the `plans/` directory. Add `--json --quiet` for CI pipelines.
+This discovers and runs every plan in the `plans/` directory. Add `--json` for CI pipelines (it implies `--quiet`).
 
 ### Inspect the results
 
 Every run writes a JSON archive to the `_output/runs/` directory (configured by `archives` in the manifest). You can browse the full request/response details in the web UI:
 
 ```bash
-../../aat web view
+../../aat web view latest
 ```
 
-This opens the most recent run in your browser with a Gantt timeline of each step, request and response bodies, headers, and assertion results.
+This starts a local web server (stop it with Ctrl+C) and opens the most recent run in your browser with a Gantt timeline of each step, request and response bodies, headers, and assertion results. Without `latest`, it opens the list of runs.
 
 ### What you are about to learn
 
@@ -77,7 +77,7 @@ The rest of this walkthrough traces through five layers that made those runs wor
 4. **Templates** translate between the graph's semantic names and actual HTTP requests.
 5. **Workflows and recipes** compose the above into executable tests.
 
-Each layer does one job and delegates the rest. That is how a 21-line recipe produces a self-cleaning, data-wired, multi-step API test.
+Each layer does one job and delegates the rest. That is how a 20-line recipe produces a self-cleaning, data-wired, multi-step API test.
 
 ---
 
@@ -271,7 +271,7 @@ Two things to notice:
 
 **Default values.** The `name` input has a `pool` default — AAT picks a random name from the list each run. The `status` input has a literal default of `"available"`. Neither the workflow nor the recipe needs to specify these values. They only override when they want something specific.
 
-**Cleanup declaration.** `cleanup: deletePet` tells AAT: "whenever a plan runs `createPet`, schedule a `deletePet` call after the plan finishes, even if a step fails." The cleanup step's own `petId` input resolves automatically (see `deletePet` below). You declare cleanup once in the graph, and every plan that creates a pet inherits it for free.
+**Cleanup declaration.** `cleanup: deletePet` tells AAT: "whenever a plan creates a pet with `createPet`, schedule a `deletePet` call after the plan finishes, even if a later step fails." The cleanup step's own `petId` input resolves automatically: cleanup inputs are matched by name against the outputs of the steps that ran, and `createPet` has a `petId` output. You declare cleanup once in the graph, and every plan that creates a pet inherits it for free.
 
 ### `getPet` — data flow
 
@@ -320,7 +320,7 @@ deletePet:
   outputs: []
 ```
 
-Simple node, but notice the `default: {from: createPet.petId}` — same wiring as `getPet`. When AAT runs this as a cleanup step after `createPet`, the pet ID resolves from the step that created the pet. No explicit wiring needed in the recipe.
+Simple node, but notice the `default: {from: createPet.petId}` — same wiring as `getPet`. That default applies when a plan runs `deletePet` as a regular step. As a cleanup step, `deletePet` does not use it: its `petId` input is matched by name to the `petId` output of a step that ran, which here is `createPet`'s. Either way, no explicit wiring is needed in the recipe.
 
 ### Workflows section
 
@@ -466,7 +466,7 @@ execution:
       description: "Verify the pet exists with correct data"
 ```
 
-Thirteen lines. The workflow says:
+Twelve lines. The workflow says:
 
 1. Run `createPet`.
 2. Then run `getPet` (it depends on `createPet`).
@@ -510,7 +510,7 @@ This workflow introduces selections. The `getPet` step needs a `petId`, but ther
 - **`selections.pet`** — defines a selection named `pet`. It takes from `findByStatus.pets` (the array output) using `strategy: first` (pick the first element).
 - **`values.petId`** — sets `petId` to `pet.petId`, which is the `petId` element field from the selected array element.
 
-Three lines turn "search returns many results" into "use one specific result's ID." The selection strategies available (`first`, `last`, `min`, `max`, `match`, `random`) cover most real-world scenarios, and they are declared in the workflow, not coded in a script.
+Three lines turn "search returns many results" into "use one specific result's ID." The selection strategies available (`first`, `last`, `index`, `min`, `max`, `match`, `random`) cover most real-world scenarios, and they are declared in the workflow, not coded in a script.
 
 > **Further reading:** [Workflows](workflows.md), [Value Resolution](value-flow.md)
 
@@ -545,9 +545,9 @@ overrides:
         path: petName
 ```
 
-Twenty-one lines. This is the entire test.
+Twenty lines. This is the entire test.
 
-The `selection` block picks the "Create and Verify" workflow. The `overrides` block adds assertions: verify that `createPet` returns HTTP 200 and includes a `petId` field, and that `getPet` returns 200 and includes a `petName` field.
+The `selection` block picks the "Create and Verify" workflow. The `overrides` block adds assertions: verify that `createPet` returns HTTP 200 and produced a `petId`, and that `getPet` returns 200 and produced a `petName`. `fieldExists` checks the step's extracted outputs, not the raw response body, which is why the paths are `petId` and `petName` rather than the API's `id` and `name` (add `raw: true` to check the body instead).
 
 That is it. No step definitions, no input values, no data wiring, no cleanup logic. The workflow provides the step structure. The graph provides input defaults, data flow, and cleanup. The recipe customizes the workflow for this particular test — here, by adding assertions. In a larger project, the same workflow could back dozens of recipes, each exercising a different scenario.
 
@@ -602,7 +602,7 @@ Here is what happens when you run `../../aat run plan plans/create-and-verify.ya
 
 **8. Template filling, execution, and assertions for `getPet`.** Same flow: load template, substitute `{{petId}}` with 12345, send GET to `/pet/12345`, extract, check assertions.
 
-**9. Cleanup.** Because `createPet` declares `cleanup: deletePet` in the graph, AAT scheduled a cleanup step when `createPet` executed. Now that the plan is done (whether it passed or failed), AAT runs `deletePet`. Its `petId` input resolves via the same graph default (`from: createPet.petId`) — 12345. The pet is deleted.
+**9. Cleanup.** Because `createPet` declares `cleanup: deletePet` in the graph, the reconstituted plan lists `deletePet` in its cleanup section. Now that the plan is done (whether it passed or failed), AAT runs `deletePet`. Its `petId` input is matched by name to the `petId` output that `createPet` extracted — 12345. The pet is deleted.
 
 Nine things happened, and you configured exactly three of them: the workflow name, and two sets of assertions. The graph defined the operations, defaults, data flow, and cleanup. The templates handled HTTP translation. The workflow defined step ordering. The recipe added the test criteria.
 
@@ -613,12 +613,12 @@ Nine things happened, and you configured exactly three of them: the workflow nam
 After any run, the full details are preserved in a JSON archive under `_output/runs/`. You can read the JSON directly, but the web UI is the faster way to make sense of it:
 
 ```bash
-../../aat web view
+../../aat web view latest
 ```
 
 This opens the most recent run in your browser. Here is what you get:
 
-**A Gantt timeline of the entire run.** Every step is a bar on the timeline — you can see at a glance which steps ran in parallel, how long each took, and where the time went. Cleanup steps appear separately so you can distinguish test logic from teardown.
+**A Gantt timeline of the entire run.** Every step is a bar on the timeline — you can see at a glance how long each step took and where the time went. Cleanup steps appear separately so you can distinguish test logic from teardown.
 
 **Full request and response details for every step.** Click a step and you see the HTTP method, URL, headers, request body, response status, response body, and extracted outputs. No detail is lost. If a test fails next week because the API changed a field name, you do not have to reproduce the failure — the archive already has the exact response that caused it.
 
@@ -628,11 +628,11 @@ This opens the most recent run in your browser. Here is what you get:
 
 ### Why this matters
 
-The archive is a self-contained record of what happened. You can send the archive directory to a teammate, attach it to a Jira ticket, or store it as a CI artifact. Anyone who opens it with `aat web view <path>` sees exactly what the API returned — not a screenshot, not a summary, not someone's recollection of what went wrong. The raw facts, every header and every byte.
+The archive is a self-contained record of what happened. You can send the archive directory to a teammate, attach it to a Jira ticket, or store it as a CI artifact. Anyone who opens it with `aat web view <path>` sees exactly what the API returned — not a screenshot, not a summary, not someone's recollection of what went wrong. The raw facts, every body and every header except the redacted auth headers.
 
-No more screenshots and handwaving. The archive gets right to the evidence.
+No more screenshots and handwaving. The archive gets right to the evidence. Because bodies are stored as-is, check what an archive from a real API contains before you share it outside your team.
 
-> **Further reading:** [Web UI and Archives](web-ui.md)
+> **Further reading:** [Web UI](web-ui.md), [Archives](archives.md)
 
 ---
 
@@ -640,8 +640,8 @@ No more screenshots and handwaving. The archive gets right to the evidence.
 
 - **Validate the project:** `aat validate` checks graphs, templates, plans, and workflows for consistency. See [Validation](validation.md).
 
-- **Run in CI/CD:** Add `--json --quiet` to get machine-readable output and clean exit codes. Archives make great pipeline artifacts. See [CI/CD Integration](ci-cd.md).
+- **Run in CI/CD:** Add `--json` to get machine-readable output and clean exit codes. Archives make great pipeline artifacts. See [CI/CD Integration](ci-cd.md).
 
 - **Build your own project:** The [Quickstart](quickstart.md) scaffolds a graph from an OpenAPI spec in 5 minutes. The [Tutorial](tutorial.md) builds everything from scratch.
 
-- **Generate plans with an LLM:** `aat prompt "create a pet and verify it"` uses an LLM to generate a plan from a natural-language description. See [LLM-Assisted Planning](prompt.md).
+- **Let an AI assistant write tests:** `aat mcp serve` gives Claude Code and other MCP clients the graph and the tools to compose, validate, and run plans. See [MCP Server](mcp-server.md). For a one-shot draft from a sentence, there is also [`aat prompt`](prompt.md).

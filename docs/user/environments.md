@@ -309,6 +309,26 @@ auth:
 | `grantType` | `password` | OAuth2 `grant_type` form parameter |
 | `extraParams` | _(empty)_ | Additional key-value pairs appended to the token request form |
 
+#### Client Credentials
+
+`grantType: client_credentials` works, but AAT still requires `username` and `password` for every `oauth2` configuration and sends them in the token request. Give them empty literal values, which the shop sandbox's token endpoint (like most) ignores for this grant:
+
+```yaml
+auth:
+  type: oauth2
+  tokenUrl: https://auth.example.com/oauth/token
+  grantType: client_credentials
+  credentials:
+    clientId:
+      source: env
+      var: API_CLIENT_ID
+    clientSecret:
+      source: env
+      var: API_CLIENT_SECRET
+    username: {source: literal, value: ""}   # required by AAT, unused by this grant
+    password: {source: literal, value: ""}
+```
+
 ### API Key
 
 A static key sent as a custom header. The `headerName` field controls which header carries the key:
@@ -353,7 +373,7 @@ An empty or missing `type` field is treated as `none`.
 
 ## Custom Headers
 
-Static headers added to every request. These form the base layer — template and auth headers can override them:
+Static headers added to every request. These form the base layer — every other header source can override them:
 
 ```yaml
 headers:
@@ -365,10 +385,33 @@ headers:
 Header merge order (later values override earlier ones for the same key):
 
 1. **Environment headers** — this `headers` section
-2. **Template headers** — per-template `request.headers` (see [Templates](templates.md))
-3. **Plan-level headers** — per-step header overrides (see [Plans](plans.md))
-4. **Auth headers** — authentication headers
-5. **Overlay headers** — headers from `.aat-overrides.yaml` or `--overlay` (final precedence)
+2. **Plan headers** — the plan's top-level `headers` (see [Plans](plans.md#plan-level-auth-and-headers))
+3. **Auth credential** — `Authorization: Bearer …`, or the API key header, from the effective auth
+4. **`.aat-overrides.yaml` headers** — its top-level `headers`
+5. **`--overlay` headers** — the overlay file's top-level `headers`
+6. **Template headers** — per-template `request.headers` (see [Templates](templates.md#header-merge-order))
+
+A plan header therefore cannot replace the credential, while an overlay header can. Template headers are applied last and currently replace everything before them, the credential included; this is a known issue, so keep `Authorization`, API key headers, and overlay-managed headers out of templates.
+
+A node matched by an override that routes it (one that sets `baseUrl`, `auth`, `headers`, or `pathRewrite`, or a `--override` flag) starts from headers 1–5, drops the inherited credential if the override declares its own `auth`, applies the override's `headers`, and then sets the credential of its effective auth again. Template headers still come last.
+
+## Values
+
+The `values` map holds per-environment data such as a region's postal code. Plan values, graph input defaults, and layers read it with a `{{env.KEY}}` expression, which checks the OS environment variable `KEY` first and then this map:
+
+```yaml
+values:
+  postalCode: "78701"
+```
+
+```yaml
+# graph.yaml — a node input
+- name: postalCode
+  type: string
+  default: "{{env.postalCode}}"
+```
+
+Values do not fill template placeholders directly: a template's `{{postalCode}}` resolves only from the step's inputs, so route an environment value through an input as above. See [Value Resolution: Environment Variables](value-flow.md#environment-variables).
 
 ## Secrets
 
@@ -398,7 +441,7 @@ The value is stored directly in the YAML file. Use this only for local developme
 
 ### Redaction
 
-All resolved secret values are automatically redacted from run archives. AAT collects secrets from auth credentials and the LLM API key, then scrubs matching values from archived headers and responses.
+Run archives redact request and response headers by name: `Authorization`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`, `Cookie`, and `Set-Cookie` values become `[REDACTED]`. AAT also collects the resolved values of every credential that can apply to a run — the environment's and its host overrides' auth, the plan's auth, overlay auth, and the LLM API key — and scrubs them from every archived header (so an API key under a custom `headerName` is redacted), from step inputs and value resolutions, and from the plan's literal credentials. Request and response bodies and step outputs are stored as-is, so review an archive before sharing it. See [Archives](archives.md).
 
 ## LLM Configuration
 
@@ -480,7 +523,7 @@ Each override matches node names using glob patterns. When a node matches:
 
 - **`baseUrl`** — replaces the top-level `apiBaseUrl`. If omitted, inherits the top-level base URL.
 - **`auth`** — replaces the top-level auth for that node. The top-level credential (the `Authorization` header, or the top-level API key header) is dropped first, so it is never sent to the override's host. If omitted, inherits the top-level auth.
-- **`headers`** — merged with the environment-level headers (override-specific headers win on conflict).
+- **`headers`** — merged over the run's headers (environment, plan, and overlay headers); override-specific headers win on conflict, and the credential is set again after them (see [Custom Headers](#custom-headers)).
 
 An entry that sets none of `baseUrl`, `auth`, `headers`, or `pathRewrite` — only `values:` or `expectFailure:` — does not change routing: the node keeps the route that a broader glob or the top-level configuration gives it. An overlay can therefore turn `paymentCharge` into a negative test without pulling it off a `payment*` route.
 
@@ -570,7 +613,7 @@ overrides:
 
 Semantics:
 
-- `values:` merge into the resolved inputs map at step execution time, overwriting plan-supplied values. Precedence: overlay values > plan step values > graph defaults.
+- `values:` merge into the resolved inputs map at step execution time, overwriting plan-supplied values. Precedence: overlay values > plan step values > graph defaults. They are used exactly as written: `{{...}}` expressions such as `{{today}}` are not evaluated, and the input's graph type is not applied.
 - `expectFailure:` applies to matched steps only when the plan step doesn't already declare its own `expectFailure`. Status codes must all be `>= 400`.
 - Match precedence: exact matches win over glob matches on key conflicts, and later registrations overwrite earlier ones (`env.yaml` → `.aat-overrides.yaml` → `--overlay` → `--override`). For `expectFailure`, the last exact match wins; if no exact match, the last glob match wins.
 
@@ -615,12 +658,12 @@ Auth priority (lowest to highest):
 
 ### Transaction-Level Headers
 
-A top-level `headers` map in an overlay is merged into every request. These headers take precedence over environment-level headers and auth headers, making them useful for injecting access-group tokens, correlation IDs, or other cross-cutting headers:
+A top-level `headers` map in an overlay is merged into every request. These headers take precedence over environment-level headers, plan headers, and the auth credential (template headers still come after them; see [Custom Headers](#custom-headers)), making them useful for injecting access-group tokens, correlation IDs, or other cross-cutting headers:
 
 ```yaml
 # overlay with transaction-level headers
 headers:
-  X_ACCESS_GROUP: CD87751C-AD46-4EDB-9F53-7B0DE72D751E
+  X-Access-Group: my-access-group-id
   X-Correlation-Id: local-dev-session
 
 overrides:

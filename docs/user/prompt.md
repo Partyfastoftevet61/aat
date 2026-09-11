@@ -2,6 +2,8 @@
 
 The `aat prompt` command turns a natural-language description into an executable test plan. You describe what you want to test in plain English, and AAT's two-step LLM pipeline selects the right workflow, fills in values, and presents a ready-to-run plan for your approval.
 
+For most AI-assisted authoring the [MCP server](mcp-server.md) is the better path: an assistant such as Claude Code reads the graph, writes recipes or plans, and validates and runs them in a loop. `aat prompt` is a single-shot convenience that needs an LLM configured in the environment.
+
 ## Prerequisites
 
 Before using `aat prompt`, you need:
@@ -14,37 +16,40 @@ Before using `aat prompt`, you need:
 
 ```
 $ aat prompt "create an order for express delivery to New York"
-Loading project...
-Generating plan...
+aat: loading environment...
+aat: loaded environment "staging"
+aat: authenticated via oauth2
+aat: loaded graph (12 nodes)
+aat: loaded domain knowledge
+aat: analyzing prompt with LLM...
+aat: plan generated (4 steps)
 
-  Plan: Create Order — Express delivery to New York
-  Workflow: order-lifecycle + express-shipping addon
+Plan: Create an order for express delivery to New York
 
-  1. search (listProducts)
-     category = "electronics"
+Workflow: Order Lifecycle
+  Addons: Express Shipping
 
-  2. order (createOrder)
-     productId ← search.productId
-     quantity = 1
-     shippingPriority = "express"
+Steps:
+  1. search — Search for available products
+  2. order — Create a new order
+  3. confirm — Confirm the order
+  4. check — Check the order status
 
-  3. confirm (confirmOrder)
-     orderId ← order.orderId
-     shippingCity = "New York"
+LLM-provided values:
+  order:
+    shippingPriority: express
+  confirm:
+    shippingCity: New York
 
-  4. check (getOrderStatus)
-     orderId ← order.orderId
-     assert: status == 200
-     assert: orderStatus == "confirmed"
+Assertions:
+  check: status 200, fieldEquals orderStatus=confirmed
 
-  cleanup:
-    cancel (cancelOrder)
-      orderId ← order.orderId
+Cleanup: cancelOrder (always)
 
 Execute this plan? [Y/n/a(djust)]
 ```
 
-Press Enter (or `y`) to execute immediately. Press `n` to abort. Press `a` to edit the plan YAML before running.
+The summary shows what the model decided — the workflow, slot choices, addons, layers, the values it filled in, selection overrides, and assertions — rather than the wiring the workflow already provides. Press Enter (or `y`) to execute immediately. Press `n` to abort. Press `a` to edit the plan YAML before running.
 
 ## Flags
 
@@ -52,16 +57,17 @@ Press Enter (or `y`) to execute immediately. Press `n` to abort. Press `a` to ed
 |------|------|---------|-------------|
 | `--manifest` | path | auto-discovered | Explicit path to `aat-project.yaml` |
 | `--env-config` | path | from manifest | Environment config file |
-| `--env` | string | from manifest | Environment name (for multi-environment files) |
+| `--env` | string | from manifest | Environment name (for multi-environment files); `AAT_ENV_NAME` sets it when the flag is absent |
+| `--var` | `KEY=VALUE` | — | Set a var of a multi-environment file (repeatable; wins over the file's vars) |
 | `--graph` | path | from manifest | API graph file |
 | `--templates` | path | from manifest | Templates directory |
 | `--domain` | path | from manifest | Domain knowledge file |
-| `--output` | path | `_output/runs` | Archive output directory |
+| `--output` | path | manifest `archives`, else `_output/runs` | Archive output directory |
 | `--save` | string | — | Save the generated plan (name or path) |
 | `--save-full` | bool | `false` | Save as full expanded plan instead of compact recipe |
 | `--yes` | bool | `false` | Skip confirmation and execute immediately |
 | `--trace` | bool | `false` | Capture planning pipeline trace for debugging |
-| `--trace-dir` | path | `_output/traces` | Directory for plan trace output |
+| `--trace-dir` | path | manifest `traces` (or `traces/` next to the manifest), else `_output/traces` | Directory for plan trace output |
 | `--layer` | string | — | Data layer to apply (repeatable) |
 | `--no-auto-overrides` | bool | `false` | Disable auto-discovery of `.aat-overrides.yaml` |
 | `--oas-validate` | string | `auto` | OAS validation mode for the executed plan: `auto`, `strict`, or `off` (see [Running Tests: OAS Validation](running.md#oas-validation)) |
@@ -72,7 +78,7 @@ When a manifest is discoverable, `--env-config`, `--graph`, `--templates`, and `
 
 ### Plan Display
 
-After the LLM generates a plan, AAT displays it in a human-readable narrative format. Each step shows the node it calls, its input values, data references to earlier steps, selections, and assertions. Cleanup steps appear at the end.
+After the LLM generates a plan, AAT displays a summary of its decisions: the plan title, the workflow with any slot choices, addons, and layers, the numbered steps with their descriptions, the values the model provided (grouped by step), selection overrides, assertions, and cleanup. Wiring that the workflow already provides (`from` references, `dependsOn`) is left out. If `--save` is set, the plan is saved before you confirm.
 
 ### Confirmation
 
@@ -81,14 +87,12 @@ The confirmation prompt offers three choices:
 | Key | Action |
 |-----|--------|
 | `y` or Enter | Execute the plan |
-| `n` or EOF | Abort without executing |
-| `a` | Open the plan YAML in your editor for adjustment |
+| `n`, EOF, or any other input | Abort without executing |
+| `a` | Save the plan YAML to a temporary file for you to edit |
 
 ### Adjusting Plans
 
-Pressing `a` saves the plan to a temporary YAML file and prompts you to edit it. AAT waits for you to finish editing (press Enter when done), then reloads the file, re-validates it against the graph, and shows the updated plan for confirmation again.
-
-The editor is determined by the `$EDITOR` environment variable.
+Pressing `a` writes the plan to a temporary YAML file and prints its path. AAT does not open an editor: edit the file in any editor, then press Enter. AAT reloads the file, re-validates it against the graph, shows the full plan, and asks for confirmation again. An edited plan that fails to load or validate ends the command with the error.
 
 ## Saving Plans
 
@@ -140,7 +144,7 @@ The `aat prompt` pipeline has five stages:
 
 ### Step 1: Workflow Selection
 
-The LLM receives a list of available workflows, their descriptions, and your prompt. It selects the base workflow that best matches your intent, plus any addons that apply (e.g., an express-shipping addon for delivery-related prompts). It also selects slot options when the workflow has choice points.
+The LLM receives a list of available workflows, their descriptions, and your prompt. It selects the base workflow that best matches your intent, plus any addons that apply (e.g., an express-shipping addon for delivery-related prompts). It also selects slot options when the workflow has choice points, and layers when the project has a layers directory (layers given with `--layer` are always kept). Deprecated workflows are not offered, and a selection that names an unknown workflow, option, or layer is sent back to the model once with the errors.
 
 ### Step 2: Skeleton Composition
 
@@ -148,7 +152,7 @@ AAT composes the selected workflow with its addons into a plan skeleton. Addon s
 
 ### Step 3: Value Fill
 
-The LLM receives the plan skeleton, the list of unfed inputs, domain knowledge (concepts, types, value pools), and your original prompt. It fills in values for every unfed input, choosing realistic data that matches your intent.
+The LLM receives the plan skeleton, the list of unfed inputs with domain knowledge for each (type format, sample pool values, concepts), and your original prompt. It fills in values for every unfed input, choosing realistic data that matches your intent. Inputs marked `configurable` in the graph are offered as optional configuration. If the model reports that the selected workflow does not fit the request, AAT repeats workflow selection once with that feedback.
 
 ### Step 4: Post-Processing
 
@@ -156,7 +160,9 @@ AAT merges the LLM's values into the skeleton and performs mechanical fixes: rep
 
 ### Step 5: Validation
 
-The completed plan is validated against the graph. If validation fails (e.g., the LLM referenced a node that doesn't exist), the error is reported. With `--trace` enabled, whatever was captured before the failure is still written to the trace directory.
+The completed plan is validated against the graph. When validation fails because of broken selection references, AAT clears them and repeats the value fill once with the validation errors in the prompt. Any other failure (e.g., the LLM referenced a node that doesn't exist) is reported. With `--trace` enabled, whatever was captured before the failure is still written to the trace directory.
+
+The model is involved only here, while the plan is drafted. Once you confirm, the plan runs like any other: no LLM call happens during execution.
 
 ## Domain Knowledge
 
@@ -186,11 +192,11 @@ The trace captures every pipeline stage as JSON:
 - **Merge and post-processing** — snapshots of the plan after each transformation
 - **Validation** — any validation errors
 
-Traces are written to `_output/traces/trace-YYYYMMDD-HHMMSS-XXXXXXXX/plan-trace.json` (or the directory specified by `--trace-dir`).
+Traces are written to `trace-YYYYMMDD-HHMMSS-XXXXXXXX/plan-trace.json` under the trace directory: `--trace-dir`, else the manifest's `traces:` entry, else `traces/` next to the manifest, else `_output/traces`.
 
 If the pipeline fails mid-way, whatever was captured so far is still written as a partial trace. This is invaluable for diagnosing LLM response parsing failures.
 
-Browse traces visually with `aat web viewtrace`. See [Web UI and Archives: Viewing Traces](web-ui.md#viewing-traces) for details.
+Browse traces visually with `aat web viewtrace`. See [Web UI: Viewing Traces](web-ui.md#viewing-traces) for details.
 
 ## Tips for Effective Prompts
 
