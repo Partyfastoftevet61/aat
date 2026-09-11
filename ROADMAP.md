@@ -22,8 +22,13 @@ Roughly in priority order. None of these have dates.
   for APIs that throttle.
 - **`llms.txt`.** A machine-readable index of the docs so external LLM tools can find the right page.
 - **CLI reference page.** One generated page listing every command and flag.
-- **More example integrations.** GitHub and Stripe graphs, with the setup chains needed to run them
-  end to end.
+- **Integration kits from the manifest.** A command that packages a kit from its manifest instead of a
+  copy list, and a way to keep internal-only operations and workflows out of a kit that shares the
+  graph. See [Share Your API with Integrators](docs/user/integration-kit.md).
+- **An MCP oracle for client code.** A tool that renders the concrete request for an operation from
+  input values, and `execute_plan` results that include the exchanges.
+- **More example integrations.** Duffel flight booking in test mode, GitHub, and Stripe graphs, with
+  the setup chains needed to run them end to end.
 - **Docs site on Zensical.** The site is built with Material for MkDocs, which gets critical fixes
   only until 2026-11-05; its successor, Zensical, aims to build existing Material projects.
 
