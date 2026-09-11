@@ -1,8 +1,25 @@
 # Share Your API with Integrators
 
-The project you build to test an API holds what anyone integrating with it needs. It records what every operation sends and returns, how one call's output feeds the next, and which sequences reach a goal, and your own test runs keep all of it honest. Package part of it as an **integration kit** and give it to the teams who integrate with you. Their AI coding tool learns your API from the kit through `aat mcp serve`. They can also run your reference flows against your sandbox and see real exchanges before their own client sends a request.
+An OpenAPI spec describes an API one call at a time. The AAT project you build to test that API describes how the calls work together: which calls reach a goal and in what order, where each input comes from, which fields of a large schema matter, what a failure looks like, and which call undoes which. Your own test runs keep all of it true.
+
+Package part of that project as an **integration kit** and give it to the teams who integrate with you. Their AI coding tool reads the whole workflow through `aat mcp serve`, in a form it can act on, and writes a working client in whatever language they use. On a 74-node airline API, each such client took a single prompt, in Java, C#, Go, Python, Perl, and Lisp. Integrators can also run your reference flows against your sandbox and see the real exchanges.
 
 One framework pays off twice: first when you test your API, then when others integrate with it.
+
+## What a Kit Tells an AI Tool
+
+| An integrator needs to know | An OpenAPI spec says | The kit adds, through the `api` persona |
+|---|---|---|
+| Which calls reach a goal, and in what order | Nothing | Integration flows composed step by step, each step with its HTTP method, path, and dependencies (`list_integration_flows`, `get_integration_flow`), and the operations a goal needs (`trace_dependency_chain`) |
+| Where each input comes from | Its type | The earlier output that feeds it, per operation and as a data-flow summary for each flow (`describe_operation`, `get_data_flow`, `get_integration_flow`) |
+| Which item of a list to use | Nothing | Named selections with their strategy and filter, such as the first product whose `inStock` is true |
+| Which fields matter | Every field the schema allows | The fields each request template sends and each extraction rule reads (`inspect_request_template`, `get_response_shape`) |
+| What a failure looks like | Status codes | Rules for failures reported inside a successful response, and what the operation and field descriptions say about error codes (`describe_operation`) |
+| What undoes what | Nothing | Cleanup pairings, such as `checkoutCart` and `deleteOrder` |
+| Which values are valid together | Enums, field by field | Domain concepts with their constraints, and value pools (`list_concepts`, `explain_field`) |
+| What a real response looks like | Examples, if someone wrote them | Responses recorded by runs of your reference flows (`get_sample_response`) |
+
+The tools serve what the project says. Descriptions on operations, inputs, and outputs, the domain file's concepts, and the README next to the graph make explicit the rules your tests already follow: that a charge must equal the order total, which host takes which credential, which error code an out-of-order call returns. The more of that the project states, the more a single prompt gets right. The shop's graph and domain file show the level of detail to aim for.
 
 ## What Goes in a Kit
 
@@ -107,7 +124,7 @@ Check the package the way an integrator will use it, then publish it. In GitHub 
 
 The reference plans run in your pipeline next to your internal suites. A change to the API that breaks an integration flow fails your build before an integrator runs into it.
 
-## What an Integrator's AI Tool Sees
+## What the `api` Persona Reads
 
 `aat mcp serve --persona api` is read-only. From the manifest it loads:
 
@@ -152,9 +169,10 @@ Then:
 ## Current Limits
 
 - A manifest names one graph, one templates directory, and one workflows directory. An operation or workflow that must stay internal cannot be added on top of a kit, so keep it out of the shipped files.
-- No tool renders the concrete request for an operation from input values. `inspect_request_template` shows the template, and a reference run shows the request it produced.
 - `package-kit.sh` copies a fixed list of files. Nothing derives the list from the kit manifest yet.
 
 ## The Shop Does This
 
 [`examples/shop`](examples/shop.md) uses this layout. Its `shop-api` MCP server reads `aat-kit.yaml`, and `shop-test` reads the whole project. `make example-shop` packages the kit, unpacks it into an empty directory, and validates and runs it there against the sandbox.
+
+The shop's kit passed the single-prompt test too. Headless Claude Code sessions got nothing but the packaged kit's MCP server and one prompt each: write a client that authenticates, buys two products, pays by card, cancels the order, and refunds it. The Python client and the Go client both worked on their first run. Neither session read a file of the kit; everything they knew came through the MCP tools.

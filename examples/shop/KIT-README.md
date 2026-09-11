@@ -1,15 +1,68 @@
 # Shop API integration kit
 
-This kit describes the shop API for integrators and their AI coding tools. It has the API's 17 operations
-with their request templates, the OpenAPI contract, the data flow between calls, integration flows, and
-three reference plans that run against the API. `package-kit.sh` builds it from the shop's AAT test
-project.
+This kit describes the shop API for integrators and their AI coding tools: 17 operations with their
+request templates, the OpenAPI contract, the order calls run in and the data each one needs from the
+calls before it, the rules and error codes behind them, integration flows, and three reference plans that
+run against the API. `package-kit.sh` builds it from the shop's AAT test project. Through the MCP server
+below, an AI coding tool reads all of it, including this README, and can write a working client in your
+language from a single prompt.
 
 ## What you need
 
 - `aat`: see [Install](https://gburgyan.github.io/aat/install/).
-- The API. This kit targets the offline sandbox that `aat-sandbox serve` starts (shop API on port 8765,
-  payments API on port 8766). The sandbox's demo credentials are in `env.yaml`.
+- The API. This kit targets the offline sandbox that `aat-sandbox serve` starts.
+
+## Connecting
+
+| | Shop API | Payments API |
+|---|---|---|
+| Base URL | `http://localhost:8765/{region}/v1` | `http://localhost:8766/{region}/v1` |
+| Credential | `Authorization: Bearer <token>` | `X-API-Key: pay-demo-key` |
+| Operations | everything except payments | `paymentCharge`, `paymentRefund` |
+
+`region` is `us` (USD, sales tax added at checkout) or `eu` (EUR, VAT included). Get the bearer token
+from `POST http://localhost:8765/oauth/token` with the form-encoded body
+`grant_type=password&username=demo&password=demo&client_id=aat-shop&client_secret=aat-shop-secret`; the
+response carries `access_token` and `expires_in` (3600 seconds). Never send the bearer token to the
+payments API.
+
+## Flows
+
+**Buy**, the core of every integration:
+
+```
+listProducts → createCart → addItem (once per product) → [applyCoupon] → checkoutCart → paymentCharge
+```
+
+- `addItem` takes the `cartId` from `createCart` and a `sku` whose `inStock` is true in `listProducts`.
+- `checkoutCart` needs `shippingTier` and `postalCode`. It returns the `orderId`, `total`, and `currency`
+  that `paymentCharge` must send, exactly, along with a `method` and that method's field: `cardNumber`,
+  `giftCardCode`, or `paypalEmail`.
+
+**Fulfil and return:**
+
+```
+paymentCharge → shipOrder → getShipment (retry while 503) → deliverShipment → createReturn → paymentRefund
+```
+
+**Cancel:**
+
+```
+checkoutCart → [paymentCharge] → cancelOrder → paymentRefund (only if it was paid)
+```
+
+**Clean up:** `deleteOrder` and `deleteCart` delete in any state.
+
+## Rules that matter
+
+- Money is an integer in minor units (cents); each amount has a `*Display` twin for people.
+- Errors are `{"error": {"code": "...", "message": "..."}}`. Branch on `code`: `INVALID_TRANSITION` for an
+  out-of-order call, `OUT_OF_STOCK`, `AMOUNT_MISMATCH`, `CARD_DECLINED`, and so on.
+- Orders move created → paid → shipped → delivered → returned; cancel works from created or paid.
+  Cancelling or returning never refunds; `paymentRefund` does, in any state while money is captured.
+- Retry exactly two things: `checkInventory` answering 200 with `status: ERROR` (`STALE_READ`), and
+  `getShipment` answering 503 `TRACKING_UNAVAILABLE` (wait for its `Retry-After` seconds).
+- Apply a coupon before checkout; totals are fixed when the order is created.
 
 ## Give your AI coding tool the API
 
@@ -27,8 +80,8 @@ Unpack the kit into your repository, for example as `vendor/shop-kit/`, and regi
 }
 ```
 
-The `api` persona is read-only. It serves the operations, request templates, data flow, integration flows,
-OpenAPI schemas, domain values, and sample responses.
+The `api` persona is read-only. It serves the operations and their exact requests, integration flows step
+by step, the data flow between calls, the domain's rules, OpenAPI schemas, and sample responses.
 
 ## See the real exchanges
 

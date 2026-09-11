@@ -1,10 +1,75 @@
 concepts:
+  authentication:
+    description: >-
+      The shop API (http://localhost:8765/{region}/v1) needs "Authorization: Bearer <token>" on every
+      call. Get the token from POST http://localhost:8765/oauth/token with a form-encoded body:
+      grant_type=password, username=demo, password=demo, client_id=aat-shop,
+      client_secret=aat-shop-secret. grant_type=client_credentials with the client ID and secret
+      also works, and the client credentials may be sent as HTTP Basic auth instead. The response is
+      JSON with access_token, token_type Bearer, and expires_in 3600 (seconds). A missing or expired
+      token answers 401 UNAUTHORIZED. The payments API takes an API key instead; see paymentsHost.
+    applies_to: [cartId, orderId, shipmentId, sku]
+    constraint: send the bearer token to the shop API only, never to the payments API
+
+  paymentsHost:
+    description: >-
+      paymentCharge and paymentRefund run on a separate payments API at
+      http://localhost:8766/{region}/v1 (POST /payments/charges and POST /payments/refunds). It
+      requires the header X-API-Key with the value pay-demo-key and takes no bearer token. The shop
+      API answers /{region}/v1/payments/ paths with 404 WRONG_LISTENER. Use the same region on both
+      hosts.
+    applies_to: [amount, currency, method, cardNumber, giftCardCode, paypalEmail, paymentId, refundId]
+    constraint: payments go to port 8766 with X-API-Key; every other operation goes to port 8765 with the bearer token
+
+  errorEnvelope:
+    description: >-
+      Errors from both APIs share one JSON envelope, {"error": {"code": "...", "message": "..."}}.
+      Branch on the stable code, not the message. 400 VALIDATION_ERROR (including a missing or
+      malformed JSON body); 401 UNAUTHORIZED; 402 CARD_DECLINED or INSUFFICIENT_FUNDS; 404 NOT_FOUND,
+      REGION_NOT_FOUND, COUPON_INVALID, GIFT_CARD_INVALID, or WRONG_LISTENER; 409 CART_NOT_OPEN,
+      CART_EMPTY, OUT_OF_STOCK, INVALID_TRANSITION, or PAYMENT_NOT_REFUNDABLE; 422
+      TIER_NOT_AVAILABLE, COUPON_NOT_VALID_IN_REGION, CURRENCY_MISMATCH, or AMOUNT_MISMATCH; 503
+      TRACKING_UNAVAILABLE. The token endpoint uses OAuth2 errors instead, such as
+      {"error": "invalid_grant", "error_description": "..."}.
+    applies_to: [error]
+
+  transientFailures:
+    description: >-
+      Two failures are temporary and clear when the request is retried. checkInventory answers 200
+      with status ERROR and errorCode STALE_READ for the first read of SKU-1004 with each bearer
+      token. getShipment answers 503 TRACKING_UNAVAILABLE with a Retry-After header (seconds) for the
+      first two reads of every shipment. Retry those two; every other error fails the same way again.
+    applies_to: [sku, shipmentId]
+    constraint: wait the Retry-After seconds before retrying getShipment
+
+  cartLifecycle:
+    description: >-
+      A cart is open from createCart until checkoutCart turns it into an order. addItem, applyCoupon,
+      and checkoutCart need an open cart (409 CART_NOT_OPEN afterwards), and checkoutCart needs at
+      least one line (409 CART_EMPTY). A cart holds one coupon; applying another replaces it. The
+      order's totals are fixed at checkout, so add every item and the coupon first.
+    applies_to: [cartId]
+
+  stock:
+    description: >-
+      addItem checks stock against the cart's total quantity of the SKU, what is already in the cart
+      plus the new quantity, and answers 409 OUT_OF_STOCK when that exceeds the stock. Stock never
+      decreases, so every run sees the same numbers.
+    applies_to: [sku, quantity]
+    examples:
+      in-stock: [SKU-1001 (42), SKU-1002 (17), SKU-1003 (120), SKU-1004 (9), SKU-1006 (300)]
+      out-of-stock: [SKU-1005]
+
   regionalPricing:
     description: >-
-      Prices, tax, shipping tiers, and coupons depend on the region in the base URL. US prices
-      are USD with 8.25% sales tax added at checkout; EU prices are EUR (USD × 0.92) with 20% VAT
-      already included, and EU offers no overnight shipping.
-    applies_to: [shippingTier, postalCode, code, currency]
+      The region in the base URL (us or eu) sets currency, prices, tax, shipping, and coupons. us:
+      USD at list price, 8.25% sales tax added at checkout, shipping standard 599, express 1499,
+      overnight 2999. eu: EUR at 0.92 times the US price, 20% VAT already included in prices,
+      shipping standard 499 and express 1299, and no overnight tier (422 TIER_NOT_AVAILABLE). At
+      checkout the discount is the coupon's percentage of the subtotal, tax is computed on the
+      subtotal minus the discount, and the total is subtotal minus discount plus shipping, plus the
+      tax in us. FREESHIP makes shipping 0.
+    applies_to: [shippingTier, postalCode, code, currency, total]
     constraint: shippingTier overnight is only valid in the us region
     examples:
       us: [standard, express, overnight]
@@ -12,16 +77,20 @@ concepts:
 
   orderLifecycle:
     description: >-
-      Orders move created → paid → shipped → delivered → returned. Cancel is allowed from
-      created or paid, and a refund while captured money remains; anything else answers
-      409 INVALID_TRANSITION.
-    applies_to: [orderId, shipmentId]
+      An order moves created → paid (paymentCharge) → shipped (shipOrder) → delivered
+      (deliverShipment) → returned (createReturn). cancelOrder moves a created or paid order to
+      cancelled. Any other move answers 409 INVALID_TRANSITION. The payment status moves separately:
+      unpaid → captured (paymentCharge) → partially_refunded or refunded (paymentRefund). Cancelling
+      or returning an order never refunds it; call paymentRefund, which works in any order state
+      while captured money remains.
+    applies_to: [orderId, shipmentId, paymentStatus]
 
   minorUnits:
     description: >-
-      Money is an integer in minor units (cents); the matching *Display field holds the
-      formatted amount. A charge must equal the order total exactly.
-    applies_to: [amount, total, subtotal, discount, price]
+      Money is an integer in minor units (cents), sent and received as a JSON integer, never a
+      decimal or a string. Each amount has a matching *Display field with the formatted value, such
+      as $130.66 or €87.78. A charge must equal the order total exactly.
+    applies_to: [amount, total, subtotal, discount, price, shipping, tax]
 
 types:
   sku:
@@ -47,11 +116,11 @@ valuePools:
     type: string
     values:
       - SKU-1001  # Trail Backpack (gear, 42 in stock)
-      - SKU-1002  # Camp Stove (gear)
-      - SKU-1003  # Merino Tee (apparel)
-      - SKU-1004  # Rain Shell (apparel; first inventory read per session is stale)
+      - SKU-1002  # Camp Stove (gear, 17 in stock)
+      - SKU-1003  # Merino Tee (apparel, 120 in stock)
+      - SKU-1004  # Rain Shell (apparel, 9 in stock; first inventory read per token is stale)
       - SKU-1005  # Trail Runners (footwear; always out of stock)
-      - SKU-1006  # Wool Socks (footwear)
+      - SKU-1006  # Wool Socks (footwear, 300 in stock)
 
   postalCodes:
     description: Postal codes by region

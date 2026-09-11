@@ -86,6 +86,15 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- The shop example describes how its API works, for the AI tools that read it through MCP. Each operation
+  lists its error codes in the order they are checked, and each input and output says what it must be,
+  where it comes from, and what it means. New domain concepts cover authentication, the payments host, the
+  error envelope, transient failures, the cart and order lifecycles, stock, regional pricing, and money.
+  The kit's README adds connection details, a flow map, and the rules that matter.
+- Docs: the README, *Share Your API with Integrators*, and the airline case study describe what an
+  integration kit tells an AI tool beyond an OpenAPI spec: the whole workflow, from call order and data
+  hand-offs to the fields that matter and what a failure looks like. With it, a working client in any
+  language takes a single prompt, as it did on the airline API in Java, C#, Go, Python, Perl, and Lisp.
 - `examples/shop` keeps the suites its integration kit does not ship in `internal/plans/`: the negative
   tests, `resilience`, and `giftcard-express`. The manifest lists `plans/` and `internal/plans/`, so plan
   names (`negative/state-machine`) and batch results are unchanged; only the files' paths moved.

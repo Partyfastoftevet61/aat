@@ -148,7 +148,7 @@ selection:
 
 ## One framework, two wins
 
-The project you build to test your API also holds what integrators need: which calls exist, exactly what they send, how one call's output feeds the next, and which sequences reach a goal. A second manifest names the part you share, and a short CI step packages it as a kit for your customers. Their AI coding tool reads the kit through `aat mcp serve`, and they can run your reference flows against your sandbox before writing any client code. Negative tests, internal environments, and archives stay with you.
+An OpenAPI spec describes calls one at a time. The project you build to test your API describes how they work together: which calls reach a goal and in what order, where each input comes from, which fields of a large schema matter, what a failure looks like, and what undoes what. Your test runs keep all of it true, and it is what integrators need, in a form a machine can act on. A second manifest names the part you share, and a short CI step packages it as a kit. Your integrators' AI coding tools read the kit through `aat mcp serve` and write a working client in whatever language they use. Negative tests, internal environments, and archives stay with you.
 
 ```
 my-api-tests/
@@ -163,7 +163,7 @@ The shop is laid out this way. See [Share your API with integrators](https://gbu
 
 ## AI tools and MCP
 
-`aat mcp serve` gives an AI coding tool your API as tools rather than prose: operations, request templates, the data flow between calls, integration flows, OpenAPI schemas, domain values, and sample responses from real runs. The `api` persona has 24 read-only tools (17 without an OpenAPI spec); the `test` persona has 26 for writing, running, and debugging plans. The shop ships this `.mcp.json`:
+`aat mcp serve` gives an AI coding tool the whole workflow as tools rather than prose: each operation's exact request, the order calls must run in, what each call needs from the calls before it, composed integration flows, the domain's rules and values, OpenAPI schemas, and sample responses from real runs. The `api` persona has 24 read-only tools (17 without an OpenAPI spec); the `test` persona has 26 for writing, running, and debugging plans. The shop ships this `.mcp.json`:
 
 ```json
 {
@@ -174,7 +174,7 @@ The shop is laid out this way. See [Share your API with integrators](https://gbu
 }
 ```
 
-The tools describe exact requests and flows, so the client can be in any language. Open the shop in Claude Code and ask for a Python client that places an order for two items and cancels it, using only `shop-api`, then run it against the sandbox.
+With that much machine-readable detail, a working client in any language is a single prompt. On a 74-node airline API, AI coding tools built search-and-booking clients this way in Java, C#, Go, Python, Perl, and Lisp. To try it, open the shop in Claude Code and ask, using only `shop-api`, for a client in your language that places an order for two items, pays for it, and cancels it; then run it against the sandbox.
 
 LLMs are optional and authoring-time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API. Execution never calls an LLM.
 

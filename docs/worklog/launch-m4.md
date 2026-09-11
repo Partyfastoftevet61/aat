@@ -105,3 +105,51 @@ kit, MCP, install, commands, and pointers into the docs site. The petstore READM
   methods account for the difference.
 
 **Open questions:** view the rendered README and recheck the `/integration-kit/` docs link after merge.
+
+## 2026-09-11 — The oracle, clarified, and proved on the shop
+
+**What:** The author corrected the kit's framing. "Oracle" means exposing the entire workflow so that callers
+can use it: how the calls really work, which parts of them matter, how they relate, and what ordering they
+need. That carries far more information than an OpenAPI spec or traditional documentation. On the airline
+API, that knowledge made a working search-and-booking integration a single prompt in Java, C#, Go, Python,
+Perl, and Lisp. This session had called the oracle "partial" because no tool renders a single request, and
+the entry above still calls P14 and P15 what "would make the MCP server a full oracle". Both were wrong;
+those primitives are conveniences.
+
+**Decisions:**
+
+- **Framing:** the README, the integration-kit page, and the airline case study lead with the whole
+  workflow, and the page's new table maps what an integrator needs to what the kit adds over an OpenAPI
+  spec. Every row is taken from what the `api` tools print (`describe_operation`, `get_integration_flow`,
+  and the domain tools). Retry settings are not exposed, so no row claims them. The request-renderer
+  "limit" is gone.
+- **Citation, by numbers only** (author decision): the README, the integration-kit page, and the case study
+  cite the single-prompt clients. The private project is never named.
+- **The shop kit had to carry what made that work.** Compared with the airline project, it had about 3
+  descriptions per operation against about 9, 3 domain concepts, and no flow map. Every statement added was
+  checked against the sandbox handlers rather than the M1 plan:
+  - each operation's error codes, in the order the handler checks them
+  - what each input must be and each output means (a charge must equal the order total; `method` decides
+    which companion field is required; cancelling does not refund)
+  - six new concepts: authentication, the payments host and its key, the error envelope, the two
+    retryable failures, the cart lifecycle, and stock
+  - pricing, order-lifecycle, and money concepts that now include the numbers
+  - a kit README with a connection table, a flow map, and the rules that matter
+- **Proof on the packaged kit** (author decision to spend the usage). `package-kit.sh` output went into an
+  empty integrator directory, and a headless Claude Code session got one prompt per language. The session
+  could use only the kit's MCP server (`--strict-mcp-config`, `api` persona), read and write only its own
+  directory, and run only the language toolchain; web tools were denied. The prompt: a standard-library
+  client that authenticates, buys two different in-stock products, pays by card, cancels, and refunds.
+  - **Python:** correct on its first run. 85 s, 28 turns, 20 MCP calls, $0.58.
+  - **Go:** correct on its first run. 146 s, 34 turns, 23 MCP calls, $0.77. The harness's allowlist blocked
+    running the built binary, so the session used `go run .` instead.
+  - Neither session read a kit file; everything came through MCP. Both leaned on `get_oas_operation` (8
+    calls each) together with `list_integration_flows`, `get_integration_flow`, `list_concepts`,
+    `explain_concept`, `explain_field`, and `get_sample_response`. Each client's own summary named the rules
+    it got from the kit: two hosts with two credentials, cancel does not refund, integer minor units, and a
+    charge equal to the total.
+  - Rerunning each client and reading the order back from the sandbox gave `cancelled` / `refunded`.
+
+**Open questions:**
+- Record the same single-prompt run for M7 (the Python and Common Lisp takes), now on the enriched kit.
+- P14 and P15 stay logged as conveniences: rendering one request, and `execute_plan` returning exchanges.

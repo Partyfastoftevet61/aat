@@ -21,6 +21,10 @@ AAT was built to test a production airline booking API, and that project remains
 
 **Matrices across environments.** Layers vary test data without copying plans, and a batch with layer groups runs the same recipes across every combination in any of the environments, skipping permutations that would send identical requests. See [Matrix Testing](../batch-layers.md) and [Environments](../environments.md).
 
+## Integrating from the Graph
+
+The same project describes the API well enough to integrate with it. Given the project through AAT's MCP server, AI coding tools built working search-and-booking clients in Java, C#, Go, Python, Perl, and Lisp, each from a single prompt. The tools gave them the booking flows step by step, what each call needs from the calls before it, and which fields of a large schema matter. See [Share Your API with Integrators](../integration-kit.md).
+
 ## Try the Same Patterns
 
 The [shop example](shop.md) uses these patterns on an API you can run offline: a 17-operation graph, base workflows with slots and addons, layers, two environments, a Lua transform, and a visualizer.
