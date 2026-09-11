@@ -12,6 +12,7 @@ import (
 	"github.com/gburgyan/aat/domain"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/graph/oas"
+	"github.com/gburgyan/aat/internal/httpstatus"
 	"github.com/gburgyan/aat/plan"
 	"github.com/gburgyan/aat/validate"
 )
@@ -272,6 +273,9 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 						}
 					}
 				}
+				if stopped := e.checkpointResult(step, stepResults, instantiatedPlan); stopped != nil {
+					return stopped
+				}
 				continue
 			}
 
@@ -359,16 +363,8 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 			}
 		}
 
-		// Checkpoint: stop after this step without running cleanup, leaving
-		// created resources alive for an external harness to consume.
-		if e.stopAfterStep != "" && step.StepID() == e.stopAfterStep {
-			return &RunResult{
-				Outcome:          OutcomeStopped,
-				Stopped:          true,
-				StoppedAt:        step.StepID(),
-				Steps:            stepResults,
-				InstantiatedPlan: instantiatedPlan,
-			}
+		if stopped := e.checkpointResult(step, stepResults, instantiatedPlan); stopped != nil {
+			return stopped
 		}
 	}
 
@@ -505,6 +501,24 @@ func (e *Engine) runVerification(ctx context.Context, steps []plan.Step, state *
 		}
 	}
 	return results, outcome, firstErr
+}
+
+// checkpointResult returns the stopped result when step is the --stop-after
+// checkpoint, or nil otherwise. A checkpoint skips cleanup and verification so
+// the resources created so far stay alive for an external harness. It is
+// consulted after every step that passes, including an expectFailure step
+// whose expected error came back.
+func (e *Engine) checkpointResult(step plan.Step, stepResults []StepResult, p *plan.Plan) *RunResult {
+	if e.stopAfterStep == "" || step.StepID() != e.stopAfterStep {
+		return nil
+	}
+	return &RunResult{
+		Outcome:          OutcomeStopped,
+		Stopped:          true,
+		StoppedAt:        step.StepID(),
+		Steps:            stepResults,
+		InstantiatedPlan: p,
+	}
 }
 
 // oasStrictError returns an error when strict OAS validation is enabled and
@@ -707,15 +721,16 @@ func (e *Engine) executeStep(ctx context.Context, step plan.Step, node *graph.No
 		merged := &validate.MechanicalResult{Passed: true}
 		var rawAssertions, normalAssertions []plan.MechanicalAssertion
 		for _, a := range step.Assertions.Mechanical {
-			// expectFailure owns the status check. A status assertion here (a
-			// composed "2xx" default, or one written before an overlay added
-			// expectFailure) would contradict it, so it is reported as skipped.
-			if step.ExpectFailure != nil && a.Type == string(validate.AssertStatus) {
+			// A status assertion that expects success (a composed "2xx" default,
+			// or one written before an overlay added expectFailure) can never
+			// hold on a negative step, so it is reported as skipped. One that
+			// agrees with expectFailure, such as 409 or 4xx, is evaluated.
+			if step.ExpectFailure != nil && a.Type == string(validate.AssertStatus) && httpstatus.ContradictsFailure(a.Expect) {
 				merged.Results = append(merged.Results, validate.AssertionResult{
 					Type:    validate.AssertStatus,
 					Passed:  true,
 					Skipped: true,
-					Message: "status checked by expectFailure",
+					Message: fmt.Sprintf("status assertion expecting %v contradicts expectFailure", a.Expect),
 				})
 				continue
 			}

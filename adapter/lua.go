@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/tidwall/gjson"
@@ -17,8 +20,15 @@ const transformTimeout = 5 * time.Second
 // runTransform executes a Lua transform script against the extracted outputs.
 // The script receives the outputs as a mutable Lua table and a json_path()
 // function that queries the full response body via gjson. The script must
-// return the (possibly modified) outputs table.
+// return the (possibly modified) outputs table. print() writes to stderr.
 func runTransform(script string, outputs map[string]any, responseBody string) (map[string]any, error) {
+	return runTransformWithLog(script, outputs, responseBody, os.Stderr)
+}
+
+// runTransformWithLog is runTransform with print() output sent to log. The
+// base library's print writes to stdout, which would corrupt --json and
+// --dump-state - output, so it is replaced.
+func runTransformWithLog(script string, outputs map[string]any, responseBody string, log io.Writer) (map[string]any, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), transformTimeout)
 	defer cancel()
 
@@ -41,6 +51,16 @@ func runTransform(script string, outputs map[string]any, responseBody string) (m
 		ls.Call(1, 0)
 	}
 
+	// Replace print, which the base library points at stdout.
+	ls.SetGlobal("print", ls.NewFunction(func(ls *lua.LState) int {
+		parts := make([]string, ls.GetTop())
+		for i := range parts {
+			parts[i] = ls.ToStringMeta(ls.Get(i + 1)).String()
+		}
+		_, _ = fmt.Fprintln(log, strings.Join(parts, "\t"))
+		return 0
+	}))
+
 	// Set context for timeout enforcement.
 	ls.SetContext(ctx)
 
@@ -55,19 +75,17 @@ func runTransform(script string, outputs map[string]any, responseBody string) (m
 		return nil, fmt.Errorf("lua script error: %w", err)
 	}
 
-	// Get the return value.
-	retVal := ls.Get(-1)
-	if retVal == lua.LNil {
-		return nil, fmt.Errorf("lua script must return a table (got nil)")
-	}
-
-	result := luaToGo(retVal)
-	resultMap, ok := result.(map[string]any)
+	// Get the return value: a table keyed by output name. An empty table (for
+	// example the outputs of a template whose extract rules all missed) is an
+	// empty set of outputs, not an empty array.
+	tbl, ok := ls.Get(-1).(*lua.LTable)
 	if !ok {
-		return nil, fmt.Errorf("lua script must return a table (got %T)", result)
+		return nil, fmt.Errorf("lua script must return a table (got %s)", ls.Get(-1).Type())
 	}
-
-	return resultMap, nil
+	if tbl.MaxN() > 0 && isSequentialTable(tbl) {
+		return nil, fmt.Errorf("lua script must return a table keyed by output name (got a list)")
+	}
+	return luaTableToMap(tbl), nil
 }
 
 // goToLua converts a Go value to a Lua value recursively.

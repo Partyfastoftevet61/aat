@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,6 +189,29 @@ func TestDevProxy_APINotProxied(t *testing.T) {
 
 // --- integration ---
 
+func TestBrowseURL(t *testing.T) {
+	tests := []struct {
+		host string
+		port int
+		want string
+	}{
+		{"", 9119, "http://localhost:9119"},
+		{"127.0.0.1", 9119, "http://localhost:9119"},
+		{"localhost", 8080, "http://localhost:8080"},
+		{"0.0.0.0", 9119, "http://localhost:9119"},
+		{"::", 9119, "http://localhost:9119"},
+		{"::1", 9119, "http://localhost:9119"},
+		{"192.168.1.20", 9119, "http://192.168.1.20:9119"},
+		{"fd00::5", 9119, "http://[fd00::5]:9119"},
+		{"aat.internal", 80, "http://aat.internal:80"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.host, func(t *testing.T) {
+			assert.Equal(t, tt.want, BrowseURL(tt.host, tt.port))
+		})
+	}
+}
+
 func TestIntegration_ListenAndShutdown(t *testing.T) {
 	dir := t.TempDir()
 	writeArchive(t, dir, makeArchive("run-20260101-100000-aaaa0001", "passed", makeStep("n", 200, 100)))
@@ -204,7 +228,8 @@ func TestIntegration_ListenAndShutdown(t *testing.T) {
 		return s.Addr() != ""
 	}, 2*time.Second, 10*time.Millisecond, "server did not start")
 
-	// Verify we can reach it
+	// Loopback by default, and reachable there
+	assert.True(t, strings.HasPrefix(s.Addr(), "127.0.0.1:"), "default bind address: %s", s.Addr())
 	resp, err := http.Get("http://" + s.Addr() + "/health")
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()

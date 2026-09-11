@@ -71,6 +71,19 @@ func OutputExtractPaths(g *graph.Graph, registry *adapter.Registry) oas.OutputPa
 	return paths
 }
 
+// TemplateSuppliedFields maps each templated node to the request fields its
+// template always sends itself, for the static OAS required-parameter check
+// (see oas.Validator.WithSuppliedFields).
+func TemplateSuppliedFields(g *graph.Graph, registry *adapter.Registry) oas.SuppliedFields {
+	fields := make(oas.SuppliedFields, len(g.Nodes))
+	for name, node := range g.Nodes {
+		if tmpl, ok := registry.GetTemplate(node.Adapter); ok {
+			fields[name] = tmpl.SuppliedFields()
+		}
+	}
+	return fields
+}
+
 // validateAdapterOutputsForNodes is the shared implementation. When nodeFilter
 // is non-nil, only nodes in the set are checked.
 func validateAdapterOutputsForNodes(g *graph.Graph, registry *adapter.Registry, nodeFilter map[string]bool) error {
@@ -111,10 +124,11 @@ func validateAdapterOutputsForNodes(g *graph.Graph, registry *adapter.Registry, 
 			extractKeys[key] = true
 		}
 
-		// Graph output not extracted by template.
+		// Graph output not extracted by template. A Lua transform can compute
+		// outputs that no extract rule produces, so it is trusted to set them.
 		for _, out := range node.Outputs {
 			if !extractKeys[out.Name] {
-				if out.Optional {
+				if out.Optional || tmpl.HasTransform() {
 					continue
 				}
 				errs = append(errs, fmt.Sprintf("node %q: graph declares output %q but template does not extract it", name, out.Name))

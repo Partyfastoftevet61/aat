@@ -45,6 +45,8 @@ fmt:
 
 check: fmt test-race lint
 
+# Removes build output only: server/web/dist/index.html is tracked (it satisfies
+# the go:embed pattern when no frontend has been built), so only assets go.
 clean:
 	rm -f $(BINARY) $(SANDBOX)
-	rm -rf server/web/dist server/web/node_modules
+	rm -rf server/web/dist/assets server/web/node_modules

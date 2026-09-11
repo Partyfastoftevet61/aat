@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"bytes"
 	"testing"
 
 	lua "github.com/yuin/gopher-lua"
@@ -288,6 +289,34 @@ func TestRunTransform_NoReturn(t *testing.T) {
 	assert.Contains(t, err.Error(), "must return a table")
 }
 
+func TestRunTransform_PrintGoesToLog(t *testing.T) {
+	var log bytes.Buffer
+	result, err := runTransformWithLog(`
+		print("joined", 3, outputs.x)
+		return outputs
+	`, map[string]any{"x": "y"}, "{}", &log)
+	require.NoError(t, err)
+	assert.Equal(t, "y", result["x"])
+	assert.Equal(t, "joined\t3\ty\n", log.String(), "print must not write to stdout, which carries --json output")
+}
+
+func TestRunTransform_EmptyTableIsEmptyOutputs(t *testing.T) {
+	result, err := runTransform("return {}", map[string]any{}, "{}")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{}, result)
+
+	// All extract rules optional and absent: returning outputs unchanged works.
+	result, err = runTransform("return outputs", map[string]any{}, "{}")
+	require.NoError(t, err)
+	assert.Empty(t, result)
+}
+
+func TestRunTransform_ListReturnRejected(t *testing.T) {
+	_, err := runTransform(`return {"a", "b"}`, map[string]any{}, "{}")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "keyed by output name")
+}
+
 func TestRunTransform_Timeout(t *testing.T) {
 	_, err := runTransform(`
 		while true do end
@@ -345,6 +374,28 @@ func TestExtractOutputs_WithTransform(t *testing.T) {
 	assert.Equal(t, "Alice", outputs["name"])
 	assert.Equal(t, float64(30), outputs["age"])
 	assert.Equal(t, "Hello, Alice", outputs["greeting"])
+}
+
+// TestExtractOutputs_TransformOnly: a template with a transform and no extract
+// rules computes its outputs from the body alone; it used to return no outputs
+// without running the script.
+func TestExtractOutputs_TransformOnly(t *testing.T) {
+	tmpl := Template{
+		Adapter:  "test",
+		Protocol: "http",
+		Request:  TemplateRequest{Method: "GET", Path: "/test"},
+		Response: TemplateResponse{
+			Transform: `
+				return { total = #json_path("items") }
+			`,
+		},
+	}
+	outputs, err := NewTemplateAdapter(tmpl).ExtractOutputs(&Response{
+		StatusCode: 200,
+		Body:       []byte(`{"items": [1, 2, 3]}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, float64(3), outputs["total"])
 }
 
 func TestExtractOutputs_WithoutTransform(t *testing.T) {

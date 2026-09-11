@@ -27,6 +27,17 @@ the graph and plan formats may still change before 1.0.
 - A step that succeeds after retrying shows `retried Nx: <category>` in run output, and archives record
   the category of each retried attempt in `retriedOn`.
 - `status` assertions accept a status class such as `expect: 2xx` or `expect: 4xx`.
+- `--var KEY=VALUE` (repeatable) on `aat run plan`, `aat run batch`, `aat prompt`, `aat validate`,
+  `aat env list`, and `aat mcp serve` sets a var of a multi-environment file for one invocation, for
+  example to point `examples/shop` at a sandbox on other ports or in a container. A key the file never
+  declares or references is an error.
+- `--host` on `aat web`, `aat web view`, `aat web viewtrace`, and `aat mcp serve` chooses the interface
+  to bind (default `127.0.0.1`; the `AAT_HOST` environment variable sets it when the flag is absent).
+  The Docker image sets `AAT_HOST=0.0.0.0`.
+- `--dump-state` exports record each step's `baseUrl` and live request `headers`. The `--json` run
+  summary adds `stopped_at` for a checkpoint and `retried_on` per step.
+- Template conditional and iteration blocks accept keys with hyphens, such as
+  `{{?X-Request-Id}}…{{/X-Request-Id}}` for a header parameter.
 - `aat validate` checks the layers directory: parse errors, duplicate layer names, and layer input keys
   that match no node input (which layers silently ignored).
 - Plan-level `execution.cleanup` steps now execute after the main flow, in declaration order and
@@ -48,10 +59,29 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- `aat web` and `aat mcp serve --http` listen on `127.0.0.1` by default instead of every interface.
+  Pass `--host 0.0.0.0` (or set `AAT_HOST`) to accept connections from other machines.
 - Steps composed from workflow templates (recipes, `aat prompt`) get a default `status: 2xx`
-  assertion instead of `status: 200`, and none when they declare `expectFailure`. On any step with
-  `expectFailure` (including one added by an overlay) status assertions are reported as skipped:
-  the expected-failure status list is the status check.
+  assertion instead of `status: 200`, and none when they declare `expectFailure`. On a step with
+  `expectFailure` (including one added by an overlay), a `status` assertion that expects success is
+  reported as skipped, since the expected-failure status list is the status check; one that agrees
+  with it, such as `409` or `4xx`, is evaluated.
+- `--dump-state`: the top-level `baseUrl` and `auth.headers` describe the environment's default route
+  (the last request sent to `apiBaseUrl`), so a run whose last step went to another host still exports
+  the main session.
+- The `--json` step summary's `name` is the step ID, as documented, instead of the node name, so
+  mutation siblings and repeated nodes are distinguishable.
+- `${var}` substitution in multi-environment files covers every string of the environment (override
+  auth header names and credentials, override values, LLM settings, `settings`), and so does the
+  unresolved-variable check.
+- `aat generate --oas` places optional query parameters, headers, and body properties in conditional
+  blocks, orders body properties as the spec does, and writes integer, number, boolean, and array body
+  values as JSON literals. With `--output-graph -` it writes no files unless `--output-templates` is
+  given. A template header that resolves to an empty conditional is not sent.
+- A layer that sets a value source (`value`, `pool`, `from`, `fromResolved`) replaces the graph
+  default's source instead of merging with it, so a layer value is no longer shadowed by a default's
+  `from`.
+- libopenapi-validator v0.14.0 and libopenapi v0.38.7.
 - An override that declares its own `auth` no longer sends the inherited credential header
   (`Authorization`, or the top-level API key header) to its host.
 - Requesting layers (`--layer`, `--layer-group`, or a recipe's `selection.layers`) without a
@@ -65,7 +95,7 @@ the graph and plan formats may still change before 1.0.
 - Documentation: renamed flags (`--env`, `--env-config`, `--overlay`) corrected throughout; undocumented
   features documented (Ctrl+C `aborted` outcome, `--oas-validate`, batch matrix view, Copy as cURL,
   archive import/export, `aat run clean`, `aat run rebuild-summaries`).
-- Minimum Go version is 1.25.
+- Minimum Go version is 1.25.7 (the OpenAPI libraries require it).
 
 ### Removed
 - The MCP `execute_plan` tool no longer accepts the obsolete `mode` parameter (the runtime
@@ -93,8 +123,33 @@ the graph and plan formats may still change before 1.0.
 - A workflow template whose `verification:` names a node missing from the graph fails to load, as cleanup
   entries already did.
 - `aat run batch --parallel N` with runtime OpenAPI validation no longer has a data race: parallel runs share
-  one loaded spec, and libopenapi-validator writes into the schema model while it renders a response schema
-  behind a `$ref`, so validations against a spec now take turns.
+  one loaded spec, and libopenapi-validator v0.13.1 wrote into the schema model while rendering a response
+  schema behind a `$ref`. The upgrade to v0.14.0 removes the race, so validations still run concurrently.
+- Workflow composition fills slots in declaration order, so merged cleanup, slot verification, and slot
+  `inject` values no longer vary between runs, and neither can batch dedup fingerprints.
+- `--stop-after` stops after a passing `expectFailure` step instead of running on to the end.
+- `--override NODE=URL` routes keep the environment headers, plan headers, overlay headers, and the
+  credential, like an `overrides:` entry with that `match` and `baseUrl`; they used to send no headers.
+- `aat prompt` rejects layers when the manifest sets no layers directory instead of silently running
+  without them.
+- A `--dump-state` file that cannot be written is reported on stderr even under `--quiet` or `--json`, and
+  a dump that replaces an existing file ends up with mode `0600`.
+- Lua transforms: `print()` writes to stderr instead of stdout (where it corrupted `--json` and
+  `--dump-state -` output), `return {}` is a valid empty set of outputs, and a template with a transform
+  but no `extract` rules runs its transform; outputs a transform computes no longer fail the adapter
+  output check.
+- `aat generate --oas` extracts an array property of an object response by its name instead of `@this`.
+- The static OpenAPI check accepts a required parameter or body property that the template sends itself
+  (such as a literal `"photoUrls": []`), which made `examples/petstore` fail `aat validate --strict`.
+- `aat validate` checks workflow templates in subdirectories of the workflows directory (such as
+  `workflows/slots/`), which it skipped.
+- A layer's `fromResolved` applies over an existing graph default instead of being dropped.
+- The plan summary resolves `intent.goal` as a step ID; `aat plan list` truncates long goals on character
+  boundaries.
+- Visualizers receive `--color-text-secondary`, `--color-danger`, and `--color-warning` as documented; the
+  web UI sent variable names it does not define.
+- "executing plan (N steps)" counts the mutation and verification steps the progress output numbers.
+- `make clean` no longer deletes the tracked `server/web/dist/index.html`, which broke `go build`.
 - `--verbose-auth` no longer prints the full access token in the logged token response.
 - `aat validate`, `aat generate --oas`, and the MCP OpenAPI operation details include parameters
   declared on an OpenAPI path item (such as a shared `{cartId}`), not only those on the operation.

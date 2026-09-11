@@ -46,6 +46,11 @@ func TestLayeredDefaults(t *testing.T) {
 		assert.Contains(t, err.Error(), "[express]")
 	})
 
+	t.Run("resolving names without a directory", func(t *testing.T) {
+		_, err := ResolveLayerNames([]string{"express"}, "")
+		require.ErrorIs(t, err, ErrNoLayersDir)
+	})
+
 	t.Run("unknown layer", func(t *testing.T) {
 		_, err := LayeredDefaults(g, []string{"overnight"}, dir)
 		require.Error(t, err)
@@ -293,6 +298,52 @@ func TestMergeInputDefault_OverlaySelect(t *testing.T) {
 	result := MergeInputDefault(base, overlay)
 	assert.Equal(t, "random", result.Select.Strategy)
 	assert.Equal(t, "x > 1", result.Select.Filter)
+}
+
+func TestMergeInputDefault_SourceSwitching(t *testing.T) {
+	sel := &InputDefaultSelect{Strategy: "match", Field: "sku", Filter: "inStock == true"}
+	tests := []struct {
+		name    string
+		base    *InputDefault
+		overlay *InputDefault
+		want    InputDefault
+	}{
+		{
+			name:    "fromResolved replaces an existing from",
+			base:    &InputDefault{From: "listProducts.products", Select: sel},
+			overlay: &InputDefault{FromResolved: "createCart.cartId"},
+			want:    InputDefault{FromResolved: "createCart.cartId"},
+		},
+		{
+			name:    "a literal value replaces a from and its select",
+			base:    &InputDefault{From: "listProducts.products", Select: sel},
+			overlay: &InputDefault{Value: "SKU-1002"},
+			want:    InputDefault{Value: "SKU-1002"},
+		},
+		{
+			name:    "a from keeps the base select it can apply to",
+			base:    &InputDefault{From: "listProducts.products", Select: sel},
+			overlay: &InputDefault{From: "searchProducts.products"},
+			want:    InputDefault{From: "searchProducts.products", Select: sel},
+		},
+		{
+			name:    "a select alone refines the base from",
+			base:    &InputDefault{From: "listProducts.products", Select: sel},
+			overlay: &InputDefault{Select: &InputDefaultSelect{Strategy: "last"}},
+			want:    InputDefault{From: "listProducts.products", Select: &InputDefaultSelect{Strategy: "last"}},
+		},
+		{
+			name:    "value and pool together are both kept",
+			base:    &InputDefault{From: "a.b"},
+			overlay: &InputDefault{Value: "X", Pool: []any{"Y", "Z"}},
+			want:    InputDefault{Value: "X", Pool: []any{"Y", "Z"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, *MergeInputDefault(tt.base, tt.overlay))
+		})
+	}
 }
 
 func TestMergeInputDefault_PartialOverlay(t *testing.T) {

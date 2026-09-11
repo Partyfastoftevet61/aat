@@ -45,6 +45,11 @@ var runPlanCmd = &cobra.Command{
 		oasValidate, _ := cmd.Flags().GetString("oas-validate")
 		verboseAuth, _ := cmd.Flags().GetBool("verbose-auth")
 		noMutations, _ := cmd.Flags().GetBool("no-mutations")
+		varFlags, _ := cmd.Flags().GetStringArray("var")
+		vars, err := config.ParseVars(varFlags)
+		if err != nil {
+			return &exitError{Code: 2, Err: err}
+		}
 		stopAfter, _ := cmd.Flags().GetString("stop-after")
 		dumpState, _ := cmd.Flags().GetString("dump-state")
 
@@ -82,6 +87,7 @@ var runPlanCmd = &cobra.Command{
 			SkipMutations:   noMutations,
 			StopAfterStep:   stopAfter,
 			DumpStatePath:   dumpState,
+			Vars:            vars,
 		}
 
 		code := executeRun(ra)

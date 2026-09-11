@@ -11,15 +11,26 @@
   function sendData() {
     if (!iframeEl?.contentWindow) return;
 
-    // Gather CSS custom properties from the parent for theme forwarding.
+    // Forward the theme under the variable names visualizers are documented to
+    // receive (docs/user/visualizers.md), read from the app's own variables.
     const style = getComputedStyle(document.documentElement);
     const theme: Record<string, string> = {};
-    for (const name of [
-      '--color-bg', '--color-surface', '--color-text', '--color-text-secondary',
-      '--color-border', '--color-primary', '--color-success', '--color-danger',
-      '--font-mono', '--font-sans',
-    ]) {
-      const val = style.getPropertyValue(name).trim();
+    const contract: [name: string, source: string][] = [
+      ['--color-bg', '--color-bg'],
+      ['--color-surface', '--color-surface'],
+      ['--color-text', '--color-text'],
+      ['--color-text-secondary', '--color-text-muted'],
+      ['--color-text-muted', '--color-text-muted'],
+      ['--color-border', '--color-border'],
+      ['--color-primary', '--color-primary'],
+      ['--color-success', '--color-success'],
+      ['--color-warning', '--color-warning'],
+      ['--color-danger', '--color-error'],
+      ['--font-mono', '--font-mono'],
+      ['--font-sans', '--font-sans'],
+    ];
+    for (const [name, source] of contract) {
+      const val = style.getPropertyValue(source).trim();
       if (val) theme[name] = val;
     }
 

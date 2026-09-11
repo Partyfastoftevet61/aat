@@ -111,11 +111,7 @@ func validateSinglePlan(planPath, graphPath, layersDir string, g *graph.Graph, s
 		p = v
 	case *plan.Recipe:
 		fmt.Printf("Reconstituting recipe %q...\n", v.Selection.Workflow)
-		var opts []intent.ReconstituteOption
-		if layersDir != "" {
-			opts = append(opts, intent.WithLayersDir(layersDir))
-		}
-		reconstituted, reconErr := intent.Reconstitute(v, g, filepath.Dir(graphPath), opts...)
+		reconstituted, reconErr := intent.Reconstitute(v, g, filepath.Dir(graphPath), intent.WithLayersDir(layersDir))
 		if reconErr != nil {
 			fmt.Fprintf(os.Stderr, "aat validate plan: reconstituting recipe: %s\n", reconErr)
 			return 1

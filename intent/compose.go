@@ -422,18 +422,15 @@ func fillSlots(parent *plan.Plan, base graph.Workflow, choices map[string]string
 		return nil
 	}
 
-	// Build slot definitions map for lookup.
-	slotDefs := make(map[string]graph.SlotDef, len(base.Slots))
-	for _, sd := range base.Slots {
-		slotDefs[sd.Name] = sd
-	}
-
 	// Track slot name → last step ID of the option (for dependsOn rewriting).
 	slotLastStep := make(map[string]string)
 
-	// Process slot markers in order. We rebuild the step list each iteration
-	// to handle index shifts from replacement.
-	for slotName, sd := range slotDefs {
+	// Fill slots in declaration order. The order decides how option cleanup is
+	// appended, which option's verification of a node wins, and which inject
+	// value lands first, so it must not vary between runs. We rebuild the step
+	// list each iteration to handle index shifts from replacement.
+	for _, sd := range base.Slots {
+		slotName := sd.Name
 		// Determine chosen option.
 		optionName := sd.Default
 		if chosen, ok := choices[slotName]; ok && chosen != "" {
@@ -516,10 +513,11 @@ func fillSlots(parent *plan.Plan, base graph.Workflow, choices map[string]string
 		}
 	}
 
-	// Apply inject values from slot options.
-	for slotName, sd := range slotDefs {
+	// Apply inject values from slot options, in slot declaration order: an input
+	// that two options inject keeps the first slot's value.
+	for _, sd := range base.Slots {
 		optionName := sd.Default
-		if chosen, ok := choices[slotName]; ok && chosen != "" {
+		if chosen, ok := choices[sd.Name]; ok && chosen != "" {
 			optionName = chosen
 		}
 		optionWF, found := findWorkflowByName(g, optionName)

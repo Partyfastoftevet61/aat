@@ -29,7 +29,7 @@ Two single-plan flags support this:
 
 | Flag | Description |
 |------|-------------|
-| `--stop-after STEP` | Stop execution after the step whose ID equals `STEP` completes. Cleanup is **skipped**, so resources created up to that point stay alive for the handoff. |
+| `--stop-after STEP` | Stop execution after the step whose ID equals `STEP` completes — including an `expectFailure` step whose expected error came back. Cleanup and verification are **skipped**, so resources created up to that point stay alive for the handoff. |
 | `--dump-state FILE` | Write the accumulated run state to `FILE`. Use `-` for stdout instead of a file; stdout then carries only the state and progress goes to stderr. Usable with or without `--stop-after`. |
 
 ```
@@ -47,12 +47,21 @@ The run reports a `stopped` outcome (exit code `0`), and the regular archive is 
   "stoppedAt": "createItinerary",
   "baseUrl": "https://api.pp.example.com",
   "auth": { "headers": { "Authorization": "Bearer ..." } },
-  "steps": [ { "stepId": "createItinerary", "node": "createItinerary", "outputs": { "itineraryId": "wb-42" } } ],
+  "steps": [
+    {
+      "stepId": "createItinerary",
+      "node": "createItinerary",
+      "baseUrl": "https://api.pp.example.com",
+      "headers": { "Authorization": "Bearer ...", "Content-Type": "application/json" },
+      "outputs": { "itineraryId": "wb-42" }
+    }
+  ],
   "values": { "createItinerary.itineraryId": "wb-42" }
 }
 ```
 
-- `baseUrl` and `auth.headers` come from the last request issued, capturing the live session.
+- `baseUrl` and `auth.headers` describe the environment's default route: they come from the last request sent to the environment's `apiBaseUrl`, capturing the main live session even when the last step was routed elsewhere. When no request went there, they come from the last request issued.
+- Each entry in `steps` records the `baseUrl` and live `headers` its request actually used, so a step routed to another host with its own credential (for example a payments API with an API key) can be replayed too.
 - `values` flattens every completed step's outputs as `stepId.outputName` for easy lookup.
 
 ### Dumping to stdout (no file)
@@ -74,7 +83,7 @@ aat run plan roundtrip-booking --stop-after createItinerary --json --dump-state 
 
 Without `--json`, stdout carries only the state object: progress and the summary line go to stderr, so `aat run plan … --dump-state - | jq .values` works with or without `--quiet`.
 
-> **Security:** unlike run archives, auth headers in the dump are **not redacted** — that is the point, so the external harness can replay calls. To a file it is written with mode `0600`; to stdout it lands in your terminal/pipe. Either way, treat it as a secret: do not commit, log, or share it.
+> **Security:** unlike run archives, auth headers in the dump are **not redacted** — that is the point, so the external harness can replay calls. To a file it is written with mode `0600` (also when it replaces an existing file); to stdout it lands in your terminal/pipe. Either way, treat it as a secret: do not commit, log, or share it. If the file cannot be written, a warning goes to stderr even under `--quiet` or `--json`, and the run's exit code is unchanged.
 
 `STEP` is matched against the step's ID (its `id:` if set, otherwise the node name). An unknown step name fails the run with a clear error rather than silently running to completion.
 
@@ -137,8 +146,9 @@ These flags apply to both `run plan` and `run batch`.
 | `--templates` | path | from manifest | Templates directory |
 | `--domain` | path | from manifest | Domain knowledge file |
 | `--output` | path | `_output/runs` | Archive output directory |
-| `--override` | `NODE=URL` | — | Route a node to a different URL (repeatable) |
+| `--override` | `NODE=URL` | — | Route a node to a different URL (repeatable); keeps the environment headers and auth |
 | `--overlay` | path | — | Overlay YAML with additional environment overrides |
+| `--var` | `KEY=VALUE` | — | Set a var of a multi-environment file (repeatable; wins over the file's vars) — see [Environments: Setting vars from the command line](environments.md#setting-vars-from-the-command-line) |
 | `--retries` | int | `0` | Max plan-level retries on failure |
 | `--layer` | string | — | Data layer to apply (repeatable) |
 | `--no-auto-overrides` | bool | `false` | Disable auto-discovery of `.aat-overrides.yaml` |

@@ -298,6 +298,11 @@ func TestReconstitute_RecipeLayersWithoutLayersDirFail(t *testing.T) {
 	_, err := Reconstitute(recipe, buildRecipeTestGraph(), ".")
 	require.ErrorIs(t, err, graph.ErrNoLayersDir, "a recipe must not silently run without its layers")
 	assert.Contains(t, err.Error(), "[recipeLayer]")
+
+	// An empty directory option is the same as none: callers can pass a
+	// manifest's layers setting through unchecked.
+	_, err = Reconstitute(recipe, buildRecipeTestGraph(), ".", WithLayersDir(""))
+	require.ErrorIs(t, err, graph.ErrNoLayersDir)
 }
 
 func TestReconstitute_MissingRecipeLayersLoadedFromDisk(t *testing.T) {

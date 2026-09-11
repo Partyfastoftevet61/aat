@@ -116,8 +116,14 @@ func LoadLayersFromDir(dir string) (map[string]*Layer, error) {
 
 // ResolveLayerNames loads only the named layer files from a directory.
 // It scans the directory for YAML files and returns the subset that match
-// the requested names. Returns an error if any requested name is not found.
+// the requested names. Returns an error if any requested name is not found,
+// and an error wrapping ErrNoLayersDir when names are given without a
+// directory: silently dropping them would run a different test than the one
+// requested.
 func ResolveLayerNames(names []string, dir string) (map[string]*Layer, error) {
+	if len(names) > 0 && dir == "" {
+		return nil, fmt.Errorf("layers %v requested but %w", names, ErrNoLayersDir)
+	}
 	all, err := LoadLayersFromDir(dir)
 	if err != nil {
 		return nil, err
@@ -145,17 +151,17 @@ var ErrNoLayersDir = errors.New("no layers directory is configured (set `layers:
 
 // LayeredDefaults loads the named layers from dir and stacks them, in order, on
 // the graph defaults (see ApplyLayers). It returns nil when no layers are named.
-// Naming layers without a directory is an error wrapping ErrNoLayersDir:
-// silently dropping them would run a different test than the one requested.
+// Naming layers without a directory is an error wrapping ErrNoLayersDir (see
+// ResolveLayerNames).
 func LayeredDefaults(g *Graph, names []string, dir string) (map[string]*InputDefault, error) {
 	if len(names) == 0 {
 		return nil, nil
 	}
-	if dir == "" {
-		return nil, fmt.Errorf("layers %v requested but %w", names, ErrNoLayersDir)
-	}
 	available, err := ResolveLayerNames(names, dir)
 	if err != nil {
+		if errors.Is(err, ErrNoLayersDir) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("loading layers: %w", err)
 	}
 	defaults, err := ApplyLayers(g, names, available)
@@ -169,8 +175,11 @@ func LayeredDefaults(g *Graph, names []string, dir string) (map[string]*InputDef
 // a new InputDefault. Fields set in the overlay replace the corresponding base
 // fields. Nil/zero overlay fields leave the base value unchanged.
 //
-// Switching strategies (e.g., overlay sets Pool → clears Value, and vice versa)
-// is handled automatically.
+// An overlay that names a value source (value, pool, from, or fromResolved)
+// replaces the base's sources entirely, so a layer's literal value is not
+// shadowed by a graph default's from (which resolution prefers). The base's
+// select is kept only when the overlay sets neither a source nor its own select
+// — or sets a from that the select can apply to.
 func MergeInputDefault(base, overlay *InputDefault) *InputDefault {
 	if overlay == nil {
 		if base == nil {
@@ -186,15 +195,20 @@ func MergeInputDefault(base, overlay *InputDefault) *InputDefault {
 
 	result := *base
 
+	if overlay.Value != nil || overlay.Pool != nil || overlay.From != "" || overlay.FromResolved != "" {
+		result.Value, result.Pool, result.From, result.FromResolved = nil, nil, "", ""
+		if overlay.From == "" {
+			result.Select = nil // a select applies only to a from source
+		}
+	}
+
 	if overlay.Pool != nil {
 		result.Pool = make([]any, len(overlay.Pool))
 		copy(result.Pool, overlay.Pool)
-		result.Value = nil // switching to pool strategy
 	}
 
 	if overlay.Value != nil {
 		result.Value = overlay.Value
-		result.Pool = nil // switching to literal strategy
 	}
 
 	if overlay.PoolStrategy != nil {
@@ -208,6 +222,10 @@ func MergeInputDefault(base, overlay *InputDefault) *InputDefault {
 
 	if overlay.From != "" {
 		result.From = overlay.From
+	}
+
+	if overlay.FromResolved != "" {
+		result.FromResolved = overlay.FromResolved
 	}
 
 	if overlay.Select != nil {

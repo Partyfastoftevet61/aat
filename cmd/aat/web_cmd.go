@@ -42,6 +42,7 @@ var webCmd = &cobra.Command{
 		}
 
 		port, _ := cmd.Flags().GetInt("port")
+		host := resolveHost(cmd)
 		openFlag, _ := cmd.Flags().GetBool("open")
 		devMode, _ := cmd.Flags().GetBool("dev")
 
@@ -63,6 +64,7 @@ var webCmd = &cobra.Command{
 		}
 
 		return webServeCommand(&webArgs{
+			Host:          host,
 			Port:          port,
 			Open:          openFlag,
 			DevMode:       devMode,
@@ -95,12 +97,13 @@ loaded directly into memory — no project setup or manifest is needed.`,
 			ref = args[0]
 		}
 		port, _ := cmd.Flags().GetInt("port")
+		host := resolveHost(cmd)
 
 		// Check if the argument is a file path before resolving project context.
 		if ref != "" {
 			ft := classifyFileArg(ref)
 			if ft != fileTypeNotAFile {
-				return webViewFileCommand(port, ref, ft)
+				return webViewFileCommand(host, port, ref, ft)
 			}
 		}
 
@@ -131,7 +134,7 @@ loaded directly into memory — no project setup or manifest is needed.`,
 			visualizerDir = resolved.VisualizersDir
 		}
 
-		return webViewCommand(port, ref, outputDir, tracesDir, visualizerDir)
+		return webViewCommand(host, port, ref, outputDir, tracesDir, visualizerDir)
 	},
 }
 
@@ -144,6 +147,7 @@ var webViewTraceCmd = &cobra.Command{
 		cmd.SilenceUsage = true
 
 		port, _ := cmd.Flags().GetInt("port")
+		host := resolveHost(cmd)
 
 		overrides := config.ProjectPaths{}
 		if cmd.Flags().Changed("manifest") {
@@ -177,22 +181,25 @@ var webViewTraceCmd = &cobra.Command{
 			traceRef = args[0]
 		}
 
-		return webViewTraceCommand(port, traceRef, outputDir, tracesDir, visualizerDir)
+		return webViewTraceCommand(host, port, traceRef, outputDir, tracesDir, visualizerDir)
 	},
 }
 
 func init() {
 	webCmd.Flags().Int("port", 9119, "port to listen on")
+	webCmd.Flags().String("host", server.DefaultHost, hostFlagHelp)
 	webCmd.Flags().Bool("open", false, "open browser after starting")
 	webCmd.Flags().Bool("dev", false, "enable development mode (request logging)")
 	webCmd.Flags().String("manifest", "", "path to aat-project.yaml or project directory")
 	webCmd.Flags().String("output", "_output/runs", "directory containing run archives")
 
 	webViewCmd.Flags().Int("port", 9119, "port the server is running on")
+	webViewCmd.Flags().String("host", server.DefaultHost, hostFlagHelp)
 	webViewCmd.Flags().String("manifest", "", "path to aat-project.yaml or project directory")
 	webViewCmd.Flags().String("output", "_output/runs", "directory containing run archives")
 
 	webViewTraceCmd.Flags().Int("port", 9119, "port the server is running on")
+	webViewTraceCmd.Flags().String("host", server.DefaultHost, hostFlagHelp)
 	webViewTraceCmd.Flags().String("manifest", "", "path to aat-project.yaml or project directory")
 	webViewTraceCmd.Flags().String("output", "_output/runs", "directory containing run archives")
 
@@ -200,8 +207,27 @@ func init() {
 	webCmd.AddCommand(webViewTraceCmd)
 }
 
+// hostFlagHelp is the --host help text shared by the web and MCP HTTP servers.
+const hostFlagHelp = "interface to bind (default 127.0.0.1, or $AAT_HOST); use 0.0.0.0 to accept connections from other machines or containers"
+
+// resolveHost returns the interface a server command binds: the --host flag
+// when given, else the AAT_HOST environment variable, else loopback. The
+// Docker image sets AAT_HOST=0.0.0.0, since loopback inside a container is not
+// reachable through a published port.
+func resolveHost(cmd *cobra.Command) string {
+	if cmd.Flags().Changed("host") {
+		host, _ := cmd.Flags().GetString("host")
+		return host
+	}
+	if host := os.Getenv("AAT_HOST"); host != "" {
+		return host
+	}
+	return server.DefaultHost
+}
+
 // webArgs holds parsed CLI flags for the web serve command.
 type webArgs struct {
+	Host          string
 	Port          int
 	Open          bool
 	DevMode       bool
@@ -229,6 +255,7 @@ func webServeCommand(args *webArgs) error {
 		return err
 	}
 	srv := server.NewServer(server.ServerOptions{
+		Host:          args.Host,
 		Port:          args.Port,
 		ArchiveDir:    args.ArchiveDir,
 		TracesDir:     args.TracesDir,
@@ -248,7 +275,7 @@ func webServeCommand(args *webArgs) error {
 		if waitForServer(srv, 2*time.Second) {
 			url := args.OpenURL
 			if url == "" {
-				url = fmt.Sprintf("http://localhost:%d", args.Port)
+				url = server.BrowseURL(args.Host, args.Port)
 			}
 			if err := openURLFunc(url); err != nil {
 				fmt.Fprintf(os.Stderr, "aat web: could not open browser: %s\n", err)
@@ -271,25 +298,27 @@ func webServeCommand(args *webArgs) error {
 }
 
 // webViewCommand opens a run in the browser. If no server is running on the
-// given port, it starts a temporary one that serves until interrupted.
-func webViewCommand(port int, ref string, archiveDir string, tracesDir string, visualizerDir string) error {
+// given port, it starts a temporary one bound to host that serves until
+// interrupted.
+func webViewCommand(host string, port int, ref string, archiveDir string, tracesDir string, visualizerDir string) error {
 	if err := requireWebAssets(false); err != nil {
 		return err
 	}
-	baseURL := fmt.Sprintf("http://localhost:%d", port)
+	baseURL := server.BrowseURL(host, port)
 
 	if err := checkServerHealth(baseURL); err == nil {
 		// Server already running — just open the URL.
-		url := buildViewURL(port, ref, archiveDir)
+		url := buildViewURL(baseURL, ref, archiveDir)
 		return openURLFunc(url)
 	}
 
 	// No server running — start an ephemeral one and open the ref URL.
 	fmt.Fprintf(os.Stderr, "aat web: no server running on port %d, starting one...\n", port)
 	return webServeCommand(&webArgs{
+		Host:          host,
 		Port:          port,
 		Open:          true,
-		OpenURL:       buildViewURL(port, ref, archiveDir),
+		OpenURL:       buildViewURL(baseURL, ref, archiveDir),
 		ArchiveDir:    archiveDir,
 		TracesDir:     tracesDir,
 		VisualizerDir: visualizerDir,
@@ -297,14 +326,15 @@ func webViewCommand(port int, ref string, archiveDir string, tracesDir string, v
 }
 
 // webViewTraceCommand opens the trace viewer in the browser. If no server is
-// running on the given port, it starts a temporary one that serves until interrupted.
-func webViewTraceCommand(port int, traceRef string, archiveDir string, tracesDir string, visualizerDir string) error {
+// running on the given port, it starts a temporary one bound to host that
+// serves until interrupted.
+func webViewTraceCommand(host string, port int, traceRef string, archiveDir string, tracesDir string, visualizerDir string) error {
 	if err := requireWebAssets(false); err != nil {
 		return err
 	}
-	baseURL := fmt.Sprintf("http://localhost:%d", port)
+	baseURL := server.BrowseURL(host, port)
 
-	url := buildTraceViewURL(port, traceRef)
+	url := buildTraceViewURL(baseURL, traceRef)
 
 	if err := checkServerHealth(baseURL); err == nil {
 		return openURLFunc(url)
@@ -312,6 +342,7 @@ func webViewTraceCommand(port int, traceRef string, archiveDir string, tracesDir
 
 	fmt.Fprintf(os.Stderr, "aat web: no server running on port %d, starting one...\n", port)
 	return webServeCommand(&webArgs{
+		Host:          host,
 		Port:          port,
 		Open:          true,
 		OpenURL:       url,
@@ -321,28 +352,29 @@ func webViewTraceCommand(port int, traceRef string, archiveDir string, tracesDir
 	})
 }
 
-// buildViewURL constructs the URL for viewing a run or batch in the frontend.
-// It checks directory contents to determine the type rather than relying on
-// name prefixes, supporting named/renamed directories.
-func buildViewURL(port int, ref string, archiveDir string) string {
+// buildViewURL constructs the URL for viewing a run or batch in the frontend
+// served at baseURL. It checks directory contents to determine the type rather
+// than relying on name prefixes, supporting named/renamed directories.
+func buildViewURL(baseURL string, ref string, archiveDir string) string {
 	if ref == "" {
-		return fmt.Sprintf("http://localhost:%d", port)
+		return baseURL
 	}
 	if archiveDir != "" {
 		batchPath := filepath.Join(archiveDir, ref, "batch.json")
 		if _, err := os.Stat(batchPath); err == nil {
-			return fmt.Sprintf("http://localhost:%d/batches/%s", port, ref)
+			return baseURL + "/batches/" + ref
 		}
 	}
-	return fmt.Sprintf("http://localhost:%d/runs/%s", port, ref)
+	return baseURL + "/runs/" + ref
 }
 
-// buildTraceViewURL constructs the URL for viewing traces in the frontend.
-func buildTraceViewURL(port int, traceRef string) string {
+// buildTraceViewURL constructs the URL for viewing traces in the frontend
+// served at baseURL.
+func buildTraceViewURL(baseURL string, traceRef string) string {
 	if traceRef == "" {
-		return fmt.Sprintf("http://localhost:%d/traces", port)
+		return baseURL + "/traces"
 	}
-	return fmt.Sprintf("http://localhost:%d/traces/%s", port, traceRef)
+	return baseURL + "/traces/" + traceRef
 }
 
 // checkServerHealth checks if the server is reachable via its health endpoint.
@@ -553,8 +585,8 @@ func loadBatchMemberRuns(dir string) (map[string]*archive.Archive, map[string]ma
 }
 
 // webViewFileCommand loads an archive file into memory and serves it via
-// an ephemeral web server. No temp files are created on disk.
-func webViewFileCommand(port int, filePath string, ft fileType) error {
+// an ephemeral web server bound to host. No temp files are created on disk.
+func webViewFileCommand(host string, port int, filePath string, ft fileType) error {
 	if err := requireWebAssets(false); err != nil {
 		return err
 	}
@@ -563,16 +595,15 @@ func webViewFileCommand(port int, filePath string, ft fileType) error {
 		return err
 	}
 
-	var viewURL string
+	viewURL := server.BrowseURL(host, port) + "/runs/" + ref
 	if archiveType == "batch" {
-		viewURL = fmt.Sprintf("http://localhost:%d/batches/%s", port, ref)
-	} else {
-		viewURL = fmt.Sprintf("http://localhost:%d/runs/%s", port, ref)
+		viewURL = server.BrowseURL(host, port) + "/batches/" + ref
 	}
 
 	fmt.Fprintf(os.Stderr, "aat web: viewing %s (in-memory, no temp files)\n", filePath)
 
 	srv := server.NewServerWithService(server.ServerOptions{
+		Host: host,
 		Port: port,
 	}, svc)
 

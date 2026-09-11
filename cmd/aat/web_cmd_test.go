@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gburgyan/aat/server"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -88,8 +89,33 @@ func TestBuildViewURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildViewURL(tt.port, tt.ref, tt.archiveDir)
+			got := buildViewURL(server.BrowseURL("", tt.port), tt.ref, tt.archiveDir)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestResolveHost(t *testing.T) {
+	tests := []struct {
+		name    string
+		flag    string // "" means the flag was not given
+		envHost string
+		want    string
+	}{
+		{name: "default is loopback", want: "127.0.0.1"},
+		{name: "AAT_HOST applies without a flag", envHost: "0.0.0.0", want: "0.0.0.0"},
+		{name: "flag beats AAT_HOST", flag: "127.0.0.1", envHost: "0.0.0.0", want: "127.0.0.1"},
+		{name: "flag alone", flag: "::1", want: "::1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AAT_HOST", tt.envHost)
+			cmd := &cobra.Command{Use: "test"}
+			cmd.Flags().String("host", server.DefaultHost, hostFlagHelp)
+			if tt.flag != "" {
+				require.NoError(t, cmd.Flags().Set("host", tt.flag))
+			}
+			assert.Equal(t, tt.want, resolveHost(cmd))
 		})
 	}
 }
@@ -123,7 +149,7 @@ func TestBuildTraceViewURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildTraceViewURL(tt.port, tt.traceRef)
+			got := buildTraceViewURL(server.BrowseURL("", tt.port), tt.traceRef)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -151,12 +177,12 @@ func TestWebViewTraceCommand_ServerAlreadyRunning(t *testing.T) {
 	defer func() { openURLFunc = orig }()
 
 	// No ref → opens trace list.
-	err := webViewTraceCommand(19225, "", t.TempDir(), "", "")
+	err := webViewTraceCommand("", 19225, "", t.TempDir(), "", "")
 	require.NoError(t, err)
 	assert.Equal(t, "http://localhost:19225/traces", opened)
 
 	// With ref → opens specific trace.
-	err = webViewTraceCommand(19225, "trace-abc123", t.TempDir(), "", "")
+	err = webViewTraceCommand("", 19225, "trace-abc123", t.TempDir(), "", "")
 	require.NoError(t, err)
 	assert.Equal(t, "http://localhost:19225/traces/trace-abc123", opened)
 }
@@ -219,7 +245,7 @@ func TestWebViewCommand_ServerAlreadyRunning(t *testing.T) {
 	defer func() { openURLFunc = orig }()
 
 	// Should open immediately without starting a new server.
-	err := webViewCommand(19223, "latest", t.TempDir(), "", "")
+	err := webViewCommand("", 19223, "latest", t.TempDir(), "", "")
 	require.NoError(t, err)
 	assert.Equal(t, "http://localhost:19223/runs/latest", opened)
 }
@@ -240,7 +266,7 @@ func TestWebViewCommand_StartsEphemeralServer(t *testing.T) {
 	// We run it in a goroutine because it blocks until signal.
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- webViewCommand(19224, "latest", archiveDir, "", "")
+		errCh <- webViewCommand("", 19224, "latest", archiveDir, "", "")
 	}()
 
 	// Wait for the ephemeral server to come up and open the browser.
@@ -372,13 +398,13 @@ func TestWebViewCommand_OpensCorrectURL(t *testing.T) {
 	defer func() { openURLFunc = orig }()
 
 	// Verify buildViewURL + openURLFunc integration.
-	url := buildViewURL(portInt, "latest", "")
+	url := buildViewURL(server.BrowseURL("", portInt), "latest", "")
 	err := openURLFunc(url)
 	require.NoError(t, err)
 	assert.Equal(t, fmt.Sprintf("http://localhost:%d/runs/latest", portInt), opened)
 
 	// Also verify with a specific run ID.
-	url = buildViewURL(portInt, "run-abc123", "")
+	url = buildViewURL(server.BrowseURL("", portInt), "run-abc123", "")
 	err = openURLFunc(url)
 	require.NoError(t, err)
 	assert.Equal(t, fmt.Sprintf("http://localhost:%d/runs/run-abc123", portInt), opened)

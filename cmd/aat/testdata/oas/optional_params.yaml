@@ -1,0 +1,55 @@
+openapi: 3.0.3
+info:
+  title: Optional parameters
+  version: "1.0"
+paths:
+  /widgets:
+    get:
+      operationId: listWidgets
+      parameters:
+        - {name: color, in: query, schema: {type: string}}
+        - {name: size, in: query, schema: {type: integer}}
+        - {name: page, in: query, schema: {type: integer}}
+        - {name: X-Trace, in: header, schema: {type: string}}
+      responses:
+        "200":
+          description: A page of widgets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: {type: integer}
+                  widgets:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+    post:
+      operationId: createWidget
+      parameters:
+        - {name: dryRun, in: query, required: true, schema: {type: boolean}}
+        - {name: tag, in: query, schema: {type: string}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, count]
+              properties:
+                name: {type: string}
+                count: {type: integer}
+                labels:
+                  type: array
+                  items: {type: string}
+                note: {type: string}
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string}

@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gburgyan/aat/graph"
 )
 
 func TestValidate_NoManifestFound(t *testing.T) {
@@ -816,4 +818,38 @@ plans:
 	assert.Contains(t, output, "Plans")
 	assert.Contains(t, output, "(2 files, 1 recipe)")
 	assert.Contains(t, output, "PASSED")
+}
+
+// TestExamplePetstore_ValidatesStrict keeps the smallest example honest: it
+// must pass strict validation, which needs no network.
+func TestExamplePetstore_ValidatesStrict(t *testing.T) {
+	var out bytes.Buffer
+	code := validateCommand(&validateArgs{ManifestPath: "../../examples/petstore/aat-project.yaml", Strict: true}, &out)
+	assert.Equal(t, 0, code, out.String())
+}
+
+// TestValidateWorkflows_WalksSubdirectories: slot options and addons usually
+// live in subdirectories of workflows/, and must be checked there too.
+func TestValidateWorkflows_WalksSubdirectories(t *testing.T) {
+	dir := t.TempDir()
+	g := &graph.Graph{Version: "1.0.0", Nodes: map[string]*graph.Node{
+		"search": {Name: "search", Adapter: "search"},
+	}}
+	write := func(rel, content string) string {
+		path := filepath.Join(dir, rel)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+		abs, err := filepath.Abs(path)
+		require.NoError(t, err)
+		return abs
+	}
+	slot := write("slots/option.yaml", "execution:\n  steps:\n    - node: search\n")
+	write("addons/broken.yaml", "execution: [not, a, mapping\n")
+
+	result := validateWorkflows(dir, g, map[string]bool{slot: true})
+
+	assert.Equal(t, 2, result.Total, "files in subdirectories are counted")
+	assert.Equal(t, 1, result.Templates, "the referenced slot option is recognized as a template")
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0], filepath.Join("addons", "broken.yaml"))
 }

@@ -83,10 +83,11 @@ Anything that no longer matches the `run-`/`batch-` prefix is *named*, shows und
 aat web
 ```
 
-Opens a web server on port 9119 serving the archive viewer.
+Opens a web server on `http://localhost:9119` serving the archive viewer.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--host` | string | `127.0.0.1` | Interface to bind; `0.0.0.0` accepts connections from other machines or containers. The `AAT_HOST` environment variable sets it when the flag is absent |
 | `--port` | int | `9119` | Listen port |
 | `--open` | bool | `false` | Open browser automatically after starting |
 | `--dev` | bool | `false` | Development mode (request logging) |
@@ -94,6 +95,8 @@ Opens a web server on port 9119 serving the archive viewer.
 | `--output` | path | `_output/runs` | Archive directory to serve |
 
 The server runs until interrupted (Ctrl-C).
+
+By default the server listens on loopback only: run archives, and the rename and import routes, are reachable from this machine alone. `--host 0.0.0.0` makes them reachable by anyone on your network, so use it only where that is acceptable (see `SECURITY.md`). The Docker image sets `AAT_HOST=0.0.0.0`, because inside a container loopback cannot be reached through a published port.
 
 The web UI is compiled into the binary at build time. A build without the frontend bundle — a plain `go install github.com/gburgyan/aat/cmd/aat@latest`, or `go build` without running `make frontend` first — has every CLI, MCP, and CI feature, but `aat web` exits with code `2` and a hint to install a release build (or `brew install gburgyan/tap/aat`, or `make build`). `aat web --dev` is exempt because it proxies to the Vite dev server instead.
 
@@ -105,9 +108,12 @@ aat web view [ref]
 
 Opens a specific run in the browser. If a server is already running on the configured port, AAT opens the URL directly. If not, it starts an ephemeral server that serves until you interrupt it.
 
-Without a `ref` argument, opens the run list.
+Without a `ref` argument, opens the run list. `latest` opens the newest run or batch.
 
 ```
+# Open the newest run or batch
+aat web view latest
+
 # Open a specific run
 aat web view run-20260223-143052-a1b2c3d4
 

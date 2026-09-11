@@ -30,7 +30,7 @@ func LoadEnvironment(path string) (*Environment, error) {
 	// Detect multi-env format and reject with helpful message
 	if isMultiEnv(data) {
 		names, _ := listEnvNamesFromData(data)
-		return nil, fmt.Errorf("env file defines multiple environments (%s); specify one with --env-name or set defaultEnvironment in aat-project.yaml",
+		return nil, fmt.Errorf("env file defines multiple environments (%s); specify one with --env or set defaultEnvironment in aat-project.yaml",
 			strings.Join(names, ", "))
 	}
 

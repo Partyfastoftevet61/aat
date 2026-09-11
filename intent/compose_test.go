@@ -1236,6 +1236,57 @@ func TestCompose_Slots_VerificationMerge(t *testing.T) {
 	assert.Equal(t, "slot option checks book", p.Execution.Verification[0].Purpose)
 }
 
+// TestCompose_Slots_DeterministicMergeOrder verifies that slots are filled in
+// declaration order: option cleanup is appended trip-search first, the payment
+// option's verification of commit replaces the trip-search option's, and the
+// first slot's inject value wins. Composition used to range over a map, so
+// these varied between runs.
+func TestCompose_Slots_DeterministicMergeOrder(t *testing.T) {
+	g := buildSlotTestGraph()
+	g.Nodes["finalStep"].Inputs = append(g.Nodes["finalStep"].Inputs, graph.Input{Name: "channel", Type: "string"})
+	g.Workflows = append(g.Workflows,
+		graph.Workflow{
+			Name:     "OrderTrip",
+			Kind:     "slot",
+			Template: "testdata/compose/slot_order_trip.yaml",
+			Inject:   map[string]any{"channel": "web"},
+		},
+		graph.Workflow{
+			Name:     "OrderPayment",
+			Kind:     "slot",
+			Template: "testdata/compose/slot_order_payment.yaml",
+			Inject:   map[string]any{"channel": "phone"},
+		},
+	)
+	base := findSlotBaseWorkflow(g)
+	base.Slots[0].Options = append(base.Slots[0].Options, "OrderTrip")
+	base.Slots[1].Options = append(base.Slots[1].Options, "OrderPayment")
+	choices := map[string]string{"trip-search": "OrderTrip", "payment": "OrderPayment"}
+
+	for i := 0; i < 50; i++ {
+		p, err := Compose(ComposeRequest{Base: base, Choices: choices, Graph: g, GraphDir: "."})
+		require.NoError(t, err)
+
+		var cleanup []string
+		for _, cs := range p.Execution.Cleanup {
+			cleanup = append(cleanup, cs.Node)
+		}
+		require.Equal(t, []string{"commit", "book", "addCashPayment"}, cleanup, "iteration %d", i)
+
+		require.Len(t, p.Execution.Verification, 1, "iteration %d", i)
+		require.Equal(t, "payment option checks commit", p.Execution.Verification[0].Purpose, "iteration %d", i)
+
+		var final *plan.Step
+		for j := range p.Execution.Steps {
+			if p.Execution.Steps[j].Node == "finalStep" {
+				final = &p.Execution.Steps[j]
+			}
+		}
+		require.NotNil(t, final)
+		require.Equal(t, "web", final.Values["channel"].Default, "iteration %d", i)
+	}
+}
+
 func TestCompose_Addon_VerificationReplacesBaseNode(t *testing.T) {
 	g := buildComposeTestGraph()
 	g.Workflows = append(g.Workflows, graph.Workflow{

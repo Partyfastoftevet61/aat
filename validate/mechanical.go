@@ -3,10 +3,10 @@ package validate
 import (
 	"encoding/json"
 	"fmt"
-	"math"
-	"strings"
 
 	"github.com/tidwall/gjson"
+
+	"github.com/gburgyan/aat/internal/httpstatus"
 )
 
 // AssertionType enumerates the kinds of mechanical assertion.
@@ -105,7 +105,7 @@ func checkStatus(statusCode int, a MechanicalAssertion) AssertionResult {
 		return ar
 	}
 
-	if class, ok := StatusClass(a.Expect); ok {
+	if class, ok := httpstatus.Class(a.Expect); ok {
 		ar.Passed = statusCode/100 == class
 		if ar.Passed {
 			ar.Message = fmt.Sprintf("status code %d is %dxx", statusCode, class)
@@ -115,7 +115,7 @@ func checkStatus(statusCode int, a MechanicalAssertion) AssertionResult {
 		return ar
 	}
 
-	expected, ok := toInt(a.Expect)
+	expected, ok := httpstatus.Code(a.Expect)
 	if !ok {
 		ar.Passed = false
 		ar.Message = fmt.Sprintf("cannot coerce expect value %v (%T) to int", a.Expect, a.Expect)
@@ -237,39 +237,6 @@ func checkPredicate(body []byte, a MechanicalAssertion, predicateEval PredicateE
 		ar.Message = fmt.Sprintf("predicate %q is false", a.Expr)
 	}
 	return ar
-}
-
-// StatusClass reports whether v is a status class such as "2xx" (any case)
-// and returns its leading digit.
-func StatusClass(v any) (int, bool) {
-	s, ok := v.(string)
-	if !ok || len(s) != 3 || s[0] < '1' || s[0] > '5' || !strings.EqualFold(s[1:], "xx") {
-		return 0, false
-	}
-	return int(s[0] - '0'), true
-}
-
-// toInt converts numeric values to int. Handles int, float64, and json.Number.
-func toInt(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	case float64:
-		if n == math.Trunc(n) {
-			return int(n), true
-		}
-		return 0, false
-	case json.Number:
-		i, err := n.Int64()
-		if err == nil {
-			return int(i), true
-		}
-		return 0, false
-	default:
-		return 0, false
-	}
 }
 
 // valuesEqual compares a gjson.Result with an expected value, handling numeric coercion.

@@ -24,7 +24,7 @@ Use `--manifest` to specify a project explicitly when auto-discovery doesn't app
 aat mcp serve --http
 ```
 
-Serves the MCP server over Streamable HTTP on port 8080. This lets developers point their IDE's MCP client at a URL without installing AAT locally.
+Serves the MCP server over Streamable HTTP on `http://localhost:8080`. It listens on loopback unless `--host` (or `AAT_HOST`) names another interface; to let developers point their IDE's MCP client at a shared server without installing AAT locally, start it with `--host 0.0.0.0` on a machine that untrusted networks cannot reach, since HTTP mode has no authentication.
 
 ```
 aat mcp serve --http --port 9090 --http-base-path /api/mcp
@@ -64,7 +64,9 @@ The seven OpenAPI tools register only when the graph references an OAS spec, whi
 | `--persona` | string | *(all)* | Server persona: `api`, `test`, or omit for all tools |
 | `--env` | string | from manifest | Environment name to load (for multi-environment files) |
 | `--http` | bool | false | Serve over Streamable HTTP instead of stdio |
+| `--host` | string | `127.0.0.1` | Interface to bind with `--http`; `0.0.0.0` for all interfaces. `AAT_HOST` sets it when the flag is absent |
 | `--port` | int | 8080 | HTTP listen port (used with `--http`) |
+| `--var` | `KEY=VALUE` | — | Set a var of a multi-environment file (repeatable) |
 | `--http-base-path` | string | `/mcp` | HTTP endpoint path (used with `--http`) |
 | `--log` | bool | false | Enable structured JSON logging of tool calls to stderr |
 

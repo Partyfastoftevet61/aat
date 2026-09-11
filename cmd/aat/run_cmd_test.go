@@ -13,6 +13,8 @@ import (
 
 	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/engine"
+	"github.com/gburgyan/aat/graph"
+	"github.com/gburgyan/aat/plan"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -169,6 +171,61 @@ func TestRunCommand_StopAfterDumpsState(t *testing.T) {
 	assert.Equal(t, "stopped", exp.Outcome)
 	assert.Equal(t, "testNode", exp.StoppedAt)
 	assert.Equal(t, apiServer.URL, exp.BaseURL)
+	require.Len(t, exp.Steps, 1)
+	assert.Equal(t, apiServer.URL, exp.Steps[0].BaseURL, "each step records the host it used")
+
+	// The JSON summary names the checkpoint too.
+	require.NotNil(t, res.summary)
+	assert.Equal(t, "testNode", res.summary.StoppedAt)
+}
+
+// TestRunCommand_DumpStateWriteFailureIsVisible: a state dump that cannot be
+// written is reported on stderr even under --quiet, where progress logging is
+// discarded, and does not change the run's outcome.
+func TestRunCommand_DumpStateWriteFailureIsVisible(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"result": "test-output"})
+	}))
+	defer apiServer.Close()
+
+	dir := t.TempDir()
+	notADir := filepath.Join(dir, "file")
+	require.NoError(t, os.WriteFile(notADir, []byte("x"), 0o644))
+
+	stderr, err := os.Create(filepath.Join(dir, "stderr"))
+	require.NoError(t, err)
+	oldStderr := os.Stderr
+	os.Stderr = stderr
+	code := executeRun(&runArgs{
+		PlanPath:      "testdata/test_plan.yaml",
+		EnvPath:       writeTestEnv(t, "none", apiServer.URL),
+		GraphPath:     "testdata/test_graph.yaml",
+		TemplatesPath: "testdata/templates",
+		OutputDir:     filepath.Join(dir, "runs"),
+		Quiet:         true,
+		StopAfterStep: "testNode",
+		DumpStatePath: filepath.Join(notADir, "state.json"),
+	})
+	os.Stderr = oldStderr
+	require.NoError(t, stderr.Close())
+
+	assert.Equal(t, 0, code, "a failed dump does not change the exit code")
+	logs, err := os.ReadFile(stderr.Name())
+	require.NoError(t, err)
+	assert.Contains(t, string(logs), "failed to write state dump")
+}
+
+func TestToStepSummary_NameIsStepID(t *testing.T) {
+	ss := toStepSummary(engine.StepResult{
+		StepID:     "addItem__zero_quantity",
+		Node:       "addItem",
+		StatusCode: 400,
+		RetriedOn:  []engine.ErrorCategory{engine.CategoryTransient},
+	})
+	assert.Equal(t, "addItem__zero_quantity", ss.Name, "mutation siblings stay distinguishable")
+	assert.Equal(t, "addItem", ss.Node)
+	assert.Equal(t, []string{"transient"}, ss.RetriedOn)
 }
 
 func TestRunCommand_StopAfterDumpStateStdout(t *testing.T) {
@@ -955,6 +1012,65 @@ overrides:
 	assert.Empty(t, gotAuth, "the main bearer token must not reach the override host")
 }
 
+// TestRunCommand_OverrideFlagInheritsHeadersAndAuth: an --override NODE=URL
+// flag is equivalent to an env.yaml entry with that match and baseUrl, so the
+// request keeps the environment headers, the plan headers, and the credential.
+// It used to reach the override host with no headers at all.
+func TestRunCommand_OverrideFlagInheritsHeadersAndAuth(t *testing.T) {
+	mainServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("request reached the main host: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mainServer.Close()
+
+	var got http.Header
+	localServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"result": "ok"})
+	}))
+	defer localServer.Close()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, "env.yaml")
+	require.NoError(t, os.WriteFile(envFile, []byte(`environment: test
+apiBaseUrl: `+mainServer.URL+`
+auth:
+  type: bearer
+  credentials:
+    token:
+      source: literal
+      value: main-token
+headers:
+  X-Env: env-value
+`), 0o644))
+	planFile := filepath.Join(dir, "plan.yaml")
+	require.NoError(t, os.WriteFile(planFile, []byte(`headers:
+  X-Plan: plan-value
+execution:
+  steps:
+    - node: testNode
+      values:
+        input1: value
+`), 0o644))
+
+	res := runCommand(context.Background(), &runArgs{
+		PlanPath:        planFile,
+		EnvPath:         envFile,
+		GraphPath:       "testdata/test_graph.yaml",
+		TemplatesPath:   "testdata/templates",
+		OutputDir:       filepath.Join(dir, "runs"),
+		Overrides:       []string{"testNode=" + localServer.URL},
+		NoAutoOverrides: true,
+	}, io.Discard, TerminalInfo{})
+
+	require.NoError(t, res.err)
+	require.NotNil(t, got, "the override host received the request")
+	assert.Equal(t, "Bearer main-token", got.Get("Authorization"))
+	assert.Equal(t, "env-value", got.Get("X-Env"))
+	assert.Equal(t, "plan-value", got.Get("X-Plan"))
+}
+
 func TestRunCommand_LayersWithoutLayersDirFails(t *testing.T) {
 	res := runCommand(context.Background(), &runArgs{
 		PlanPath:        "testdata/test_plan.yaml",
@@ -1008,4 +1124,23 @@ func writeTestEnv(t *testing.T, authType, baseURL string) string {
 	path := filepath.Join(t.TempDir(), "env.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
 	return path
+}
+
+func TestPlannedStepCount_IncludesVerificationAndMutations(t *testing.T) {
+	g := &graph.Graph{Version: "1.0.0", Nodes: map[string]*graph.Node{
+		"create": {Name: "create", Adapter: "create", Inputs: []graph.Input{{Name: "qty", Type: "integer"}}},
+		"get":    {Name: "get", Adapter: "get"},
+	}}
+	p := &plan.Plan{Execution: plan.Execution{
+		Steps: []plan.Step{{
+			Node:   "create",
+			Values: map[string]plan.StepValue{"qty": {Default: 1}},
+			Mutations: []plan.Mutation{
+				{Name: "zero", Set: map[string]any{"qty": 0}, ExpectStatus: []int{400}},
+			},
+		}},
+		Verification: []plan.VerificationStep{{Node: "get"}},
+	}}
+
+	assert.Equal(t, 3, plannedStepCount(p, g, nil), "the step, its mutation sibling, and the verification step")
 }

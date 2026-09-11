@@ -12,7 +12,7 @@ aat-sandbox init shop && cd shop   # extract this project (in a source checkout:
 aat-sandbox serve &                # shop API on :8765, payments API on :8766
 aat run plan full-lifecycle
 aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --parallel 4
-aat web view                       # open the latest run in the browser
+aat web view latest                # open the newest run in the browser
 aat run plan smoke --env eu
 ```
 
@@ -63,7 +63,7 @@ PASSED (15/15 steps, 960ms)
 - **Verification and cleanup.** Step 15 checks that the order ended `returned` and `refunded`.
   Cleanup deletes the order and the cart whether the run passed or not.
 
-Every run writes an archive under `_output/runs/`. `aat web view` shows it: a timeline with the
+Every run writes an archive under `_output/runs/`. `aat web view latest` shows it: a timeline with the
 350 ms charge and the 600 ms shipment, each request and response with **Copy as cURL**, the value
 resolution behind every input, and a **Receipt** tab rendered by `visualizers/order-receipt.html`.
 
@@ -156,15 +156,17 @@ selection:
 ## Checkpoints: hand a live order to another tool
 
 ```bash
-aat run plan smoke --stop-after checkout --dump-state state.json
+aat run plan smoke --stop-after paymentCharge --dump-state state.json
 order=$(jq -r '.values["checkout.orderId"]' state.json)
 curl -s -H "$(jq -r '"Authorization: " + .auth.headers.Authorization' state.json)" \
   "localhost:8765/us/v1/orders/$order"
 ```
 
-The run stops after checkout without cleanup, so the order stays live for a test harness, a
-debugger, or a hand-written request. `state.json` holds the live bearer token: it is written with
-mode 0600 and git-ignored.
+The run stops after the payment without cleanup, so the paid order stays live for a test harness, a
+debugger, or a hand-written request. The payment ran on the payments host with its own API key, yet
+the top-level `auth` in `state.json` is still the shop's bearer token; each entry in `steps` records
+the host and headers its own request used (`paymentCharge` shows `X-API-Key`). `state.json` holds
+live credentials: it is written with mode 0600 and git-ignored.
 
 ## Contract checks
 
@@ -174,9 +176,9 @@ mode 0600 and git-ignored.
   and outputs.
 - `aat run batch --oas-validate strict` validates every request and response at run time and
   fails a step on a violation.
-- `aat generate --oas openapi.yaml --output-graph - --output-templates "$(mktemp -d)"` prints the
-  graph AAT scaffolds from the spec alone; compare it with `graph.yaml` to see what a hand-tuned
-  graph adds (data flow, cleanup, error detection, workflows).
+- `aat generate --oas openapi.yaml --output-graph -` prints the graph AAT scaffolds from the spec
+  alone, without writing any files; compare it with `graph.yaml` to see what a hand-tuned graph adds
+  (data flow, cleanup, error detection, workflows).
 
 ## Local development
 
@@ -208,6 +210,13 @@ directory in Claude Code with `aat` on your `PATH` and ask, for example:
 `aat-sandbox serve` flags: `--latency 0` removes the simulated delays, `--seed` fixes tokens and
 tracking numbers (default 1), `--no-auth` disables both credential checks, and `--host 0.0.0.0`
 accepts connections from other machines or containers (the default is `127.0.0.1`).
+
+A sandbox somewhere else — other ports, another machine, a container — needs no edits here:
+`env.yaml` reaches it through the `apiHost` and `payHost` vars, which `--var` overrides for one run:
+
+```bash
+aat run plan smoke --var apiHost=localhost:9765 --var payHost=localhost:9766
+```
 
 ## Files
 

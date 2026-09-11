@@ -1,0 +1,17 @@
+execution:
+  steps:
+    - node: search
+      description: "Search for items"
+
+    - node: book
+      dependsOn: [search]
+      values:
+        flightId: {from: search.results, select: {strategy: first}}
+
+  cleanup:
+    - node: book
+      runOn: always
+
+  verification:
+    - node: commit
+      purpose: "trip-search option checks commit"

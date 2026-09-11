@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,8 +15,14 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
+// DefaultHost is the interface the web server binds when ServerOptions.Host is
+// empty: loopback only, so run archives and the rename and import routes are
+// not reachable from other machines unless a caller asks for it.
+const DefaultHost = "127.0.0.1"
+
 // ServerOptions configures the web server.
 type ServerOptions struct {
+	Host          string // interface to bind; empty means DefaultHost (use 0.0.0.0 for all interfaces)
 	Port          int
 	ArchiveDir    string
 	TracesDir     string
@@ -137,10 +144,24 @@ func (s *Server) Addr() string {
 	return s.addr
 }
 
+// BrowseURL returns the URL a browser on this machine uses to reach a server
+// bound to host and port. Loopback, unspecified (all interfaces), and empty
+// hosts map to localhost.
+func BrowseURL(host string, port int) string {
+	if ip := net.ParseIP(host); host == "" || host == "localhost" || (ip != nil && (ip.IsLoopback() || ip.IsUnspecified())) {
+		host = "localhost"
+	}
+	return "http://" + net.JoinHostPort(host, strconv.Itoa(port))
+}
+
 // ListenAndServe starts serving HTTP requests. It blocks until the server is
 // shut down, at which point it returns http.ErrServerClosed.
 func (s *Server) ListenAndServe() error {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", s.opts.Port))
+	host := s.opts.Host
+	if host == "" {
+		host = DefaultHost
+	}
+	ln, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(s.opts.Port)))
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
@@ -155,7 +176,12 @@ func (s *Server) ListenAndServe() error {
 	s.httpServer = srv
 	s.mu.Unlock()
 
-	fmt.Fprintf(os.Stderr, "aat web: listening on http://localhost:%d\n", ln.Addr().(*net.TCPAddr).Port)
+	port := ln.Addr().(*net.TCPAddr).Port
+	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+		fmt.Fprintf(os.Stderr, "aat web: listening on %s (all interfaces)\n", BrowseURL(host, port))
+	} else {
+		fmt.Fprintf(os.Stderr, "aat web: listening on %s\n", BrowseURL(host, port))
+	}
 
 	return srv.Serve(ln)
 }

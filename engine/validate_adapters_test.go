@@ -78,6 +78,30 @@ func TestValidateAdapterOutputs(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "output computed by a transform",
+			graph: &graph.Graph{
+				Nodes: map[string]*graph.Node{
+					"summarize": {
+						Name:    "summarize",
+						Adapter: "summarize",
+						Outputs: []graph.Output{{Name: "total", Type: "integer"}},
+					},
+				},
+			},
+			setup: func(r *adapter.Registry) {
+				tmpl := adapter.Template{
+					Adapter:  "summarize",
+					Protocol: "http",
+					Request:  adapter.TemplateRequest{Method: "GET", Path: "/items"},
+					Response: adapter.TemplateResponse{
+						Transform: `return { total = #json_path("items") }`,
+					},
+				}
+				_ = r.Register("summarize", adapter.NewTemplateAdapter(tmpl))
+			},
+			wantErr: false,
+		},
+		{
 			name: "graph output missing from template extract",
 			graph: &graph.Graph{
 				Nodes: map[string]*graph.Node{

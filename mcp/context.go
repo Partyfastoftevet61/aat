@@ -46,6 +46,13 @@ type ServerContext struct {
 // are loaded if configured. Errors in optional resources are returned as-is
 // (callers should decide whether to proceed without them).
 func BuildServerContext(manifest *ProjectManifest) (*ServerContext, error) {
+	return BuildServerContextWithVars(manifest, nil)
+}
+
+// BuildServerContextWithVars is BuildServerContext with vars set from outside
+// the environment file, such as --var flags; see
+// config.LoadNamedEnvironmentWithVars.
+func BuildServerContextWithVars(manifest *ProjectManifest, vars map[string]string) (*ServerContext, error) {
 	ctx := &ServerContext{
 		Manifest: manifest,
 		OASSpecs: make(map[string]*v3high.Document),
@@ -83,13 +90,7 @@ func BuildServerContext(manifest *ProjectManifest) (*ServerContext, error) {
 
 	// Load environment (optional)
 	if manifest.EnvPath != "" {
-		var env *config.Environment
-		var err error
-		if manifest.DefaultEnvironment != "" {
-			env, err = config.LoadNamedEnvironment(manifest.EnvPath, manifest.DefaultEnvironment)
-		} else {
-			env, err = config.LoadEnvironment(manifest.EnvPath)
-		}
+		env, err := config.LoadNamedEnvironmentWithVars(manifest.EnvPath, manifest.DefaultEnvironment, vars)
 		if err != nil {
 			return nil, fmt.Errorf("loading environment: %w", err)
 		}
@@ -126,11 +127,7 @@ func BuildServerContext(manifest *ProjectManifest) (*ServerContext, error) {
 // manifest's layers directory. intent.Reconstitute rejects recipe layers when
 // no directory is configured.
 func (ctx *ServerContext) reconstitute(r *plan.Recipe) (*plan.Plan, error) {
-	var opts []intent.ReconstituteOption
-	if ctx.LayersDir != "" {
-		opts = append(opts, intent.WithLayersDir(ctx.LayersDir))
-	}
-	return intent.Reconstitute(r, ctx.Graph, ctx.GraphDir, opts...)
+	return intent.Reconstitute(r, ctx.Graph, ctx.GraphDir, intent.WithLayersDir(ctx.LayersDir))
 }
 
 // layeredDefaults stacks the named layers on the graph defaults for execution.

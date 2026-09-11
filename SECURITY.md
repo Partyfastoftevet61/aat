@@ -28,12 +28,17 @@ credited in the advisory and release notes unless they ask otherwise.
   or `.aar` export is written, and step inputs and resolved values are scrubbed of known secret
   values. Request and response *bodies* are stored as-is, so review them before sharing an archive.
 - **`--dump-state` files contain live credentials.** The live-state export written by
-  `aat run plan --dump-state FILE` includes the resolved base URL, live auth headers, and step outputs
-  so an external harness can pick up where a run left off. The file is written with mode `0600`.
+  `aat run plan --dump-state FILE` includes each step's base URL and live request headers, the
+  default route's auth headers, and step outputs, so an external harness can pick up where a run
+  left off. The file is written with mode `0600`, including when it replaces an existing file.
   Never commit these files, attach them to issues, or leave them in a shared location.
-- **`aat mcp serve --http` has no authentication.** The HTTP transport listens on all interfaces
-  (`:8080` by default; there is no `--host` flag) and accepts any request. Keep it on a machine
-  that is not reachable from untrusted networks, or put it behind a reverse proxy that handles
-  authentication and TLS. The default stdio transport does not have this exposure.
-- **`aat web` is a local tool.** The web UI also listens on all interfaces and serves your run
-  archives to anyone who can reach the port. Do not expose it to untrusted networks.
+- **`aat mcp serve --http` has no authentication.** The HTTP transport listens on `127.0.0.1`
+  unless `--host` (or the `AAT_HOST` environment variable) says otherwise, and accepts any request
+  that reaches it. Bind another interface only on a machine that untrusted networks cannot reach,
+  or put it behind a reverse proxy that handles authentication and TLS. The default stdio
+  transport does not listen on the network at all.
+- **`aat web` is a local tool.** The web UI listens on `127.0.0.1` by default and serves your run
+  archives, including rename and import, to anyone who can reach the port. `--host 0.0.0.0`
+  exposes it to your network; do not do that on untrusted networks. The Docker image sets
+  `AAT_HOST=0.0.0.0` because a container's loopback is unreachable through a published port, so
+  publish the port (`-p`) only where that exposure is acceptable.

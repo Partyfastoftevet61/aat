@@ -18,7 +18,7 @@ aat-sandbox init shop && cd shop   # extract the example project
 aat-sandbox serve &                # shop API on :8765, payments API on :8766
 aat run plan full-lifecycle        # one order through every state, verified and cleaned up
 aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --parallel 4
-aat web view                       # browse the latest run
+aat web view latest                # browse the newest run
 aat run plan smoke --env eu        # the same plan with EU prices and VAT
 ```
 

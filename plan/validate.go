@@ -7,6 +7,7 @@ import (
 
 	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/graph"
+	"github.com/gburgyan/aat/internal/httpstatus"
 )
 
 // RetryCategories lists the error category names accepted in retry.on and
@@ -492,12 +493,8 @@ func Validate(p *Plan, g *graph.Graph) error {
 			// Check for contradicting status assertion
 			if step.Assertions != nil {
 				for _, ma := range step.Assertions.Mechanical {
-					if ma.Type == "status" {
-						if expectInt, ok := toInt(ma.Expect); ok && expectInt < 400 {
-							errs = append(errs, fmt.Sprintf("step %d (%s): status assertion expecting %d contradicts expectFailure", i, sid, expectInt))
-						} else if class, ok := statusClass(ma.Expect); ok && class < 4 {
-							errs = append(errs, fmt.Sprintf("step %d (%s): status assertion expecting %dxx contradicts expectFailure", i, sid, class))
-						}
+					if ma.Type == "status" && httpstatus.ContradictsFailure(ma.Expect) {
+						errs = append(errs, fmt.Sprintf("step %d (%s): status assertion expecting %v contradicts expectFailure", i, sid, ma.Expect))
 					}
 				}
 			}
@@ -632,28 +629,6 @@ func detectDependsOnCycles(p *Plan) []string {
 	}
 
 	return cycles
-}
-
-// toInt converts a value to int if possible. Handles int, float64 (JSON numbers).
-func toInt(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case float64:
-		return int(n), true
-	}
-	return 0, false
-}
-
-// statusClass reports whether v is a status class such as "2xx" (any case)
-// and returns its leading digit. It mirrors validate.StatusClass, which plan
-// cannot import; keep the two in step.
-func statusClass(v any) (int, bool) {
-	s, ok := v.(string)
-	if !ok || len(s) != 3 || s[0] < '1' || s[0] > '5' || !strings.EqualFold(s[1:], "xx") {
-		return 0, false
-	}
-	return int(s[0] - '0'), true
 }
 
 // splitRef splits a "node.field" reference into its components.

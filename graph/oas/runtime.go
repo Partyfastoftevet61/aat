@@ -104,11 +104,6 @@ func ValidateStep(
 		}
 	}
 
-	// Parallel batch runs share the entry, so validations against it take turns
-	// (see SpecEntry.validateMu).
-	entry.validateMu.Lock()
-	defer entry.validateMu.Unlock()
-
 	// Find the operation to get the spec path and path item
 	foundMethod, specPath, pathItem, _, err := FindOperation(entry.Model, operationID)
 	if err != nil {

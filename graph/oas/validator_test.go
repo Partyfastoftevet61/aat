@@ -283,6 +283,39 @@ func TestValidate_Rule6_RequiredParamMissing(t *testing.T) {
 	assert.True(t, found, "expected warning about missing required parameter petId")
 }
 
+// TestValidate_RequiredFieldSuppliedByTemplate: a required body property the
+// template sends itself (with no graph input behind it) is not reported
+// missing; one the template does not send still is.
+func TestValidate_RequiredFieldSuppliedByTemplate(t *testing.T) {
+	v := newValidatorWithPetstore(t)
+	g := &graph.Graph{
+		Version: "1.0.0",
+		OAS:     "petstore.yaml",
+		Nodes: map[string]*graph.Node{
+			"createPet": {
+				Name:    "createPet",
+				Adapter: "createPet",
+				OAS:     &graph.OASRef{OperationID: "createPet"},
+				Inputs:  []graph.Input{{Name: "tag", Type: "string", Optional: true}},
+			},
+		},
+	}
+
+	missing := func(result *graph.SpecValidationResult) bool {
+		for _, issue := range result.Issues {
+			if contains(issue.Message, `required parameter "name"`) {
+				return true
+			}
+		}
+		return false
+	}
+
+	assert.True(t, missing(v.Validate(g)), "without template knowledge the required name is missing")
+
+	v.WithSuppliedFields(SuppliedFields{"createPet": {"name": true}})
+	assert.False(t, missing(v.Validate(g)), "the template supplies name itself")
+}
+
 func contains(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {

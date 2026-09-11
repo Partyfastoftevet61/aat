@@ -39,19 +39,20 @@ type runArgs struct {
 	DomainPath        string
 	JSON              bool
 	Quiet             bool
-	Overrides         []string   // "nodeName=http://url" pairs
-	EnvOverlay        string     // path to overlay YAML
-	MaxRetries        int        // max plan-level retries (0 = no retries)
-	Layers            []string   // layer names to apply
-	LayersDir         string     // directory containing layer files
-	LayerGroups       [][]string // layer groups for permutation (batch only)
-	NoAutoOverrides   bool       // disable .aat-overrides.yaml auto-discovery
-	AutoOverridesPath string     // resolved path to auto-discovered overrides file
-	OASValidateMode   string     // "auto", "warn", "strict", "off"
-	VerboseAuth       bool       // log auth request/response details to stderr
-	SkipMutations     bool       // strip mutations from plans before running (smoke-test mode)
-	StopAfterStep     string     // stop after this step ID; skip cleanup (checkpoint handoff)
-	DumpStatePath     string     // write accumulated run state to this file (mode 0600)
+	Overrides         []string          // "nodeName=http://url" pairs
+	EnvOverlay        string            // path to overlay YAML
+	MaxRetries        int               // max plan-level retries (0 = no retries)
+	Layers            []string          // layer names to apply
+	LayersDir         string            // directory containing layer files
+	LayerGroups       [][]string        // layer groups for permutation (batch only)
+	NoAutoOverrides   bool              // disable .aat-overrides.yaml auto-discovery
+	AutoOverridesPath string            // resolved path to auto-discovered overrides file
+	OASValidateMode   string            // "auto", "warn", "strict", "off"
+	VerboseAuth       bool              // log auth request/response details to stderr
+	SkipMutations     bool              // strip mutations from plans before running (smoke-test mode)
+	StopAfterStep     string            // stop after this step ID; skip cleanup (checkpoint handoff)
+	DumpStatePath     string            // write accumulated run state to this file (mode 0600)
+	Vars              map[string]string // --var KEY=VALUE for multi-environment files
 }
 
 // RunSummary is the machine-readable JSON output for CI/CD pipelines.
@@ -62,8 +63,9 @@ type RunSummary struct {
 	Cleanup     []StepSummary `json:"cleanup,omitempty"`
 	Summary     SummaryStats  `json:"summary"`
 	ArchivePath string        `json:"archive_path,omitempty"`
-	Attempts    int           `json:"attempts,omitempty"` // total attempts (omitted if 1)
-	Retried     bool          `json:"retried,omitempty"`  // true if any retries occurred
+	Attempts    int           `json:"attempts,omitempty"`   // total attempts (omitted if 1)
+	Retried     bool          `json:"retried,omitempty"`    // true if any retries occurred
+	StoppedAt   string        `json:"stopped_at,omitempty"` // checkpoint step ID when the outcome is "stopped"
 	// State is the accumulated run state (base URL, live auth headers, step
 	// outputs), populated only when --dump-state=- requests stdout output.
 	// Contains UNREDACTED auth — emitted only on explicit opt-in.
@@ -79,6 +81,7 @@ type StepSummary struct {
 	Passed           bool                 `json:"passed"`
 	Error            string               `json:"error,omitempty"`
 	Retries          int                  `json:"retries"`
+	RetriedOn        []string             `json:"retried_on,omitempty"` // error category of each retried attempt
 	AssertionsPassed int                  `json:"assertions_passed"`
 	AssertionsFailed int                  `json:"assertions_failed"`
 	DisplayOutputs   []DisplayOutputEntry `json:"display_outputs,omitempty"`
@@ -143,6 +146,7 @@ func buildRunSummary(result *engine.RunResult, archivePath string) *RunSummary {
 		Outcome:     result.Outcome.String(),
 		Error:       errString(result.Error),
 		ArchivePath: archivePath,
+		StoppedAt:   result.StoppedAt,
 	}
 
 	var totalDur time.Duration
@@ -200,12 +204,19 @@ func countEngineIssues(result *engine.RunResult) map[string]int {
 
 // toStepSummary converts a single engine.StepResult to a StepSummary.
 func toStepSummary(step engine.StepResult) StepSummary {
+	name := step.StepID
+	if name == "" {
+		name = step.Node
+	}
 	ss := StepSummary{
-		Name:       step.Node,
+		Name:       name,
 		Node:       step.Node,
 		Status:     step.StatusCode,
 		DurationMs: step.Duration.Milliseconds(),
 		Retries:    step.RetryCount,
+	}
+	for _, c := range step.RetriedOn {
+		ss.RetriedOn = append(ss.RetriedOn, c.String())
 	}
 
 	// Determine passed/failed
@@ -375,9 +386,58 @@ func parseOverrideFlag(flag string) (string, string, error) {
 	return name, url, nil
 }
 
-// errNoLayersDir reports layers that were requested without a layers directory.
-func errNoLayersDir(layers []string) error {
-	return fmt.Errorf("layers %v requested but %w", layers, graph.ErrNoLayersDir)
+// plannedStepCount returns how many steps a run of p numbers in its progress
+// output: the instantiated steps (mutation siblings included) plus the
+// verification steps that follow them.
+func plannedStepCount(p *plan.Plan, g *graph.Graph, layeredDefaults map[string]*graph.InputDefault) int {
+	inst := plan.InstantiateWithLayers(p, g, layeredDefaults)
+	if inst == nil {
+		return len(p.Execution.Steps)
+	}
+	return len(inst.Execution.Steps) + len(plan.VerificationSteps(inst, g, layeredDefaults))
+}
+
+// overrideFlagsToHostOverrides turns --override NODE=URL flags into override
+// entries equivalent to `- match: NODE` with `baseUrl: URL`, so they inherit
+// headers and auth exactly like an env.yaml entry.
+func overrideFlagsToHostOverrides(flags []string) ([]config.HostOverride, error) {
+	overrides := make([]config.HostOverride, 0, len(flags))
+	for _, flag := range flags {
+		name, url, err := parseOverrideFlag(flag)
+		if err != nil {
+			return nil, fmt.Errorf("parsing --override: %w", err)
+		}
+		overrides = append(overrides, config.HostOverride{Match: name, BaseURL: url})
+	}
+	return overrides, nil
+}
+
+// overlayOverrides returns an overlay file's override entries, or nil when no
+// overlay was loaded.
+func overlayOverrides(overlay *config.OverlayFile) []config.HostOverride {
+	if overlay == nil {
+		return nil
+	}
+	return overlay.Overrides
+}
+
+// addHostOverrides resolves override entries against the base headers and the
+// effective auth provider and registers them on the router. An entry without a
+// baseUrl inherits apiBaseURL; an entry without auth inherits the provider's
+// credential.
+func addHostOverrides(ctx context.Context, router *engine.ExecutorRouter, apiBaseURL string, overrides []config.HostOverride, baseHeaders map[string]string, provider *config.AuthProvider) error {
+	if len(overrides) == 0 {
+		return nil
+	}
+	env := &config.Environment{APIBaseURL: apiBaseURL, Overrides: overrides}
+	resolved, err := env.BuildOverrideConfigsWithProvider(ctx, baseHeaders, provider)
+	if err != nil {
+		return err
+	}
+	for _, ov := range resolved {
+		router.AddResolvedOverride(ov)
+	}
+	return nil
 }
 
 // writeRunArchive creates a run archive in the output directory and returns
@@ -677,13 +737,7 @@ func loadRunContext(ctx context.Context, args *runArgs, logf func(string, ...any
 
 	// 1. Load environment
 	logf("aat: loading environment...\n")
-	var env *config.Environment
-	var err error
-	if args.EnvName != "" {
-		env, err = config.LoadNamedEnvironment(args.EnvPath, args.EnvName)
-	} else {
-		env, err = config.LoadEnvironment(args.EnvPath)
-	}
+	env, err := config.LoadNamedEnvironmentWithVars(args.EnvPath, args.EnvName, args.Vars)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -743,9 +797,6 @@ func loadRunContext(ctx context.Context, args *runArgs, logf func(string, ...any
 
 	// Pre-load layers referenced by --layer and/or --layer-group flags.
 	if allNames := collectAllLayerNames(args.Layers, args.LayerGroups); len(allNames) > 0 {
-		if rctx.LayersDir == "" {
-			return nil, errNoLayersDir(allNames)
-		}
 		layers, err := graph.ResolveLayerNames(allNames, rctx.LayersDir)
 		if err != nil {
 			return nil, fmt.Errorf("loading layers: %w", err)
@@ -826,14 +877,8 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 			v.Selection.Layers = recipeLayers
 		}
 		effectiveLayers = v.Selection.Layers
-		var reconOpts []intent.ReconstituteOption
-		if rctx.LayersDir != "" {
-			reconOpts = append(reconOpts, intent.WithLayersDir(rctx.LayersDir))
-		}
-		if rctx.AvailableLayers != nil {
-			reconOpts = append(reconOpts, intent.WithAvailableLayers(rctx.AvailableLayers))
-		}
-		reconstituted, reconErr := intent.Reconstitute(v, rctx.Graph, rctx.GraphDir, reconOpts...)
+		reconstituted, reconErr := intent.Reconstitute(v, rctx.Graph, rctx.GraphDir,
+			intent.WithLayersDir(rctx.LayersDir), intent.WithAvailableLayers(rctx.AvailableLayers))
 		if reconErr != nil {
 			return &runResult{setupErr: true, err: fmt.Errorf("reconstituting recipe: %w", reconErr)}
 		}
@@ -933,62 +978,28 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 	}
 	router := engine.NewExecutorRouter(executor, envConfig)
 
-	// 6a. Apply env-file overrides
-	if len(rctx.Env.Overrides) > 0 {
-		resolvedOverrides, err := rctx.Env.BuildOverrideConfigsWithProvider(ctx, apiConfig.Headers, effectiveProvider)
-		if err != nil {
-			return &runResult{setupErr: true, err: fmt.Errorf("building overrides: %w", err)}
-		}
-		for _, ov := range resolvedOverrides {
-			router.AddResolvedOverride(ov)
-		}
+	// 6a–6d. Register per-node overrides from every source, lowest precedence
+	// first: env.yaml, .aat-overrides.yaml, the --overlay file, then --override
+	// flags. The router lets the last registered match of each kind win, and
+	// every source resolves the same way, inheriting headers and the effective
+	// credential unless an entry declares its own auth.
+	flagOverrides, err := overrideFlagsToHostOverrides(rctx.Overrides)
+	if err != nil {
+		return &runResult{setupErr: true, err: err}
 	}
-
-	// 6b. Apply auto-discovered .aat-overrides.yaml per-node overrides
-	if autoOverlay != nil && len(autoOverlay.Overrides) > 0 {
-		autoOverrideEnv := &config.Environment{
-			APIBaseURL: rctx.Env.APIBaseURL,
-			Auth:       effectiveAuth,
-			Overrides:  autoOverlay.Overrides,
-		}
-		resolvedOverrides, err := autoOverrideEnv.BuildOverrideConfigsWithProvider(ctx, apiConfig.Headers, effectiveProvider)
-		if err != nil {
-			return &runResult{setupErr: true, err: fmt.Errorf("building auto-overrides: %w", err)}
-		}
-		for _, ov := range resolvedOverrides {
-			router.AddResolvedOverride(ov)
-		}
+	sources := []struct {
+		label     string
+		overrides []config.HostOverride
+	}{
+		{"overrides", rctx.Env.Overrides},
+		{"auto-overrides", overlayOverrides(autoOverlay)},
+		{"overlay overrides", overlayOverrides(envOverlayFile)},
+		{"--override flags", flagOverrides},
 	}
-
-	// 6c. Apply --env-overlay file per-node overrides
-	if envOverlayFile != nil && len(envOverlayFile.Overrides) > 0 {
-		overlayEnv := &config.Environment{
-			APIBaseURL: rctx.Env.APIBaseURL,
-			Auth:       effectiveAuth,
-			Overrides:  envOverlayFile.Overrides,
+	for _, src := range sources {
+		if err := addHostOverrides(ctx, router, rctx.Env.APIBaseURL, src.overrides, apiConfig.Headers, effectiveProvider); err != nil {
+			return &runResult{setupErr: true, err: fmt.Errorf("building %s: %w", src.label, err)}
 		}
-		resolvedOverrides, err := overlayEnv.BuildOverrideConfigsWithProvider(ctx, apiConfig.Headers, effectiveProvider)
-		if err != nil {
-			return &runResult{setupErr: true, err: fmt.Errorf("building overlay overrides: %w", err)}
-		}
-		for _, ov := range resolvedOverrides {
-			router.AddResolvedOverride(ov)
-		}
-	}
-
-	// 6d. Apply CLI --override flags
-	for _, flag := range rctx.Overrides {
-		name, url, err := parseOverrideFlag(flag)
-		if err != nil {
-			return &runResult{setupErr: true, err: fmt.Errorf("parsing --override: %w", err)}
-		}
-		overrideExec := adapter.NewHTTPExecutor(url)
-		overrideCfg := &adapter.EnvironmentConfig{
-			BaseURL: url,
-			Headers: make(map[string]string),
-			Values:  make(map[string]string),
-		}
-		router.AddOverride(name, overrideExec, overrideCfg, nil)
 	}
 
 	// Log active overrides
@@ -1010,7 +1021,7 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 		eng.WithOASSpecs(rctx.OASCache, rctx.Graph.OAS, rctx.OASValidateMode == "strict")
 	}
 
-	logf("aat: executing plan (%d steps)...\n\n", len(p.Execution.Steps))
+	logf("aat: executing plan (%d steps)...\n\n", plannedStepCount(p, rctx.Graph, layeredDefaults))
 
 	result := eng.Run(ctx, p)
 
@@ -1070,11 +1081,13 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 	// obviating the file. Any other value writes a 0600 file.
 	// Non-fatal: a dump failure must not change the run's exit code.
 	if rctx.DumpStatePath != "" {
-		exp := engine.BuildStateExport(result)
+		exp := engine.BuildStateExport(result, apiConfig.BaseURL)
 		if rctx.DumpStatePath == "-" {
 			summary.State = exp
 		} else if dumpErr := engine.WriteStateExport(exp, rctx.DumpStatePath); dumpErr != nil {
-			logf("aat: warning: failed to write state dump: %s\n", dumpErr)
+			// Always visible: under --quiet or --json logf is silent, and a
+			// harness waiting for this file needs to know it is missing.
+			fmt.Fprintf(os.Stderr, "aat: warning: failed to write state dump: %s\n", dumpErr)
 		} else {
 			logf("aat: state dumped to %s\n", rctx.DumpStatePath)
 		}

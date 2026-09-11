@@ -93,6 +93,11 @@ var promptCmd = &cobra.Command{
 		}
 
 		oasValidate, _ := cmd.Flags().GetString("oas-validate")
+		varFlags, _ := cmd.Flags().GetStringArray("var")
+		vars, err := config.ParseVars(varFlags)
+		if err != nil {
+			return err
+		}
 		envName := resolveEnvName(cmd)
 
 		if envName == "" {
@@ -123,6 +128,7 @@ var promptCmd = &cobra.Command{
 			LayersDir:         resolved.LayersDir,
 			AutoOverridesPath: autoOverridesPath,
 			OASValidateMode:   oasValidate,
+			Vars:              vars,
 		}
 
 		return promptCommand(context.Background(), pa, os.Stdin)
@@ -133,6 +139,7 @@ func init() {
 	promptCmd.Flags().String("manifest", "", "path to aat-project.yaml or project directory")
 	promptCmd.Flags().String("env-config", "", "path to environment YAML file")
 	promptCmd.Flags().String("env", "", "environment name (for multi-environment files)")
+	promptCmd.Flags().StringArray("var", nil, "set a var of a multi-environment file, KEY=VALUE (repeatable; wins over the file's vars)")
 	promptCmd.Flags().String("graph", "", "path to graph YAML file")
 	promptCmd.Flags().String("templates", "", "path to templates directory")
 	promptCmd.Flags().String("domain", "", "path to domain knowledge YAML file")
@@ -163,8 +170,9 @@ type promptArgs struct {
 	TraceDir          string
 	Layers            []string
 	LayersDir         string
-	AutoOverridesPath string // path to auto-discovered .aat-overrides.yaml
-	OASValidateMode   string // "auto", "warn", "strict", "off"
+	AutoOverridesPath string            // path to auto-discovered .aat-overrides.yaml
+	OASValidateMode   string            // "auto", "warn", "strict", "off"
+	Vars              map[string]string // --var KEY=VALUE for multi-environment files
 }
 
 // promptCommand executes the full prompt-to-execution pipeline.
@@ -185,13 +193,7 @@ func promptCommand(ctx context.Context, args *promptArgs, reader io.Reader) erro
 
 	// 1. Load environment
 	fmt.Printf("aat: loading environment...\n")
-	var env *config.Environment
-	var err error
-	if args.EnvName != "" {
-		env, err = config.LoadNamedEnvironment(args.EnvPath, args.EnvName)
-	} else {
-		env, err = config.LoadEnvironment(args.EnvPath)
-	}
+	env, err := config.LoadNamedEnvironmentWithVars(args.EnvPath, args.EnvName, args.Vars)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
@@ -354,14 +356,13 @@ func promptCommand(ctx context.Context, args *promptArgs, reader io.Reader) erro
 	if result.WorkflowSelection != nil && len(result.WorkflowSelection.Layers) > 0 {
 		effectiveLayers = result.WorkflowSelection.Layers
 	}
-	return executePlan(ctx, p, g, args, effectiveLayers, availableLayers, apiConfig, env, kb, llmClient, authProvider, autoOverlay)
+	return executePlan(ctx, p, g, args, effectiveLayers, apiConfig, env, kb, llmClient, authProvider, autoOverlay)
 }
 
 // executePlan loads templates, creates the engine, runs the plan, and writes an archive.
 // effectiveLayers is the merged set of layer names (CLI + LLM-selected).
-// availableLayers is the full set of loaded layers (may be nil).
 // autoOverlay is the pre-loaded auto-overrides file (may be nil).
-func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *promptArgs, effectiveLayers []string, availableLayers map[string]*graph.Layer, apiConfig *config.APIConfig, env *config.Environment, kb *domain.KnowledgeBase, llmClient llm.Client, authProvider *config.AuthProvider, autoOverlay *config.OverlayFile) error {
+func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *promptArgs, effectiveLayers []string, apiConfig *config.APIConfig, env *config.Environment, kb *domain.KnowledgeBase, llmClient llm.Client, authProvider *config.AuthProvider, autoOverlay *config.OverlayFile) error {
 	// If the plan has its own auth (e.g., user manually edited after --save), re-authenticate
 	effectiveProvider := authProvider
 	planOverridesAuth := p.Auth != nil
@@ -400,53 +401,21 @@ func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *prompt
 	}
 	router := engine.NewExecutorRouter(executor, envConfig)
 
-	// Apply env-file overrides (inherit effective auth via provider)
-	if len(env.Overrides) > 0 {
-		resolvedOverrides, overrideErr := env.BuildOverrideConfigsWithProvider(ctx, apiConfig.Headers, effectiveProvider)
-		if overrideErr != nil {
-			return fmt.Errorf("building overrides: %w", overrideErr)
-		}
-		for _, ov := range resolvedOverrides {
-			router.AddResolvedOverride(ov)
-		}
+	// Apply env-file overrides, then auto-discovered .aat-overrides.yaml entries
+	// (later registrations win), inheriting the effective auth via the provider.
+	if err := addHostOverrides(ctx, router, env.APIBaseURL, env.Overrides, apiConfig.Headers, effectiveProvider); err != nil {
+		return fmt.Errorf("building overrides: %w", err)
+	}
+	if err := addHostOverrides(ctx, router, env.APIBaseURL, overlayOverrides(autoOverlay), apiConfig.Headers, effectiveProvider); err != nil {
+		return fmt.Errorf("building auto-overrides: %w", err)
 	}
 
-	// Apply auto-discovered .aat-overrides.yaml per-node overrides
-	if autoOverlay != nil && len(autoOverlay.Overrides) > 0 {
-		autoOverrideEnv := &config.Environment{
-			APIBaseURL: env.APIBaseURL,
-			Auth:       effectiveProvider.Config(),
-			Overrides:  autoOverlay.Overrides,
-		}
-		resolvedOverrides, autoErr := autoOverrideEnv.BuildOverrideConfigsWithProvider(ctx, apiConfig.Headers, effectiveProvider)
-		if autoErr != nil {
-			return fmt.Errorf("building auto-overrides: %w", autoErr)
-		}
-		for _, ov := range resolvedOverrides {
-			router.AddResolvedOverride(ov)
-		}
-	}
-
-	// Compute layered defaults if layers are specified
-	var layeredDefaults map[string]*graph.InputDefault
-	if len(effectiveLayers) > 0 {
-		var resolvedLayers map[string]*graph.Layer
-		if availableLayers != nil {
-			resolvedLayers = availableLayers
-		} else if args.LayersDir != "" {
-			var layerErr error
-			resolvedLayers, layerErr = graph.ResolveLayerNames(effectiveLayers, args.LayersDir)
-			if layerErr != nil {
-				return fmt.Errorf("loading layers: %w", layerErr)
-			}
-		}
-		if resolvedLayers != nil {
-			var layerErr error
-			layeredDefaults, layerErr = graph.ApplyLayers(g, effectiveLayers, resolvedLayers)
-			if layerErr != nil {
-				return fmt.Errorf("applying layers: %w", layerErr)
-			}
-		}
+	// Layered defaults for the effective layers. Naming layers without a layers
+	// directory is an error, as in run and validate: dropping them silently would
+	// run a different test than the one requested.
+	layeredDefaults, err := graph.LayeredDefaults(g, effectiveLayers, args.LayersDir)
+	if err != nil {
+		return err
 	}
 
 	// Create engine and run
@@ -484,7 +453,7 @@ func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *prompt
 		}
 	}
 
-	fmt.Printf("aat: executing plan (%d steps)...\n\n", len(p.Execution.Steps))
+	fmt.Printf("aat: executing plan (%d steps)...\n\n", plannedStepCount(p, g, layeredDefaults))
 
 	result := eng.Run(ctx, p)
 

@@ -466,7 +466,7 @@ assertions:
 
 **Default status assertion.** Steps composed from workflow templates (recipes, `aat prompt`) that declare no status assertion get `status: 2xx`, so APIs that answer `201 Created` or `204 No Content` pass. Steps with `expectFailure` get no default.
 
-**Status under `expectFailure`.** When a step has `expectFailure` — declared in the plan or added by an overlay — its `expectFailure.status` list is the status check, and any `status` assertion on the step is reported as skipped. Other assertions still run against the error response.
+**Status under `expectFailure`.** When a step has `expectFailure` — declared in the plan or added by an overlay — its `expectFailure.status` list is the status check. A `status` assertion that expects success (an exact code below 400, or a `1xx`–`3xx` class such as a composed `2xx` default) can never hold there: `aat validate plan` rejects a plan that declares both, and when an overlay adds `expectFailure` at run time the assertion is reported as skipped. One that agrees with the expected failure, such as `409` or `4xx`, is evaluated and can fail the step — useful to pin one code out of a broader `expectFailure` list. Other assertions still run against the error response.
 
 **Semantic assertions** are prose descriptions for documentation and future automated evaluation:
 

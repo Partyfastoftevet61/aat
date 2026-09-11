@@ -38,7 +38,7 @@ func TestShopExample(t *testing.T) {
 		p := newShopProject(t)
 
 		var out bytes.Buffer
-		code := validateCommand(&validateArgs{ManifestPath: p.manifest, Strict: true}, &out)
+		code := validateCommand(&validateArgs{ManifestPath: p.manifest, Strict: true, Vars: p.vars()}, &out)
 		assert.Equal(t, 0, code, out.String())
 	})
 
@@ -108,9 +108,11 @@ func TestShopExample(t *testing.T) {
 		t.Parallel()
 		p := newShopProject(t)
 
+		// Stop after the payment, which runs on the payments host with its own
+		// API key: the export must still carry the shop session at top level.
 		args := p.runArgs(t, "us")
 		args.PlanPath = p.plan("smoke")
-		args.StopAfterStep = "checkout"
+		args.StopAfterStep = "paymentCharge"
 		args.DumpStatePath = filepath.Join(t.TempDir(), "state.json")
 		res := runCommand(context.Background(), &args, io.Discard, TerminalInfo{})
 		require.NoError(t, res.err)
@@ -122,8 +124,21 @@ func TestShopExample(t *testing.T) {
 		require.NoError(t, json.Unmarshal(data, &state))
 		orderID, ok := state.Values["checkout.orderId"].(string)
 		require.True(t, ok, "state values: %v", state.Values)
+		assert.Equal(t, p.apiURL+"/us/v1", state.BaseURL)
+		assert.True(t, strings.HasPrefix(state.Auth.Headers["Authorization"], "Bearer "), "top-level auth is the shop bearer: %v", state.Auth.Headers)
 
-		// Cleanup was skipped, so the dumped bearer token reads the live order.
+		var payment *engine.StateStep
+		for i := range state.Steps {
+			if state.Steps[i].Node == "paymentCharge" {
+				payment = &state.Steps[i]
+			}
+		}
+		require.NotNil(t, payment, "the payment step is in the export")
+		assert.Equal(t, p.payURL+"/us/v1", payment.BaseURL)
+		assert.Equal(t, "pay-demo-key", payment.Headers["X-API-Key"])
+		assert.Empty(t, payment.Headers["Authorization"], "the bearer token never went to the payments host")
+
+		// Cleanup was skipped, so the dumped bearer token reads the live, paid order.
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, p.apiURL+"/us/v1/orders/"+orderID, nil)
 		require.NoError(t, err)
 		req.Header.Set("Authorization", state.Auth.Headers["Authorization"])
@@ -135,21 +150,23 @@ func TestShopExample(t *testing.T) {
 			Status string `json:"status"`
 		}
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&order))
-		assert.Equal(t, "created", order.Status)
+		assert.Equal(t, "paid", order.Status)
 	})
 }
 
-// shopProject is a copy of the embedded examples/shop project whose
-// environment points at an in-process sandbox.
+// shopProject is a copy of the embedded examples/shop project and the
+// in-process sandbox its runs target.
 type shopProject struct {
 	dir      string
 	manifest string
 	apiURL   string
+	payURL   string
 	m        *config.ProjectManifest
 }
 
 // newShopProject starts a sandbox on random ports and extracts the embedded
-// example into a temporary directory wired to it.
+// example into a temporary directory. Runs reach the sandbox through --var
+// overrides of the env.yaml apiHost and payHost vars (see vars).
 func newShopProject(t *testing.T) *shopProject {
 	t.Helper()
 
@@ -164,25 +181,19 @@ func newShopProject(t *testing.T) *shopProject {
 	dir := t.TempDir()
 	require.NoError(t, os.CopyFS(dir, fsys))
 
-	// env.yaml addresses the sandbox's default ports through two vars; point
-	// them at this test's listeners.
-	envPath := filepath.Join(dir, "env.yaml")
-	data, err := os.ReadFile(envPath)
-	require.NoError(t, err)
-	env := string(data)
-	for from, to := range map[string]string{
-		`apiHost: "localhost:8765"`: `apiHost: "` + strings.TrimPrefix(api.URL, "http://") + `"`,
-		`payHost: "localhost:8766"`: `payHost: "` + strings.TrimPrefix(pay.URL, "http://") + `"`,
-	} {
-		require.Equal(t, 1, strings.Count(env, from), "env.yaml should set %s exactly once", from)
-		env = strings.Replace(env, from, to, 1)
-	}
-	require.NoError(t, os.WriteFile(envPath, []byte(env), 0o644))
-
 	manifest := filepath.Join(dir, "aat-project.yaml")
 	m, err := config.LoadManifest(manifest)
 	require.NoError(t, err)
-	return &shopProject{dir: dir, manifest: manifest, apiURL: api.URL, m: m}
+	return &shopProject{dir: dir, manifest: manifest, apiURL: api.URL, payURL: pay.URL, m: m}
+}
+
+// vars points env.yaml's apiHost and payHost vars at this project's sandbox,
+// as `--var apiHost=… --var payHost=…` would.
+func (p *shopProject) vars() map[string]string {
+	return map[string]string{
+		"apiHost": strings.TrimPrefix(p.apiURL, "http://"),
+		"payHost": strings.TrimPrefix(p.payURL, "http://"),
+	}
 }
 
 // runArgs returns run arguments resolved from the project manifest, as `aat run`
@@ -199,6 +210,7 @@ func (p *shopProject) runArgs(t *testing.T, env string) runArgs {
 		Quiet:           true,
 		NoAutoOverrides: true,
 		OASValidateMode: "strict",
+		Vars:            p.vars(),
 	}
 }
 

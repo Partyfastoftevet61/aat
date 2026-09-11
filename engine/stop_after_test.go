@@ -98,6 +98,71 @@ func TestEngine_Run_StopAfter_SkipsCleanupAndLaterSteps(t *testing.T) {
 	assert.Equal(t, []string{"/create"}, paths, "only the create request should have been issued")
 }
 
+// TestEngine_Run_StopAfter_ExpectFailureStep verifies that a checkpoint on a
+// negative step stops once its expected failure comes back, and that a
+// negative step that unexpectedly succeeds fails the run instead of stopping.
+func TestEngine_Run_StopAfter_ExpectFailureStep(t *testing.T) {
+	tests := []struct {
+		name         string
+		rejectStatus int
+		wantOutcome  Outcome
+		wantPaths    []string
+	}{
+		{name: "expected failure stops", rejectStatus: http.StatusConflict, wantOutcome: OutcomeStopped, wantPaths: []string{"/create", "/reject"}},
+		{name: "unexpected success fails", rejectStatus: http.StatusOK, wantOutcome: OutcomeFailed, wantPaths: []string{"/create", "/reject", "/destroy"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := stopAfterGraph()
+			g.Nodes["reject"] = &graph.Node{Name: "reject", Adapter: "test.reject"}
+
+			var paths []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				paths = append(paths, r.URL.Path)
+				if r.URL.Path == "/reject" {
+					w.WriteHeader(tt.rejectStatus)
+				} else {
+					w.WriteHeader(http.StatusOK)
+				}
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer server.Close()
+
+			registry := adapter.NewRegistry()
+			require.NoError(t, registry.Register("test.create", &stubAdapter{method: "POST", path: "/create", response: map[string]any{"resourceId": "res-1"}}))
+			require.NoError(t, registry.Register("test.reject", &stubAdapter{method: "POST", path: "/reject", response: map[string]any{}}))
+			require.NoError(t, registry.Register("test.use", &stubAdapter{method: "POST", path: "/use", response: map[string]any{}}))
+			require.NoError(t, registry.Register("test.destroy", &stubAdapter{method: "DELETE", path: "/destroy", response: map[string]any{}}))
+
+			p := &plan.Plan{
+				Metadata: plan.Metadata{GraphVersion: "1.0.0"},
+				Execution: plan.Execution{
+					Steps: []plan.Step{
+						{Node: "create"},
+						{Node: "reject", DependsOn: []string{"create"}, ExpectFailure: &plan.ExpectFailure{Status: []int{409}}},
+						{Node: "use", DependsOn: []string{"create", "reject"}, Values: map[string]plan.StepValue{
+							"resourceId": {From: "create.resourceId"},
+						}},
+					},
+				},
+			}
+
+			executor := adapter.NewHTTPExecutor(server.URL)
+			eng := NewEngine(g, registry, NewExecutorRouter(executor, &adapter.EnvironmentConfig{})).
+				WithStopAfter("reject")
+
+			result := eng.Run(context.Background(), p)
+
+			assert.Equal(t, tt.wantOutcome, result.Outcome, "error: %v", result.Error)
+			assert.Equal(t, tt.wantPaths, paths)
+			if tt.wantOutcome == OutcomeStopped {
+				assert.Equal(t, "reject", result.StoppedAt)
+				assert.Empty(t, result.CleanupResults, "a checkpoint skips cleanup")
+			}
+		})
+	}
+}
+
 func TestEngine_Run_StopAfter_UnknownStep(t *testing.T) {
 	g := stopAfterGraph()
 

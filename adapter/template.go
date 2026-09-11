@@ -107,11 +107,13 @@ type TemplateAdapter struct {
 // placeholderRe matches {{key}} with optional internal whitespace.
 var placeholderRe = regexp.MustCompile(`\{\{\s*([^}]+?)\s*\}\}`)
 
-// iterOpenRe matches {{#key}} iteration block opening tags.
-var iterOpenRe = regexp.MustCompile(`\{\{#(\w+)\}\}`)
+// iterOpenRe matches {{#key}} iteration block opening tags. Keys may contain
+// hyphens, as input names taken from HTTP header parameters do (X-Request-Id).
+var iterOpenRe = regexp.MustCompile(`\{\{#([\w-]+)\}\}`)
 
 // condOpenRe matches {{?key}} and {{?key1|key2}} conditional block opening tags.
-var condOpenRe = regexp.MustCompile(`\{\{\?([\w|]+)\}\}`)
+// Keys may contain hyphens.
+var condOpenRe = regexp.MustCompile(`\{\{\?([\w|-]+)\}\}`)
 
 // ParseTemplate parses YAML bytes into a Template and validates required fields.
 func ParseTemplate(data []byte) (*Template, error) {
@@ -174,6 +176,11 @@ func (a *TemplateAdapter) BuildRequest(inputs map[string]any, config *Environmen
 		if err != nil {
 			return nil, fmt.Errorf("header %q substitution: %w", k, err)
 		}
+		// A header whose value is conditional ({{?x}}{{x}}{{/x}}) and resolves
+		// to nothing is not sent, rather than sent empty.
+		if resolved == "" && strings.Contains(tmplVal, "{{?") {
+			continue
+		}
 		merged[k] = resolved
 	}
 
@@ -199,11 +206,13 @@ func (a *TemplateAdapter) BuildRequest(inputs map[string]any, config *Environmen
 // and the extracted value is an array, each element is transformed into a flat
 // map using the field mappings (logical name → gjson path within the element).
 func (a *TemplateAdapter) ExtractOutputs(resp *Response) (map[string]any, error) {
-	if len(a.tmpl.Response.Extract) == 0 {
+	if len(a.tmpl.Response.Extract) == 0 && a.tmpl.Response.Transform == "" {
 		return map[string]any{}, nil
 	}
 
-	if !json.Valid(resp.Body) {
+	// Extract rules need a JSON body. A transform-only template runs anyway;
+	// its json_path() calls simply find nothing in a non-JSON body.
+	if len(a.tmpl.Response.Extract) > 0 && !json.Valid(resp.Body) {
 		return nil, fmt.Errorf("response body is not valid JSON")
 	}
 
@@ -497,6 +506,107 @@ func normalizeJSONPath(path string) string {
 	path = bracketRe.ReplaceAllString(path, ".$1")
 
 	return path
+}
+
+// SuppliedFields returns the request fields a template always sends: query
+// parameters written into the path, header names, and the top-level keys of a
+// JSON body. Fields inside {{?key}} or {{#key}} blocks are left out, since they
+// are sent only sometimes. The static OpenAPI check uses this to accept a
+// required parameter or body property that the template supplies itself, for
+// example a literal "photoUrls": [] with no graph input behind it.
+func (t *Template) SuppliedFields() map[string]bool {
+	fields := make(map[string]bool)
+
+	path := withoutBlocks(t.Request.Path)
+	if _, query, ok := strings.Cut(path, "?"); ok {
+		for _, pair := range strings.Split(query, "&") {
+			if name, _, _ := strings.Cut(pair, "="); name != "" {
+				fields[name] = true
+			}
+		}
+	}
+
+	for name, value := range t.Request.Headers {
+		if withoutBlocks(value) != "" {
+			fields[name] = true
+		}
+	}
+
+	for _, key := range topLevelJSONKeys(withoutBlocks(t.Request.Body)) {
+		fields[key] = true
+	}
+	return fields
+}
+
+// withoutBlocks removes every {{?key}}...{{/key}} and {{#key}}...{{/key}} block,
+// tags and content, leaving the text a template renders unconditionally.
+func withoutBlocks(s string) string {
+	for _, open := range []*regexp.Regexp{condOpenRe, iterOpenRe} {
+		for {
+			loc := open.FindStringSubmatchIndex(s)
+			if loc == nil {
+				break
+			}
+			key := s[loc[2]:loc[3]]
+			closeTag := "{{/" + key + "}}"
+			closeIdx := strings.Index(s[loc[1]:], closeTag)
+			if closeIdx < 0 {
+				break
+			}
+			s = s[:loc[0]] + s[loc[1]+closeIdx+len(closeTag):]
+		}
+	}
+	return s
+}
+
+// topLevelJSONKeys scans text shaped like a JSON object and returns the keys at
+// its top level. It tolerates placeholders in value positions and does not
+// require the text to be valid JSON.
+func topLevelJSONKeys(body string) []string {
+	body = placeholderRe.ReplaceAllString(body, "0")
+	var keys []string
+	depth := 0
+	inString, escaped, afterString := false, false, false
+	var current, last strings.Builder
+	for _, r := range body {
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+				current.WriteRune(r)
+			case r == '\\':
+				escaped = true
+			case r == '"':
+				inString = false
+				afterString = true
+				last.Reset()
+				last.WriteString(current.String())
+			default:
+				current.WriteRune(r)
+			}
+			continue
+		}
+		switch r {
+		case '"':
+			inString = true
+			current.Reset()
+		case '{', '[':
+			depth++
+			afterString = false
+		case '}', ']':
+			depth--
+			afterString = false
+		case ':':
+			if depth == 1 && afterString {
+				keys = append(keys, last.String())
+			}
+			afterString = false
+		case ' ', '\t', '\n', '\r':
+		default:
+			afterString = false
+		}
+	}
+	return keys
 }
 
 // ClassifyInputs scans a template's path, headers, and body to classify each

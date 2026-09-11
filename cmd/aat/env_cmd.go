@@ -34,7 +34,13 @@ var envListCmd = &cobra.Command{
 			return err
 		}
 
-		return envListCommand(resolved.EnvPath, os.Stdout)
+		varFlags, _ := cmd.Flags().GetStringArray("var")
+		vars, err := config.ParseVars(varFlags)
+		if err != nil {
+			return err
+		}
+
+		return envListCommand(resolved.EnvPath, vars, os.Stdout)
 	},
 }
 
@@ -43,9 +49,10 @@ func init() {
 
 	envListCmd.Flags().String("manifest", "", "path to aat-project.yaml or project directory")
 	envListCmd.Flags().String("env-config", "", "path to environment YAML file")
+	envListCmd.Flags().StringArray("var", nil, "set a var of a multi-environment file, KEY=VALUE (repeatable; wins over the file's vars)")
 }
 
-func envListCommand(envPath string, out io.Writer) error {
+func envListCommand(envPath string, vars map[string]string, out io.Writer) error {
 	if envPath == "" {
 		return fmt.Errorf("environment file path is required (--env-config flag or aat-project.yaml)")
 	}
@@ -56,7 +63,7 @@ func envListCommand(envPath string, out io.Writer) error {
 	}
 
 	if !isMulti {
-		env, err := config.LoadEnvironment(envPath)
+		env, err := config.LoadNamedEnvironmentWithVars(envPath, "", vars)
 		if err != nil {
 			return err
 		}
@@ -76,7 +83,7 @@ func envListCommand(envPath string, out io.Writer) error {
 
 	for _, name := range names {
 		// Load each environment to show its base URL
-		env, err := config.LoadNamedEnvironment(envPath, name)
+		env, err := config.LoadNamedEnvironmentWithVars(envPath, name, vars)
 		if err != nil {
 			_, _ = fmt.Fprintf(out, "  %-12s (error: %s)\n", name, err)
 			continue

@@ -59,7 +59,9 @@ changelog:
 
 # Homebrew cask pushed to github.com/gburgyan/homebrew-tap (Casks/aat.rb).
 # Requires the HOMEBREW_TAP_GITHUB_TOKEN secret (fine-grained PAT, Contents RW on the tap repo).
-# Casks are macOS-only; Linux users install from the release archives, Docker, or `go install`.
+# Documented as macOS-only: the generated cask also carries on_linux stanzas, but Linuxbrew
+# installs are unverified until the v0.1.0 release (M5). Linux users install from the release
+# archives, Docker, or `go install`.
 homebrew_casks:
   - name: aat
     repository:
@@ -110,7 +112,7 @@ release:
   footer: |
     ## Install
 
-    - Homebrew (macOS, Linux): `brew install gburgyan/tap/aat` (installs `aat` and `aat-sandbox`)
+    - Homebrew (macOS): `brew install gburgyan/tap/aat` (installs `aat` and `aat-sandbox`)
     - Docker: `docker run --rm ghcr.io/gburgyan/aat:{{ .Version }} --version`
     - Binaries: download the archive for your platform above and verify with `checksums.txt`
 

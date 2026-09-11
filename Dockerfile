@@ -6,5 +6,8 @@ ARG TARGETPLATFORM
 COPY $TARGETPLATFORM/aat /usr/local/bin/aat
 # 9119 = aat web, 8080 = aat mcp serve --http
 EXPOSE 9119 8080
+# Servers bind loopback by default; inside a container that is unreachable
+# through a published port (-p), so the image binds all interfaces instead.
+ENV AAT_HOST=0.0.0.0
 WORKDIR /work
 ENTRYPOINT ["/usr/local/bin/aat"]

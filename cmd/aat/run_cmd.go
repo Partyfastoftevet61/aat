@@ -23,6 +23,7 @@ func init() {
 	runCmd.PersistentFlags().String("domain", "", "path to domain knowledge YAML file")
 	runCmd.PersistentFlags().StringSlice("override", nil, "node=url override (repeatable, e.g. searchFlights=http://localhost:8080)")
 	runCmd.PersistentFlags().String("overlay", "", "path to environment overlay YAML file")
+	runCmd.PersistentFlags().StringArray("var", nil, "set a var of a multi-environment file, KEY=VALUE (repeatable; wins over the file's vars, e.g. --var apiHost=localhost:9000)")
 	runCmd.PersistentFlags().Int("retries", 0, "max plan-level retries on failure (0 = no retries)")
 	runCmd.PersistentFlags().StringSlice("layer", nil, "data layer to apply (repeatable, e.g. --layer european --layer amex)")
 	runCmd.PersistentFlags().Bool("no-auto-overrides", false, "disable auto-discovery of .aat-overrides.yaml")

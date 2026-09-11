@@ -111,7 +111,8 @@ func graphValidateCommand(args *graphValidateArgs) int {
 	// 4. Collect and load OAS specs via SpecValidator
 	validator := oas.NewValidator()
 	if registry != nil {
-		validator.WithOutputPaths(engine.OutputExtractPaths(g, registry))
+		validator.WithOutputPaths(engine.OutputExtractPaths(g, registry)).
+			WithSuppliedFields(engine.TemplateSuppliedFields(g, registry))
 	}
 	specPaths := validator.CollectSpecPaths(g)
 	if len(specPaths) > 0 {

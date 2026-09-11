@@ -329,6 +329,12 @@ func TestExpandConditionalBlocks(t *testing.T) {
 			want:   `before, "carrier": "{{carrier}}" after`,
 		},
 		{
+			name:   "hyphenated key, as from a header parameter",
+			tmpl:   `{{?X-Request-Id}}{{X-Request-Id}}{{/X-Request-Id}}`,
+			inputs: map[string]any{"X-Request-Id": "req-1"},
+			want:   `{{X-Request-Id}}`,
+		},
+		{
 			name:   "absent key omits block",
 			tmpl:   `before{{?carrier}}, "carrier": "{{carrier}}"{{/carrier}} after`,
 			inputs: map[string]any{},
@@ -1104,6 +1110,17 @@ func TestClassifyInputs(t *testing.T) {
 			wantIterable:    []string{"productIds"},
 		},
 		{
+			name: "hyphenated conditional header",
+			tmpl: &Template{
+				Request: TemplateRequest{
+					Method:  "GET",
+					Path:    "/items",
+					Headers: map[string]string{"X-Trace": "{{?X-Trace}}{{X-Trace}}{{/X-Trace}}"},
+				},
+			},
+			wantConditional: []string{"X-Trace"},
+		},
+		{
 			name: "no body template",
 			tmpl: &Template{
 				Request: TemplateRequest{
@@ -1233,4 +1250,36 @@ func TestParseTemplateFile(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "reading template file")
 	})
+}
+
+func TestTemplate_SuppliedFields(t *testing.T) {
+	tmpl := &Template{
+		Request: TemplateRequest{
+			Method: "POST",
+			Path:   "/pet?dryRun=true&owner={{owner}}{{?page}}&page={{page}}{{/page}}",
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+				"X-Trace":      "{{?X-Trace}}{{X-Trace}}{{/X-Trace}}",
+				"X-Tenant":     "{{tenant}}",
+			},
+			Body: `{
+  "name": "{{name}}",
+  "status": "{{status}}",
+  "photoUrls": [],
+  "category": {"id": {{categoryId}}, "name": "dogs"},
+  "note": "a \\"quoted\\": value"{{?tags}},
+  "tags": {{tags}}{{/tags}},
+  "items": [{{#items}}{"sku": "{{.sku}}"}{{/items}}]
+}`,
+		},
+	}
+
+	got := tmpl.SuppliedFields()
+
+	want := map[string]bool{
+		"dryRun": true, "owner": true,
+		"Content-Type": true, "X-Tenant": true,
+		"name": true, "status": true, "photoUrls": true, "category": true, "note": true, "items": true,
+	}
+	assert.Equal(t, want, got, "conditional fields (page, X-Trace, tags) and nested keys (id, sku) are not supplied unconditionally")
 }

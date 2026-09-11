@@ -71,7 +71,7 @@ func TestGenerate_ListPets_Template(t *testing.T) {
 	require.NotNil(t, tmpl)
 
 	assert.Equal(t, "GET", tmpl.Request.Method)
-	assert.Equal(t, "/pets?limit={{limit}}", tmpl.Request.Path)
+	assert.Equal(t, "/pets{{?limit}}?limit={{limit}}{{/limit}}", tmpl.Request.Path, "an optional query parameter is conditional")
 	assert.Empty(t, tmpl.Request.Headers)
 	assert.Empty(t, tmpl.Request.Body)
 	assert.Contains(t, tmpl.Response.Extract, "pets")
@@ -80,6 +80,33 @@ func TestGenerate_ListPets_Template(t *testing.T) {
 	assert.Contains(t, rule.Fields, "id")
 	assert.Contains(t, rule.Fields, "name")
 	assert.Contains(t, rule.Fields, "tag")
+}
+
+func TestBuildQueryString(t *testing.T) {
+	tests := []struct {
+		name   string
+		fields []templateField
+		want   string
+	}{
+		{name: "none", want: ""},
+		{name: "required only", fields: []templateField{{name: "a", required: true}, {name: "b", required: true}}, want: "?a={{a}}&b={{b}}"},
+		{name: "one optional", fields: []templateField{{name: "a"}}, want: "{{?a}}?a={{a}}{{/a}}"},
+		{
+			name:   "required then optional",
+			fields: []templateField{{name: "o"}, {name: "r", required: true}},
+			want:   "?r={{r}}{{?o}}&o={{o}}{{/o}}",
+		},
+		{
+			name:   "several optional",
+			fields: []templateField{{name: "a"}, {name: "b"}, {name: "c"}},
+			want:   "{{?a|b|c}}?{{/a|b|c}}{{?a}}a={{a}}{{/a}}{{?b}}{{?a}}&{{/a}}b={{b}}{{/b}}{{?c}}{{?a|b}}&{{/a|b}}c={{c}}{{/c}}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, buildQueryString(tt.fields))
+		})
+	}
 }
 
 func TestGenerate_CreatePet_Node(t *testing.T) {

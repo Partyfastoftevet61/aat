@@ -74,8 +74,8 @@ func planListCommand(planDirs []string, out io.Writer) error {
 			_, _ = fmt.Fprintf(out, "  %-40s recipe    %s\n", entry.Name, recipeSummary(p))
 		case *plan.Plan:
 			goal := p.Intent.Goal
-			if len(goal) > 60 {
-				goal = goal[:57] + "..."
+			if runes := []rune(goal); len(runes) > 60 {
+				goal = string(runes[:57]) + "..."
 			}
 			_, _ = fmt.Fprintf(out, "  %-40s %d steps  %s\n", entry.Name, len(p.Execution.Steps), goal)
 		}

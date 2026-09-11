@@ -70,6 +70,11 @@ With an absolute path, treats it as a standalone plan directory.`,
 		oasValidate, _ := cmd.Flags().GetString("oas-validate")
 		verboseAuth, _ := cmd.Flags().GetBool("verbose-auth")
 		noMutations, _ := cmd.Flags().GetBool("no-mutations")
+		varFlags, _ := cmd.Flags().GetStringArray("var")
+		vars, err := config.ParseVars(varFlags)
+		if err != nil {
+			return &exitError{Code: 2, Err: err}
+		}
 		envName := resolveEnvName(cmd)
 
 		if envName == "" {
@@ -105,6 +110,7 @@ With an absolute path, treats it as a standalone plan directory.`,
 				OASValidateMode: oasValidate,
 				VerboseAuth:     verboseAuth,
 				SkipMutations:   noMutations,
+				Vars:            vars,
 			},
 			PlanDirs:   resolved.PlanDirs,
 			FilterPath: filterPath,
@@ -886,14 +892,8 @@ func instantiateForFingerprint(rctx *runContext, spec batchRunSpec) (*plan.Plan,
 			v.Selection.Layers = recipeLayers
 		}
 		effectiveLayers = v.Selection.Layers
-		var reconOpts []intent.ReconstituteOption
-		if rctx.LayersDir != "" {
-			reconOpts = append(reconOpts, intent.WithLayersDir(rctx.LayersDir))
-		}
-		if rctx.AvailableLayers != nil {
-			reconOpts = append(reconOpts, intent.WithAvailableLayers(rctx.AvailableLayers))
-		}
-		reconstituted, reconErr := intent.Reconstitute(v, rctx.Graph, rctx.GraphDir, reconOpts...)
+		reconstituted, reconErr := intent.Reconstitute(v, rctx.Graph, rctx.GraphDir,
+			intent.WithLayersDir(rctx.LayersDir), intent.WithAvailableLayers(rctx.AvailableLayers))
 		if reconErr != nil {
 			return nil, nil, reconErr
 		}

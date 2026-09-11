@@ -35,19 +35,21 @@ aat run plan smoke-test --json
 | `archive_path` | string | Path to the archive directory |
 | `attempts` | int | Total execution attempts (omitted if 1) |
 | `retried` | bool | Whether any retries occurred (omitted if false) |
+| `stopped_at` | string | Checkpoint step ID when the outcome is `"stopped"` (omitted otherwise) |
 | `state` | object | Accumulated run state, present only with `--dump-state -` (unredacted; see [Running Tests: Checkpoints](running.md#checkpoints-stopping-early-and-handing-off-state)) |
 
 **StepSummary fields:**
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | string | Step ID from the plan |
+| `name` | string | Step ID from the plan (a mutation sibling's generated ID, such as `addItem__zero_quantity`) |
 | `node` | string | Graph node name |
 | `status` | int | HTTP status code |
 | `duration_ms` | int | Step duration in milliseconds |
 | `passed` | bool | Whether the step passed all assertions |
 | `error` | string | Error message (omitted if step passed) |
 | `retries` | int | Number of step-level retries |
+| `retried_on` | array | Error category of each retried attempt, in order, such as `["transient", "transient"]` (omitted if none) |
 | `assertions_passed` | int | Number of passing assertions |
 | `assertions_failed` | int | Number of failing assertions |
 | `display_outputs` | array | Tagged outputs: `label`, `name`, `value` (omitted if none) |

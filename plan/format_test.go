@@ -116,6 +116,25 @@ func TestFormatNarrative(t *testing.T) {
 			},
 		},
 		{
+			name: "goal names an aliased step",
+			plan: &Plan{
+				Intent: Intent{Goal: "checkout"},
+				Execution: Execution{
+					Steps: []Step{
+						{ID: "checkout", Node: "checkoutCart", IsGoal: true},
+					},
+				},
+			},
+			graph: &graph.Graph{
+				Nodes: map[string]*graph.Node{
+					"checkoutCart": {Name: "checkoutCart", Description: "Price the cart and create the order"},
+				},
+			},
+			contains: []string{
+				"Goal: checkout — Price the cart and create the order",
+			},
+		},
+		{
 			name: "goal annotation with graph description",
 			plan: &Plan{
 				Intent: Intent{

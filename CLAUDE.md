@@ -44,6 +44,7 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 | `server/` | Local web API server (chi), embedded Svelte SPA frontend, archive viewer |
 | `mcp/` | MCP server: API lifecycle platform for IDE-based AI tools (stdio transport) |
 | `internal/sandbox/shop/` | Offline e-commerce sandbox API (regions, OAuth2/API key, order state machine, chaos hooks); stdlib only |
+| `internal/httpstatus/` | Expected-status values shared by plan validation and assertions: exact codes, `2xx` classes, contradictions with `expectFailure` |
 | `internal/testutil/` | Shared test helpers and fixtures |
 | `internal/version/` | Build version info |
 | root `embed.go` | `package aat`: embeds `examples/shop` for `aat-sandbox init` |
@@ -52,7 +53,8 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 
 Dependencies flow in one direction. No cycles. No lateral imports within a tier.
 
-**Leaf packages** (zero aat imports): `config`, `graph`, `domain`, `llm`, `internal/sandbox/shop`
+**Foundation packages** (stdlib and third-party imports only; importable from any tier): `internal/httpstatus`
+**Leaf packages** (no aat imports other than foundation packages): `config`, `graph`, `domain`, `llm`, `internal/sandbox/shop`
 **Mid-tier**: `adapter` → config; `plan` → graph, config; `archive` → plan; `validate` → llm
 **Orchestrators**: `engine` → graph, adapter, plan, domain, llm, validate, archive, config
 **Entry points**: `intent` → graph, domain, plan, llm; `mcp` → all packages; `server` → engine, archive, plan, config
@@ -172,7 +174,9 @@ cd examples/shop/
 ../../aat run batch --oas-validate strict
 ../../aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --parallel 4
 ../../aat run plan smoke --env eu
-../../aat web view
+../../aat run plan smoke --stop-after paymentCharge --dump-state -   # live state for another tool
+../../aat run plan smoke --var apiHost=localhost:9765                # a sandbox on other ports
+../../aat web view latest
 
 # What CI runs against the shop (starts its own sandbox; needs curl, jq, free ports 8765/8766)
 make example-shop
@@ -200,13 +204,14 @@ cd examples/petstore/
 #   --env-config FILE  environment file (overrides the manifest)
 #   --json             machine-readable JSON summary to stdout
 #   --quiet            suppress progress, show final line only
-#   --override NODE=URL  route a node to a different URL (repeatable)
+#   --override NODE=URL  route a node to a different URL (repeatable; keeps env headers and auth)
+#   --var KEY=VALUE    set a var of a multi-environment file (repeatable; wins over the file)
 #   --overlay FILE       path to overlay YAML with additional overrides
 #   --no-auto-overrides  disable auto-discovery of .aat-overrides.yaml
 #   --retries N        max plan-level retries on failure (0 = no retries)
 #   --oas-validate MODE  runtime OpenAPI validation: auto|warn|strict|off
 #   --stop-after STEP  stop after a step, skip cleanup, keep resources alive
-#   --dump-state FILE  write live state (base URL, auth headers, outputs) for external harnesses
+#   --dump-state FILE  write live state (per-step base URLs and headers, outputs) for external harnesses
 ```
 
 The author's production-grade project (a 74-node airline API graph) lives in a separate private
@@ -268,20 +273,20 @@ aat validate plan [--graph FILE] [--plan FILE] [--unfed]
 aat validate workflow [--graph FILE] [--strict]
 
 # Web UI
-aat web [--port 9119] [--open] [--dev] [--manifest FILE]
-aat web view [ref] [--port 9119]        # open a specific run in the browser
+aat web [--host 127.0.0.1] [--port 9119] [--open] [--dev] [--manifest FILE]   # AAT_HOST sets the host
+aat web view [ref|latest|file.aar] [--host 127.0.0.1] [--port 9119]           # open a run in the browser
 
 # MCP server (stdio or HTTP transport, for IDE-based AI tools)
-aat mcp serve [--manifest FILE] [--persona PERSONA] [--http] [--port PORT] [--log]
+aat mcp serve [--manifest FILE] [--persona PERSONA] [--http] [--host 127.0.0.1] [--port PORT] [--var KEY=VALUE] [--log]
 
 # Plan management
 aat plan list [--manifest FILE]
 
 # Environment management
-aat env list [--manifest FILE] [--env-config FILE]
+aat env list [--manifest FILE] [--env-config FILE] [--var KEY=VALUE]
 
 # Scaffold from OpenAPI spec
-aat generate --oas FILE [--output-graph graph.yaml] [--output-templates templates/]
+aat generate --oas FILE [--output-graph graph.yaml|-] [--output-templates templates/]   # "-" alone writes no files
 
 # Documentation generation
 aat docs generate --graph FILE [--domain FILE] [--output FILE] [--title TEXT] [--split]

@@ -152,7 +152,7 @@ Environment names starting with `_` (underscore) are abstract — they serve as 
 
 ### Variable Substitution
 
-The `vars` map enables parameterized environments. `${var_name}` placeholders in any string field are replaced from the merged vars after inheritance and shared config resolution:
+The `vars` map enables parameterized environments. `${var_name}` placeholders in every string of the environment are replaced from the merged vars after inheritance and shared config resolution — base URLs, headers, auth fields and credentials, override entries (including their auth, values, and `expectFailure` descriptions), LLM settings, and `settings`. Map keys, such as header names, are not substituted, and the `vars` map itself is not:
 
 ```yaml
 environments:
@@ -169,6 +169,16 @@ environments:
 ```
 
 Unresolved `${...}` placeholders after substitution are a validation error.
+
+#### Setting vars from the command line
+
+`--var KEY=VALUE` (repeatable) sets a var for one invocation and wins over the vars the file declares or inherits. It is accepted by `aat run plan`, `aat run batch`, `aat prompt`, `aat validate`, `aat env list`, and `aat mcp serve`, and applies to multi-environment files only. Use it to point a project at a different host without editing the file — for example the shop example against a sandbox in Docker or on other ports:
+
+```bash
+aat run plan smoke --var apiHost=localhost:9765 --var payHost=localhost:9766
+```
+
+A key that the file never declares or references with `${key}` is an error, so a typo does not silently change nothing.
 
 ### File Splitting with `include`
 
@@ -514,7 +524,7 @@ Two mechanisms let you adjust routing without editing the environment file:
 aat run plan checkout.yaml --override createPayment=https://sandbox.payments.example.com
 ```
 
-This flag is repeatable for multiple overrides.
+This flag is repeatable for multiple overrides. Each one behaves exactly like an entry `- match: NODE` with `baseUrl: URL`: the request keeps the environment headers, the plan headers, overlay headers, and the credential of the effective auth.
 
 **`--overlay` flag** — merges a sparse overlay file on top of the base environment:
 

@@ -2,3 +2,7 @@
 _output/
 state.json
 .aat-overrides.yaml
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,4 +51,16 @@ execution:
 	assert.Contains(t, got, "recipe    Quick Purchase\n")
 	assert.Contains(t, got, "2 steps  ship")
 	assert.Regexp(t, `broken\.yaml\s+\(parse error\)`, got)
+}
+
+func TestPlanListCommand_TruncatesGoalOnCharacterBoundary(t *testing.T) {
+	dir := t.TempDir()
+	goal := strings.Repeat("é", 70)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "long.yaml"), []byte("intent:\n  goal: "+goal+"\nexecution:\n  steps:\n    - node: a\n"), 0o644))
+
+	var out bytes.Buffer
+	require.NoError(t, planListCommand([]string{dir}, &out))
+
+	assert.True(t, utf8.ValidString(out.String()), "output must stay valid UTF-8")
+	assert.Contains(t, out.String(), strings.Repeat("é", 57)+"...")
 }

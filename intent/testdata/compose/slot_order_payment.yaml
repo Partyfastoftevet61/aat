@@ -1,0 +1,13 @@
+execution:
+  steps:
+    - node: addCashPayment
+      values:
+        itineraryId: {from: createItinerary.itineraryId}
+
+  cleanup:
+    - node: addCashPayment
+      runOn: always
+
+  verification:
+    - node: commit
+      purpose: "payment option checks commit"

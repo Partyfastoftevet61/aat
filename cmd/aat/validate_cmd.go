@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -28,10 +29,16 @@ var validateCmd = &cobra.Command{
 
 		manifestFlag, _ := cmd.Flags().GetString("manifest")
 		strict, _ := cmd.Flags().GetBool("strict")
+		varFlags, _ := cmd.Flags().GetStringArray("var")
+		vars, err := config.ParseVars(varFlags)
+		if err != nil {
+			return &exitError{Code: 1, Err: err}
+		}
 
 		va := &validateArgs{
 			ManifestPath: manifestFlag,
 			Strict:       strict,
+			Vars:         vars,
 		}
 
 		code := validateCommand(va, os.Stdout)
@@ -45,12 +52,14 @@ var validateCmd = &cobra.Command{
 func init() {
 	validateCmd.Flags().String("manifest", "", "explicit path to aat-project.yaml (auto-discovered if omitted)")
 	validateCmd.Flags().Bool("strict", false, "treat warnings as errors")
+	validateCmd.Flags().StringArray("var", nil, "set a var of a multi-environment file, KEY=VALUE (repeatable; wins over the file's vars)")
 }
 
 // validateArgs holds parsed CLI flags for the validate command.
 type validateArgs struct {
 	ManifestPath string
 	Strict       bool
+	Vars         map[string]string // --var KEY=VALUE for multi-environment files
 }
 
 // sectionResult tracks the outcome of one validation section.
@@ -153,7 +162,7 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 
 	// 2. Validate environment file
 	if m.EnvPath != "" {
-		envSection := validateEnvironmentFile(m.EnvPath, m.DefaultEnvironment)
+		envSection := validateEnvironmentFile(m.EnvPath, m.DefaultEnvironment, args.Vars)
 		if envSection != nil {
 			sections = append(sections, *envSection)
 		}
@@ -184,7 +193,8 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 	// 3. OAS validation
 	validator := oas.NewValidator()
 	if templateErr == nil {
-		validator.WithOutputPaths(engine.OutputExtractPaths(g, registry))
+		validator.WithOutputPaths(engine.OutputExtractPaths(g, registry)).
+			WithSuppliedFields(engine.TemplateSuppliedFields(g, registry))
 	}
 	specPaths := validator.CollectSpecPaths(g)
 	if len(specPaths) > 0 {
@@ -380,26 +390,25 @@ type workflowValidationResult struct {
 // not graph-validated, since their missing inputs get wired at composition time.
 func validateWorkflows(workflowsDir string, g *graph.Graph, workflowTemplates map[string]bool) workflowValidationResult {
 	var result workflowValidationResult
-	entries, err := os.ReadDir(workflowsDir)
-	if err != nil {
-		result.Errors = []string{fmt.Sprintf("reading workflows directory: %s", err)}
-		return result
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+	// Walk subdirectories too: projects keep slot options and addons in
+	// workflows/slots/ and workflows/addons/.
+	err := filepath.WalkDir(workflowsDir, func(planPath string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		if !strings.HasSuffix(entry.Name(), ".yaml") && !strings.HasSuffix(entry.Name(), ".yml") {
-			continue
+		if d.IsDir() || (!strings.HasSuffix(d.Name(), ".yaml") && !strings.HasSuffix(d.Name(), ".yml")) {
+			return nil
+		}
+		name, relErr := filepath.Rel(workflowsDir, planPath)
+		if relErr != nil {
+			name = d.Name()
 		}
 
 		result.Total++
-		planPath := filepath.Join(workflowsDir, entry.Name())
 		p, err := plan.ParseFile(planPath)
 		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", entry.Name(), err))
-			continue
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", name, err))
+			return nil
 		}
 
 		// Skip graph validation for workflow templates — they are intentionally
@@ -407,12 +416,16 @@ func validateWorkflows(workflowsDir string, g *graph.Graph, workflowTemplates ma
 		abs, err := filepath.Abs(planPath)
 		if err == nil && workflowTemplates[abs] {
 			result.Templates++
-			continue
+			return nil
 		}
 
 		if _, err := plan.InstantiateAndValidate(p, g); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", entry.Name(), err))
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", name, err))
 		}
+		return nil
+	})
+	if err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("reading workflows directory: %s", err))
 	}
 
 	return result
@@ -456,11 +469,6 @@ func validatePlans(planDirs []string, g *graph.Graph, graphDir, layersDir string
 		return result
 	}
 
-	var reconOpts []intent.ReconstituteOption
-	if layersDir != "" {
-		reconOpts = append(reconOpts, intent.WithLayersDir(layersDir))
-	}
-
 	for _, entry := range entries {
 		result.Total++
 		parsed, err := plan.ParseAnyFile(entry.FullPath)
@@ -475,7 +483,7 @@ func validatePlans(planDirs []string, g *graph.Graph, graphDir, layersDir string
 			}
 		case *plan.Recipe:
 			result.Recipes++
-			if _, err := intent.Reconstitute(v, g, graphDir, reconOpts...); err != nil {
+			if _, err := intent.Reconstitute(v, g, graphDir, intent.WithLayersDir(layersDir)); err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: reconstituting recipe: %s", entry.Name, err))
 			}
 		}
@@ -546,7 +554,7 @@ func printSections(out io.Writer, sections []sectionResult) {
 // it attempts to load each non-abstract environment to verify extends chains,
 // variable substitution, and structural validity. Returns nil if validation passes
 // or a sectionResult describing the outcome.
-func validateEnvironmentFile(envPath, defaultEnv string) *sectionResult {
+func validateEnvironmentFile(envPath, defaultEnv string, vars map[string]string) *sectionResult {
 	isMulti, err := config.IsMultiEnvFile(envPath)
 	if err != nil {
 		return &sectionResult{
@@ -558,7 +566,7 @@ func validateEnvironmentFile(envPath, defaultEnv string) *sectionResult {
 
 	if !isMulti {
 		// Legacy single-env file — validate it loads
-		_, err := config.LoadEnvironment(envPath)
+		_, err := config.LoadNamedEnvironmentWithVars(envPath, "", vars)
 		if err != nil {
 			return &sectionResult{
 				Name:   "Environment",
@@ -585,7 +593,7 @@ func validateEnvironmentFile(envPath, defaultEnv string) *sectionResult {
 
 	var envErrors []string
 	for _, name := range names {
-		if _, err := config.LoadNamedEnvironment(envPath, name); err != nil {
+		if _, err := config.LoadNamedEnvironmentWithVars(envPath, name, vars); err != nil {
 			envErrors = append(envErrors, fmt.Sprintf("%s: %s", name, err))
 		}
 	}

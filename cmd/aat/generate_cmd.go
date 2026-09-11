@@ -27,9 +27,10 @@ var generateCmd = &cobra.Command{
 		}
 
 		ga := &generateArgs{
-			OASPath:         oasPath,
-			OutputGraph:     outputGraph,
-			OutputTemplates: outputTemplates,
+			OASPath:           oasPath,
+			OutputGraph:       outputGraph,
+			OutputTemplates:   outputTemplates,
+			TemplatesExplicit: cmd.Flags().Changed("output-templates"),
 		}
 
 		return generateCommand(ga)
@@ -39,14 +40,15 @@ var generateCmd = &cobra.Command{
 func init() {
 	generateCmd.Flags().String("oas", "", "path to OAS spec file (required)")
 	generateCmd.Flags().String("output-graph", "graph.yaml", "output path for graph YAML (\"-\" for stdout)")
-	generateCmd.Flags().String("output-templates", "templates", "output directory for template YAML files")
+	generateCmd.Flags().String("output-templates", "templates", "output directory for template YAML files (not written with --output-graph - unless given)")
 }
 
 // generateArgs holds parsed CLI flags for the generate command.
 type generateArgs struct {
-	OASPath         string
-	OutputGraph     string
-	OutputTemplates string
+	OASPath           string
+	OutputGraph       string
+	OutputTemplates   string
+	TemplatesExplicit bool // --output-templates was given; templates are written even with --output-graph -
 }
 
 // generateCommand runs the scaffold generation pipeline. Extracted for testability.
@@ -84,7 +86,11 @@ func generateCommand(args *generateArgs) error {
 		}
 	}
 
-	// Write templates
+	// Write templates. Previewing the graph on stdout writes nothing else unless
+	// a templates directory was asked for explicitly.
+	if args.OutputGraph == "-" && !args.TemplatesExplicit {
+		return nil
+	}
 	if err := os.MkdirAll(args.OutputTemplates, 0755); err != nil {
 		return fmt.Errorf("creating templates directory: %w", err)
 	}

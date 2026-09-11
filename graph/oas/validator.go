@@ -12,14 +12,19 @@ import (
 
 // Validator implements graph.SpecValidator for OpenAPI specifications.
 type Validator struct {
-	specs       map[string]*v3high.Document
-	outputPaths OutputPaths
+	specs          map[string]*v3high.Document
+	outputPaths    OutputPaths
+	suppliedFields SuppliedFields
 }
 
 // OutputPaths maps node name → output name → the GJSON path the node's template
 // extracts that output from. An empty path marks an output a response transform
 // computes, which has no response location to check.
 type OutputPaths map[string]map[string]string
+
+// SuppliedFields maps node name → the request fields (query parameters, header
+// names, top-level body keys) the node's template always sends itself.
+type SuppliedFields map[string]map[string]bool
 
 // NewValidator creates a new OAS validator.
 func NewValidator() *Validator {
@@ -34,6 +39,14 @@ func NewValidator() *Validator {
 // paths keep the name-based check.
 func (v *Validator) WithOutputPaths(paths OutputPaths) *Validator {
 	v.outputPaths = paths
+	return v
+}
+
+// WithSuppliedFields makes the required-parameter check accept a required
+// parameter or body property that the node's template sends itself, such as a
+// literal "photoUrls": [] with no graph input behind it.
+func (v *Validator) WithSuppliedFields(fields SuppliedFields) *Validator {
+	v.suppliedFields = fields
 	return v
 }
 
@@ -136,13 +149,14 @@ func (v *Validator) Validate(g *graph.Graph) *graph.SpecValidationResult {
 			}
 		}
 
-		// Rule 6: OAS required parameters should exist in graph inputs
+		// Rule 6: OAS required parameters should exist in graph inputs, unless
+		// the template supplies them itself
 		graphInputNames := make(map[string]bool)
 		for _, inp := range node.Inputs {
 			graphInputNames[inp.Name] = true
 		}
 		for name := range collectRequiredInputs(pathItem, op) {
-			if !graphInputNames[name] {
+			if !graphInputNames[name] && !v.suppliedFields[nodeName][name] {
 				result.Issues = append(result.Issues, graph.SpecValidationIssue{
 					Severity: graph.SpecWarning,
 					Node:     nodeName,

@@ -4,20 +4,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// varPattern matches ${varName} placeholders in strings.
-var varPattern = regexp.MustCompile(`\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}`)
-
 // LoadNamedEnvironment loads a specific environment from a YAML file. If the file
 // is in multi-environment format, envName selects which environment. If the file is
 // in legacy single-environment format, envName must be empty.
 func LoadNamedEnvironment(path, envName string) (*Environment, error) {
+	return LoadNamedEnvironmentWithVars(path, envName, nil)
+}
+
+// LoadNamedEnvironmentWithVars is LoadNamedEnvironment with vars set from
+// outside the file, such as --var flags. They take precedence over the vars the
+// environment declares or inherits. Each key must be declared or referenced
+// somewhere in the file, and vars apply only to multi-environment files.
+func LoadNamedEnvironmentWithVars(path, envName string, vars map[string]string) (*Environment, error) {
 	data, err := readFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading environment file: %w", err)
@@ -26,15 +30,18 @@ func LoadNamedEnvironment(path, envName string) (*Environment, error) {
 	if isMultiEnv(data) {
 		if envName == "" {
 			names, _ := listEnvNamesFromData(data)
-			return nil, fmt.Errorf("env file defines multiple environments (%s); specify one with --env-name or set defaultEnvironment in aat-project.yaml",
+			return nil, fmt.Errorf("env file defines multiple environments (%s); specify one with --env or set defaultEnvironment in aat-project.yaml",
 				strings.Join(names, ", "))
 		}
-		return loadMultiEnv(path, data, envName)
+		return loadMultiEnv(path, data, envName, vars)
 	}
 
 	// Legacy single-env format
 	if envName != "" {
-		return nil, fmt.Errorf("env file is single-environment format; --env-name is not applicable")
+		return nil, fmt.Errorf("env file is single-environment format; --env is not applicable")
+	}
+	if len(vars) > 0 {
+		return nil, fmt.Errorf("env file is single-environment format; --var applies only to multi-environment files")
 	}
 	return loadLegacyEnv(data)
 }
@@ -176,7 +183,7 @@ func loadLegacyEnv(data []byte) (*Environment, error) {
 
 // loadMultiEnv parses a multi-environment YAML file (with includes) and resolves
 // the named environment.
-func loadMultiEnv(basePath string, data []byte, envName string) (*Environment, error) {
+func loadMultiEnv(basePath string, data []byte, envName string, cliVars map[string]string) (*Environment, error) {
 	mef, err := parseAndMergeIncludes(basePath, data)
 	if err != nil {
 		return nil, err
@@ -199,6 +206,14 @@ func loadMultiEnv(basePath string, data []byte, envName string) (*Environment, e
 
 	// Merge shared defaults underneath (shared is lowest priority)
 	merged := mergePartials(mef.Shared, resolved)
+
+	// Vars from outside the file win over the environment's own.
+	if len(cliVars) > 0 {
+		if err := checkExternalVars(mef, cliVars); err != nil {
+			return nil, err
+		}
+		merged.Vars = mergeMaps(merged.Vars, cliVars)
+	}
 
 	// Substitute vars
 	if err := substituteVars(&merged); err != nil {
@@ -352,118 +367,6 @@ func mergeOverrideSlices(parent, child []HostOverride) []HostOverride {
 	result = append(result, parent...)
 	result = append(result, child...)
 	return result
-}
-
-// substituteVars replaces ${key} placeholders in all string fields of the partial
-// using the vars map. Returns an error for any unresolved placeholders.
-func substituteVars(p *EnvironmentPartial) error {
-	if len(p.Vars) == 0 {
-		// Check if there are any unresolved vars in the partial
-		return checkUnresolvedVars(p)
-	}
-
-	p.APIBaseURL = substituteString(p.APIBaseURL, p.Vars)
-	if p.Auth != nil {
-		p.Auth.TokenURL = substituteString(p.Auth.TokenURL, p.Vars)
-		p.Auth.HeaderName = substituteString(p.Auth.HeaderName, p.Vars)
-		for k, v := range p.Auth.Credentials {
-			v.Var = substituteString(v.Var, p.Vars)
-			v.Value = substituteString(v.Value, p.Vars)
-			p.Auth.Credentials[k] = v
-		}
-	}
-	if p.LLM != nil {
-		p.LLM.Endpoint = substituteString(p.LLM.Endpoint, p.Vars)
-		p.LLM.Model = substituteString(p.LLM.Model, p.Vars)
-	}
-	for k, v := range p.Headers {
-		p.Headers[k] = substituteString(v, p.Vars)
-	}
-	for k, v := range p.Values {
-		p.Values[k] = substituteString(v, p.Vars)
-	}
-	p.Notes = substituteString(p.Notes, p.Vars)
-
-	for i := range p.Overrides {
-		p.Overrides[i].Match = substituteString(p.Overrides[i].Match, p.Vars)
-		p.Overrides[i].BaseURL = substituteString(p.Overrides[i].BaseURL, p.Vars)
-		if p.Overrides[i].PathRewrite != nil {
-			p.Overrides[i].PathRewrite.Strip = substituteString(p.Overrides[i].PathRewrite.Strip, p.Vars)
-			p.Overrides[i].PathRewrite.Prefix = substituteString(p.Overrides[i].PathRewrite.Prefix, p.Vars)
-		}
-		for k, v := range p.Overrides[i].Headers {
-			p.Overrides[i].Headers[k] = substituteString(v, p.Vars)
-		}
-		if p.Overrides[i].Auth != nil {
-			p.Overrides[i].Auth.TokenURL = substituteString(p.Overrides[i].Auth.TokenURL, p.Vars)
-		}
-	}
-
-	return checkUnresolvedVars(p)
-}
-
-// substituteString replaces ${key} placeholders with values from vars.
-func substituteString(s string, vars map[string]string) string {
-	if !strings.Contains(s, "${") {
-		return s
-	}
-	return varPattern.ReplaceAllStringFunc(s, func(match string) string {
-		key := match[2 : len(match)-1] // strip ${ and }
-		if val, ok := vars[key]; ok {
-			return val
-		}
-		return match // leave unresolved for error checking
-	})
-}
-
-// checkUnresolvedVars scans all string fields for remaining ${...} placeholders.
-func checkUnresolvedVars(p *EnvironmentPartial) error {
-	var unresolved []string
-	check := func(s string) {
-		unresolved = append(unresolved, varPattern.FindAllString(s, -1)...)
-	}
-
-	check(p.APIBaseURL)
-	check(p.Notes)
-	if p.Auth != nil {
-		check(p.Auth.TokenURL)
-		check(p.Auth.HeaderName)
-	}
-	if p.LLM != nil {
-		check(p.LLM.Endpoint)
-		check(p.LLM.Model)
-	}
-	for _, v := range p.Headers {
-		check(v)
-	}
-	for _, v := range p.Values {
-		check(v)
-	}
-	for _, ov := range p.Overrides {
-		check(ov.Match)
-		check(ov.BaseURL)
-		if ov.PathRewrite != nil {
-			check(ov.PathRewrite.Strip)
-			check(ov.PathRewrite.Prefix)
-		}
-		for _, v := range ov.Headers {
-			check(v)
-		}
-	}
-
-	if len(unresolved) > 0 {
-		// Deduplicate
-		seen := make(map[string]bool)
-		var unique []string
-		for _, u := range unresolved {
-			if !seen[u] {
-				seen[u] = true
-				unique = append(unique, u)
-			}
-		}
-		return fmt.Errorf("unresolved variable(s): %s", strings.Join(unique, ", "))
-	}
-	return nil
 }
 
 // toEnvironment converts a fully-resolved EnvironmentPartial to an Environment.

@@ -41,13 +41,12 @@ func writeHeader(b *strings.Builder, p *Plan, g *graph.Graph) {
 		fmt.Fprintf(b, "Plan: %s\n", title)
 	}
 
-	// Goal line
+	// Goal line: intent.goal is a step ID (validation requires it to name the
+	// isGoal step), so describe it by that step, then by its node.
 	if p.Intent.Goal != "" {
 		goalLine := p.Intent.Goal
-		if g != nil {
-			if node, ok := g.Nodes[p.Intent.Goal]; ok && node.Description != "" {
-				goalLine += " — " + node.Description
-			}
+		if desc := goalDescription(p, g); desc != "" {
+			goalLine += " — " + desc
 		}
 		fmt.Fprintf(b, "Goal: %s\n", goalLine)
 	}
@@ -65,6 +64,28 @@ func writeHeader(b *strings.Builder, p *Plan, g *graph.Graph) {
 	}
 
 	b.WriteString("\n")
+}
+
+// goalDescription describes the step intent.goal names: the step's own
+// description, else its node's. A goal that matches no step ID falls back to a
+// graph node of that name, as older plans named nodes.
+func goalDescription(p *Plan, g *graph.Graph) string {
+	nodeName := p.Intent.Goal
+	for _, step := range p.Execution.Steps {
+		if step.StepID() == p.Intent.Goal {
+			if step.Description != "" {
+				return step.Description
+			}
+			nodeName = step.Node
+			break
+		}
+	}
+	if g != nil {
+		if node, ok := g.Nodes[nodeName]; ok {
+			return node.Description
+		}
+	}
+	return ""
 }
 
 func writeSteps(b *strings.Builder, p *Plan, g *graph.Graph) {

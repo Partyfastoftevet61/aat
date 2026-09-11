@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/mcp"
+	webserver "github.com/gburgyan/aat/server"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 )
@@ -83,8 +86,14 @@ var mcpServeCmd = &cobra.Command{
 			manifest.DefaultEnvironment = envName
 		}
 
+		varFlags, _ := cmd.Flags().GetStringArray("var")
+		vars, err := config.ParseVars(varFlags)
+		if err != nil {
+			return err
+		}
+
 		// Build server context
-		ctx, err := mcp.BuildServerContext(manifest)
+		ctx, err := mcp.BuildServerContextWithVars(manifest, vars)
 		if err != nil {
 			return err
 		}
@@ -118,23 +127,24 @@ var mcpServeCmd = &cobra.Command{
 		}
 
 		if httpFlag {
-			return serveMCPHTTP(srv, portFlag, basePathFlag)
+			return serveMCPHTTP(srv, resolveHost(cmd), portFlag, basePathFlag)
 		}
 
 		return srv.Serve()
 	},
 }
 
-// serveMCPHTTP starts the MCP server over Streamable HTTP with graceful shutdown.
-func serveMCPHTTP(srv *mcp.Server, port int, basePath string) error {
-	addr := fmt.Sprintf(":%d", port)
+// serveMCPHTTP starts the MCP server over Streamable HTTP on host:port with
+// graceful shutdown.
+func serveMCPHTTP(srv *mcp.Server, host string, port int, basePath string) error {
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 
 	opts := []server.StreamableHTTPOption{
 		server.WithStateLess(true),
 		server.WithEndpointPath(basePath),
 	}
 
-	fmt.Fprintf(os.Stderr, "aat mcp: serving HTTP on http://localhost:%d%s\n", port, basePath)
+	fmt.Fprintf(os.Stderr, "aat mcp: serving HTTP on %s%s\n", webserver.BrowseURL(host, port), basePath)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -155,7 +165,9 @@ func init() {
 	mcpServeCmd.Flags().String("persona", "", "server persona: 'api' (integration developer), 'test' (test developer), or omit for all tools")
 	mcpServeCmd.Flags().Bool("http", false, "serve over Streamable HTTP instead of stdio")
 	mcpServeCmd.Flags().Int("port", 8080, "HTTP listen port (used with --http)")
+	mcpServeCmd.Flags().String("host", webserver.DefaultHost, hostFlagHelp+" (used with --http)")
 	mcpServeCmd.Flags().String("http-base-path", "/mcp", "HTTP endpoint path (used with --http)")
 	mcpServeCmd.Flags().Bool("log", false, "enable structured JSON logging of tool calls to stderr")
 	mcpServeCmd.Flags().String("env", "", "environment name (for multi-environment files)")
+	mcpServeCmd.Flags().StringArray("var", nil, "set a var of a multi-environment file, KEY=VALUE (repeatable; wins over the file's vars)")
 }

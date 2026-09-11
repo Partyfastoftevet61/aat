@@ -2,7 +2,9 @@
 # Runs examples/shop against a local aat-sandbox with the checks the CI
 # example-shop job runs: strict validation, every plan in both regions with
 # strict OpenAPI validation, the layer matrix and its dedup counts, the
-# declined-card overlay, and a checkpoint handed off to curl.
+# declined-card overlay, and a checkpoint handed off to curl. It also validates
+# examples/petstore strictly, which needs no network, so the smallest example
+# cannot drift silently.
 #
 # Usage: scripts/example-shop.sh (or `make example-shop`, which builds first).
 # The binaries default to the repository root builds; set AAT and AAT_SANDBOX to
@@ -53,6 +55,9 @@ done
 step "aat validate --strict"
 "$aat" validate --strict
 
+step "aat validate --strict (examples/petstore)"
+(cd "$root/examples/petstore" && "$aat" validate --strict)
+
 for env in us eu; do
   step "aat run batch --env $env --oas-validate strict"
   "$aat" run batch --env "$env" --oas-validate strict --no-auto-overrides \
@@ -70,12 +75,14 @@ step "aat run plan smoke --overlay overlays/declined-card.yaml"
   --output "$out" --json >"$out/declined-card.json" || true
 expect "$out/declined-card.json" '.outcome == "passed" and any(.steps[]; .node == "paymentCharge" and .status == 402)'
 
-step "aat run plan smoke --stop-after checkout --dump-state -, then read the live order with curl"
-"$aat" run plan smoke --stop-after checkout --dump-state - --quiet --no-auto-overrides --output "$out" >"$state"
-expect "$state" '.outcome == "stopped" and .stoppedAt == "checkout"'
+step "aat run plan smoke --stop-after paymentCharge --dump-state -, then read the live order with curl"
+"$aat" run plan smoke --stop-after paymentCharge --dump-state - --quiet --no-auto-overrides --output "$out" >"$state"
+expect "$state" '.outcome == "stopped" and .stoppedAt == "paymentCharge"
+  and (.auth.headers.Authorization | startswith("Bearer "))
+  and any(.steps[]; .node == "paymentCharge" and .headers["X-API-Key"] == "pay-demo-key" and (.headers.Authorization == null))'
 order="$(jq -r '.values["checkout.orderId"]' "$state")"
 authorization="$(jq -r '.auth.headers.Authorization' "$state")"
 curl -fsS -H "Authorization: $authorization" "http://127.0.0.1:8765/us/v1/orders/$order" >"$out/checkpoint-order.json"
-expect "$out/checkpoint-order.json" '.status == "created"'
+expect "$out/checkpoint-order.json" '.status == "paid"'
 
 printf '\nexample-shop: all checks passed\n' >&2

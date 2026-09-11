@@ -294,9 +294,9 @@ components:
 `
 
 // TestValidateStep_ConcurrentValidationsShareSpec: parallel batch runs share one
-// SpecCache entry, and validating a response renders schema values that
-// libopenapi mutates as it goes. Run with -race: concurrent validations against
-// one spec must not race.
+// SpecCache entry. libopenapi-validator v0.13.1 wrote into the shared schema
+// model while rendering a response schema behind a $ref, which raced; v0.14.0
+// does not, so validations run concurrently without a lock. Run with -race.
 func TestValidateStep_ConcurrentValidationsShareSpec(t *testing.T) {
 	specPath := filepath.Join(t.TempDir(), "carts.yaml")
 	require.NoError(t, os.WriteFile(specPath, []byte(concurrentSpecYAML), 0o644))
