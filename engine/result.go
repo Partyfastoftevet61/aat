@@ -56,6 +56,28 @@ type RunResult struct {
 	Stopped bool
 	// StoppedAt is the StepID of the checkpoint step (set when Stopped is true).
 	StoppedAt string
+
+	// StartTime and Duration are the wall-clock span of Engine.Run, including
+	// retry waits, verification, and cleanup.
+	StartTime time.Time
+	Duration  time.Duration
+}
+
+// Elapsed returns how long the run took: its recorded wall-clock Duration, or,
+// for a result the engine did not time, the sum of its step and cleanup
+// durations.
+func (r *RunResult) Elapsed() time.Duration {
+	if r.Duration > 0 {
+		return r.Duration
+	}
+	var total time.Duration
+	for _, s := range r.Steps {
+		total += s.Duration
+	}
+	for _, s := range r.CleanupResults {
+		total += s.Duration
+	}
+	return total
 }
 
 // StepResult captures the outcome of a single step execution.
@@ -71,8 +93,8 @@ type StepResult struct {
 	Resolutions       []ValueResolution
 	StatusCode        int
 	Error             error
-	StartTime         time.Time
-	Duration          time.Duration
+	StartTime         time.Time                  // start of the first attempt
+	Duration          time.Duration              // from StartTime to the end of the last attempt, retry waits included
 	ErrorClass        *ErrorClassification       // nil on success
 	RetryCount        int                        // number of retries performed (0 = no retries)
 	RetriedOn         []ErrorCategory            // category of each failed attempt that was retried, in order

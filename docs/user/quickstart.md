@@ -227,17 +227,17 @@ aat: loaded 1 OAS spec(s) for runtime validation
 aat: authenticated via none
 aat: executing plan (2 steps)...
 
-  [1/2] addPet               200  231ms
-  [2/2] getPetById           200  39ms
+  [1/2] add (addPet)         200  275ms
+  [2/2] verify (getPetById)  200  39ms
 
   cleanup:
-    deletePet              200  45ms
+    deletePet              200  39ms
 
-PASSED (2/2 steps, 315ms)
-Archive: /home/you/petstore-tests/runs/run-20260910-225657-d50b86b9/archive.json
+PASSED (2/2 steps, 355ms)
+Archive: /home/you/petstore-tests/runs/run-20260911-123519-a6db0d9b/archive.json
 ```
 
-Each line shows the step, its HTTP status, and its duration. Because the graph references the spec, every request and response was also checked against it; a mismatch would show as an `OAS: N warning(s)` marker on the step.
+Each line shows the step ID with its node in parentheses, the HTTP status, and the duration. Because the graph references the spec, every request and response was also checked against it; a mismatch would show as an `OAS: N warning(s)` marker on the step.
 
 > **About the public Petstore:** it gives every pet created without an `id` the same ID, and anyone on the internet can write to it. If another client creates a pet between your two steps, `verify` can read their pet and fail. Rerun, or point the quickstart at your own API.
 

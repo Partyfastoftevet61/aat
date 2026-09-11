@@ -46,6 +46,20 @@ func TestBuildRunSummary_AllPassed(t *testing.T) {
 	assert.Equal(t, "book a flight", s.PlanName)
 }
 
+func TestRunDurationMs(t *testing.T) {
+	steps := []StepRecord{{Node: "a", DurationMs: 100}, {Node: "b", DurationMs: 250}}
+	cleanup := []StepRecord{{Node: "c", DurationMs: 50}}
+
+	recorded := &Archive{Steps: steps, Cleanup: cleanup, Result: ArchiveResult{DurationMs: 2900}}
+	assert.Equal(t, int64(2900), RunDurationMs(recorded), "the recorded wall-clock time wins")
+
+	legacy := &Archive{Steps: steps, Cleanup: cleanup}
+	assert.Equal(t, int64(400), RunDurationMs(legacy), "an older archive falls back to the step sum")
+
+	s := BuildRunSummary(recorded)
+	assert.Equal(t, int64(2900), s.DurationMs)
+}
+
 func TestBuildRunSummary_MixedPassFail(t *testing.T) {
 	a := &Archive{
 		Metadata: ArchiveMetadata{

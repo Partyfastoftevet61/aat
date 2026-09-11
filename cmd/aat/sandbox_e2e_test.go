@@ -102,6 +102,10 @@ func TestShopExample(t *testing.T) {
 		assert.Equal(t, engine.OutcomePassed, res.outcome)
 		assert.Equal(t, 1, stepByNode(t, res.summary, "checkInventory").Retries, "one response_error retry")
 		assert.Equal(t, 2, stepByNode(t, res.summary, "getShipment").Retries, "two transient retries")
+		// Three backoff waits of at least 375, 375, and 750ms (500ms and 1s less
+		// 25% jitter) count toward the steps and the run.
+		assert.GreaterOrEqual(t, stepByNode(t, res.summary, "getShipment").DurationMs, int64(1125), "the step's duration includes its retry waits")
+		assert.GreaterOrEqual(t, res.summary.Summary.DurationMs, int64(1500), "the run's duration is wall-clock time")
 	})
 
 	t.Run("checkpoint handoff", func(t *testing.T) {

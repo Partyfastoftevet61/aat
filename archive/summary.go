@@ -7,6 +7,23 @@ import (
 	"path/filepath"
 )
 
+// RunDurationMs returns how long a run took: the wall-clock duration the
+// archive records, or, for an archive written before that was recorded, the
+// sum of its step and cleanup durations.
+func RunDurationMs(a *Archive) int64 {
+	if a.Result.DurationMs > 0 {
+		return a.Result.DurationMs
+	}
+	var total int64
+	for _, s := range a.Steps {
+		total += s.DurationMs
+	}
+	for _, s := range a.Cleanup {
+		total += s.DurationMs
+	}
+	return total
+}
+
 // BuildRunSummary computes a lightweight summary from a full archive.
 func BuildRunSummary(a *Archive) *RunSummary {
 	passed := 0
@@ -17,14 +34,6 @@ func BuildRunSummary(a *Archive) *RunSummary {
 		} else {
 			failed++
 		}
-	}
-
-	var totalDur int64
-	for _, s := range a.Steps {
-		totalDur += s.DurationMs
-	}
-	for _, s := range a.Cleanup {
-		totalDur += s.DurationMs
 	}
 
 	// Count categorized issues across all steps (main + cleanup).
@@ -40,7 +49,7 @@ func BuildRunSummary(a *Archive) *RunSummary {
 		StepCount:     len(a.Steps),
 		PassedCount:   passed,
 		FailedCount:   failed,
-		DurationMs:    totalDur,
+		DurationMs:    RunDurationMs(a),
 		PlanName:      extractPlanName(a),
 		Attempt:       a.Metadata.Attempt,
 		TotalAttempts: a.Metadata.TotalAttempts,

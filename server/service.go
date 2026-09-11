@@ -903,7 +903,7 @@ func toRunDetail(a *archive.Archive) *RunDetail {
 		deduplicateStepIDs(cleanup)
 	}
 
-	dur := totalDuration(a)
+	dur := archive.RunDurationMs(a)
 	return &RunDetail{
 		RunID:           a.Metadata.RunID,
 		Timestamp:       a.Metadata.Timestamp,
@@ -1421,18 +1421,6 @@ func marshalStepYAML(v any) string {
 }
 
 // --- existing helpers ---
-
-// totalDuration sums step durations across all steps and cleanup.
-func totalDuration(a *archive.Archive) int64 {
-	var total int64
-	for _, s := range a.Steps {
-		total += s.DurationMs
-	}
-	for _, s := range a.Cleanup {
-		total += s.DurationMs
-	}
-	return total
-}
 
 // extractPlanName returns a human-readable name for the plan, preferring
 // Prompt > Description > Goal.

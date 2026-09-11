@@ -188,3 +188,34 @@ func TestEngine_Run_StopAfter_UnknownStep(t *testing.T) {
 	assert.Contains(t, result.Error.Error(), `no step "nope"`)
 	assert.Empty(t, result.Steps, "no steps should run when the checkpoint is invalid")
 }
+
+// TestStopAfterError checks that naming a node instead of a step ID, which
+// run output shows side by side, points at the step IDs to use.
+func TestStopAfterError(t *testing.T) {
+	steps := []plan.Step{
+		{Node: "createCart"},
+		{ID: "addProduct", Node: "addItem"},
+		{ID: "addSocks", Node: "addItem"},
+		{ID: "checkout", Node: "checkoutCart"},
+	}
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "checkout", want: ""},
+		{name: "createCart", want: ""},
+		{name: "checkoutCart", want: `--stop-after: no step "checkoutCart" in plan (node checkoutCart is step "checkout")`},
+		{name: "addItem", want: `--stop-after: no step "addItem" in plan (node addItem is steps "addProduct", "addSocks")`},
+		{name: "nope", want: `--stop-after: no step "nope" in plan`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := stopAfterError(tt.name, steps)
+			if tt.want == "" {
+				assert.NoError(t, err)
+				return
+			}
+			assert.EqualError(t, err, tt.want)
+		})
+	}
+}

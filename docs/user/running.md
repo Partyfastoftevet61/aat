@@ -28,7 +28,7 @@ aat: executing plan (5 steps)...
   [1/5] listProducts         200  0ms
   [2/5] createCart           201  0ms
   [3/5] addItem              201  0ms
-  [4/5] checkoutCart         201  0ms
+  [4/5] checkout             201  0ms
         Order: ord_0001
         Receipt: RCPT-US-0001
         Tax: Sales tax 8.25%
@@ -40,11 +40,11 @@ aat: executing plan (5 steps)...
     deleteCart             204  0ms
     deleteOrder            204  0ms
 
-PASSED (5/5 steps, 352ms)
+PASSED (5/5 steps, 354ms)
 Archive: /path/to/shop/_output/runs/run-20260910-231357-eca8e0b3/archive.json
 ```
 
-Each step line shows the step index, node name, HTTP status code, and duration. Display outputs defined in the plan appear indented below their step, and cleanup steps follow the main steps.
+Each step line shows the step index, the step ID, the HTTP status code, and the duration. The step ID is what `--stop-after` and `dependsOn` take; when it differs from the node and the column has room, the node follows in parentheses (`addProduct (addItem)`), and on a narrow terminal the ID stands alone (`checkout`, whose node is `checkoutCart`). A step's duration runs from its first attempt to the end of its last, so retry waits count, and the outcome line reports the run's wall-clock time. Display outputs defined in the plan appear indented below their step, and cleanup steps follow the main steps.
 
 ## Checkpoints
 
@@ -156,38 +156,38 @@ Without flags, AAT prints the loading messages, then one line per step as it com
 aat: executing plan (15 steps)...
 
   [ 1/15] listProducts         200  0ms
-  [ 2/15] checkInventory       200  0ms  retried 1x: response_error
+  [ 2/15] checkInventory       200  609ms  retried 1x: response_error
   [ 3/15] createCart           201  0ms
-  [ 4/15] addItem              201  0ms
-  [ 5/15] addItem              201  0ms
+  [ 4/15] addProduct (addItem) 201  0ms
+  [ 5/15] addSocks (addItem)   201  0ms
   [ 6/15] getCart              200  0ms
   [ 7/15] applyCoupon          200  0ms
-  [ 8/15] checkoutCart         201  0ms
-          Order: ord_0009
-          Receipt: RCPT-US-0009
+  [ 8/15] checkout             201  0ms
+          Order: ord_0001
+          Receipt: RCPT-US-0001
           Tax: Sales tax 8.25%
           Total: $130.66
-  [ 9/15] paymentCharge        201  353ms
+  [ 9/15] paymentCharge        201  351ms
           Charged: $130.66
-  [10/15] shipOrder            201  600ms
-          Tracking: 1Z474941318
-  [11/15] getShipment          200  0ms  retried 2x: transient
+  [10/15] shipOrder            201  601ms
+          Tracking: 1Z298498081
+  [11/15] getShipment          200  1.3s  retried 2x: transient
   [12/15] deliverShipment      200  0ms
   [13/15] createReturn         201  0ms
-          RMA: RMA-US-0002
+          RMA: RMA-US-0001
   [14/15] paymentRefund        201  0ms
           Refunded: $130.66
-  [15/15] getOrder             200  0ms
+  [15/15] verify_getOrder      200  0ms
 
   cleanup:
     deleteOrder            204  0ms
     deleteCart             204  0ms
 
-PASSED (15/15 steps, 955ms)
+PASSED (15/15 steps, 2.9s)
 Archive: /path/to/shop/_output/runs/run-20260910-231537-19c3c1c5/archive.json
 ```
 
-Notes after the duration mark step-level retries (`retried 2x: transient`), failed assertions (`ASSERTIONS FAILED`, with each failed assertion's message indented below), and OpenAPI violations (`OAS: 2 warning(s)`). Display outputs appear indented below their step.
+Notes after the duration mark step-level retries (`retried 2x: transient`; the duration includes the waits between attempts), failed assertions (`ASSERTIONS FAILED`, with each failed assertion's message indented below), and OpenAPI violations (`OAS: 2 warning(s)`). Display outputs appear indented below their step.
 
 ### Quiet (`--quiet`)
 
@@ -232,7 +232,7 @@ $ aat run plan smoke --json
     "total_steps": 5,
     "passed_steps": 5,
     "failed_steps": 0,
-    "duration_ms": 1
+    "duration_ms": 353
   },
   "archive_path": "/path/to/shop/_output/runs/run-20260910-225512-5d4da602/archive.json"
 }
@@ -253,22 +253,25 @@ These codes are deterministic and designed for CI/CD pipelines. See [CI/CD Integ
 
 ## Interrupting a Run (Ctrl+C)
 
-Pressing Ctrl+C (or sending `SIGTERM`) during a run does not simply kill the process. AAT stops issuing new requests, runs cleanup for the resources created so far, and writes a partial archive:
+Pressing Ctrl+C (or sending `SIGTERM`) during a run does not simply kill the process. AAT cancels the request in progress, or the wait before a retry, and issues no new ones; it then runs cleanup for the resources created so far and writes a partial archive. Interrupting the shop's `full-lifecycle` plan while `shipOrder` is in flight:
 
 ```
-$ aat run plan full-checkout
-  [1/5] listProducts            200  52ms
-  [2/5] createCart              201  98ms
-^C
-aat: interrupted, writing partial results...
+$ aat run plan full-lifecycle
+...
+  [ 9/15] paymentCharge        201  352ms
+          Charged: $130.66
+  [10/15] shipOrder            ERROR: executing request: executing HTTP request: Post "http://localhost:8765/us/v1/orders/ord_0003/ship": interrupt signal received
 
   cleanup:
-    deleteCart                  204  41ms
+    deleteOrder            204  1ms
+    deleteCart             204  0ms
 
-ABORTED (2/5 steps, 191ms)
+ABORTED (10/15 steps, 1.4s)
+Archive: /path/to/shop/_output/runs/run-20260911-123328-b294e061/archive.json
+aat: interrupted, writing partial results...
 ```
 
-The archive records the outcome as `aborted` with the steps that completed, and the process exits with code `130`. Cleanup for an aborted run executes under its own 30-second budget so a hung API cannot keep the process alive indefinitely. In a batch, the plan that was running is marked `aborted`; plans that had not yet started still get an entry, but each stops before issuing a request and is recorded as `aborted` too. The batch outcome is `aborted` and the process exits `130`.
+The archive records the outcome as `aborted` with the steps that ran, the interrupted one included, and the process exits with code `130`. Cleanup for an aborted run executes under its own 30-second budget so a hung API cannot keep the process alive indefinitely. In a batch, the plan that was running is marked `aborted`; plans that had not yet started still get an entry, but each stops before issuing a request and is recorded as `aborted` too. The batch outcome is `aborted` and the process exits `130`.
 
 ## What Happens During Execution
 

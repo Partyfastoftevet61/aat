@@ -145,6 +145,25 @@ func TestFormatExecutionSummary_PassedRun(t *testing.T) {
 	assert.Contains(t, text, "inspect_archive")
 }
 
+// TestFormatExecutionSummary_StepIDsAndWallClock checks that two steps on one
+// node are told apart by step ID and that the total is the run's wall-clock
+// time, retry waits included.
+func TestFormatExecutionSummary_StepIDsAndWallClock(t *testing.T) {
+	result := &engine.RunResult{
+		Outcome:  engine.OutcomePassed,
+		Duration: 2900 * time.Millisecond,
+		Steps: []engine.StepResult{
+			{StepID: "addProduct", Node: "addItem", StatusCode: 201, Duration: time.Millisecond, Response: &adapter.Response{StatusCode: 201}},
+			{StepID: "addSocks", Node: "addItem", StatusCode: 201, Duration: time.Millisecond, Response: &adapter.Response{StatusCode: 201}},
+		},
+	}
+
+	text := formatExecutionSummary(result, "run-test-005")
+	assert.Contains(t, text, "| 1 | addProduct | addItem | 201 |")
+	assert.Contains(t, text, "| 2 | addSocks | addItem | 201 |")
+	assert.Contains(t, text, "**Total duration:** 2.9s")
+}
+
 func TestFormatExecutionSummary_FailedRun(t *testing.T) {
 	result := &engine.RunResult{
 		Outcome: engine.OutcomeFailed,

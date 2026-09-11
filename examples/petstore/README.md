@@ -33,13 +33,13 @@ cd examples/petstore
 You should see output like:
 
 ```
-  [1/2] createPet            200  312ms
-  [2/2] getPet               200  89ms
+  [1/2] createPet            200  164ms
+  [2/2] getPet               200  38ms
 
   cleanup:
-    deletePet              200  45ms
+    deletePet              200  40ms
 
-PASSED (2/2 steps, 446ms)
+PASSED (2/2 steps, 243ms)
 Archive: _output/runs/run-XXXXXXXX-XXXXXX-XXXXXXXX/archive.json
 ```
 

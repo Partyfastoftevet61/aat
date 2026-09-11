@@ -203,7 +203,7 @@ func executeBatch(ba *batchArgs) int {
 		ba.Quiet = true
 	}
 
-	ti := DetectTerminal()
+	ti := DetectTerminal(os.Stdout)
 	color := ti.IsTTY
 
 	var out io.Writer = os.Stdout
@@ -463,7 +463,7 @@ func batchCommand(ctx context.Context, args *batchArgs, out io.Writer) *batchRes
 	batchDir := filepath.Join(args.OutputDir, batchID)
 
 	// Detect terminal for progress rendering and color
-	ti := DetectTerminal()
+	ti := DetectTerminal(os.Stdout)
 
 	logf("\n")
 

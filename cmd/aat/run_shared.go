@@ -150,13 +150,11 @@ func buildRunSummary(result *engine.RunResult, archivePath string) *RunSummary {
 		StoppedAt:   result.StoppedAt,
 	}
 
-	var totalDur time.Duration
 	var passed, failed int
 
 	for _, step := range result.Steps {
 		ss := toStepSummary(step)
 		s.Steps = append(s.Steps, ss)
-		totalDur += step.Duration
 		if ss.Passed {
 			passed++
 		} else {
@@ -165,16 +163,14 @@ func buildRunSummary(result *engine.RunResult, archivePath string) *RunSummary {
 	}
 
 	for _, step := range result.CleanupResults {
-		ss := toStepSummary(step)
-		s.Cleanup = append(s.Cleanup, ss)
-		totalDur += step.Duration
+		s.Cleanup = append(s.Cleanup, toStepSummary(step))
 	}
 
 	s.Summary = SummaryStats{
 		TotalSteps:  len(result.Steps),
 		PassedSteps: passed,
 		FailedSteps: failed,
-		DurationMs:  totalDur.Milliseconds(),
+		DurationMs:  result.Elapsed().Milliseconds(),
 		Issues:      countEngineIssues(result),
 	}
 
@@ -205,12 +201,8 @@ func countEngineIssues(result *engine.RunResult) map[string]int {
 
 // toStepSummary converts a single engine.StepResult to a StepSummary.
 func toStepSummary(step engine.StepResult) StepSummary {
-	name := step.StepID
-	if name == "" {
-		name = step.Node
-	}
 	ss := StepSummary{
-		Name:       name,
+		Name:       resultStepID(step),
 		Node:       step.Node,
 		Status:     step.StatusCode,
 		DurationMs: step.Duration.Milliseconds(),
@@ -274,14 +266,6 @@ func failedAssertions(v *validate.MechanicalResult) []string {
 		}
 	}
 	return msgs
-}
-
-// errorCategory returns the error classification category string for a step.
-func errorCategory(step engine.StepResult) string {
-	if step.ErrorClass != nil {
-		return step.ErrorClass.Category.String()
-	}
-	return "unknown"
 }
 
 // outcomeMessage produces a summary error string.

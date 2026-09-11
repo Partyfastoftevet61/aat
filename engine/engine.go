@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -115,9 +116,15 @@ func (e *Engine) WithOASSpecs(cache *oas.SpecCache, graphOAS string, strict bool
 // Run executes a plan: validates, sorts steps topologically, runs each in order,
 // and executes cleanup on completion.
 func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
-	// Ensure OnRunComplete fires on every exit path.
+	// Time the run and fire OnRunComplete on every exit path.
+	start := time.Now()
 	defer func() {
-		if e.Observer != nil && result != nil {
+		if result == nil {
+			return
+		}
+		result.StartTime = start
+		result.Duration = time.Since(start)
+		if e.Observer != nil {
 			e.Observer.OnRunComplete(result)
 		}
 	}()
@@ -137,19 +144,8 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 	// 2b. Validate the stop-after step exists, if set, so a typo fails fast
 	// instead of silently running the whole plan.
 	if e.stopAfterStep != "" {
-		found := false
-		for _, step := range sorted {
-			if step.StepID() == e.stopAfterStep {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return &RunResult{
-				Outcome:          OutcomeError,
-				Error:            fmt.Errorf("--stop-after: no step %q in plan", e.stopAfterStep),
-				InstantiatedPlan: instantiatedPlan,
-			}
+		if err := stopAfterError(e.stopAfterStep, sorted); err != nil {
+			return &RunResult{Outcome: OutcomeError, Error: err, InstantiatedPlan: instantiatedPlan}
 		}
 	}
 
@@ -181,21 +177,8 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 	}
 
 	for i, step := range sorted {
-		select {
-		case <-ctx.Done():
-			// Use a detached context for cleanup so cleanup steps can complete
-			// even though the parent context is cancelled.
-			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cleanupCancel()
-			cleanupResults := e.runCleanup(cleanupCtx, instantiatedPlan, cleanupStack, state, OutcomeAborted)
-			return &RunResult{
-				Outcome:          OutcomeAborted,
-				Steps:            stepResults,
-				CleanupResults:   cleanupResults,
-				Error:            fmt.Errorf("execution cancelled: %w", ctx.Err()),
-				InstantiatedPlan: instantiatedPlan,
-			}
-		default:
+		if ctx.Err() != nil {
+			return e.abortedResult(ctx, instantiatedPlan, cleanupStack, state, stepResults)
 		}
 
 		node, ok := e.graph.Nodes[step.Node]
@@ -227,6 +210,11 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 		}
 
 		if stepResult.Error != nil {
+			// A step that failed because the run was interrupted, mid-request or
+			// while waiting to retry, is an abort, not an infrastructure error.
+			if ctx.Err() != nil {
+				return e.abortedResult(ctx, instantiatedPlan, cleanupStack, state, stepResults)
+			}
 			outcome = OutcomeError
 			// Run cleanup before returning
 			cleanupResults := e.runCleanup(ctx, instantiatedPlan, cleanupStack, state, outcome)
@@ -268,7 +256,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 							Outcome:          outcome,
 							Steps:            stepResults,
 							CleanupResults:   cleanupResults,
-							Error:            fmt.Errorf("step %q failed mechanical validation", step.Node),
+							Error:            fmt.Errorf("step %s failed mechanical validation", stepRef(step)),
 							InstantiatedPlan: instantiatedPlan,
 						}
 					}
@@ -286,7 +274,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 				Outcome:          outcome,
 				Steps:            stepResults,
 				CleanupResults:   cleanupResults,
-				Error:            fmt.Errorf("step %q: expected failure status %v but got %d", step.Node, step.ExpectFailure.Status, stepResult.StatusCode),
+				Error:            fmt.Errorf("step %s: expected failure status %v but got %d", stepRef(step), step.ExpectFailure.Status, stepResult.StatusCode),
 				InstantiatedPlan: instantiatedPlan,
 			}
 		}
@@ -299,7 +287,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 				Outcome:          outcome,
 				Steps:            stepResults,
 				CleanupResults:   cleanupResults,
-				Error:            fmt.Errorf("step %q returned status %d", step.Node, stepResult.StatusCode),
+				Error:            fmt.Errorf("step %s returned status %d", stepRef(step), stepResult.StatusCode),
 				InstantiatedPlan: instantiatedPlan,
 			}
 		}
@@ -314,7 +302,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 				Outcome:          outcome,
 				Steps:            stepResults,
 				CleanupResults:   cleanupResults,
-				Error:            fmt.Errorf("step %q: %s", step.Node, stepResult.ResponseBodyError.Summary()),
+				Error:            fmt.Errorf("step %s: %s", stepRef(step), stepResult.ResponseBodyError.Summary()),
 				InstantiatedPlan: instantiatedPlan,
 			}
 		}
@@ -357,7 +345,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 					Outcome:          outcome,
 					Steps:            stepResults,
 					CleanupResults:   cleanupResults,
-					Error:            fmt.Errorf("step %q failed mechanical validation", step.Node),
+					Error:            fmt.Errorf("step %s failed mechanical validation", stepRef(step)),
 					InstantiatedPlan: instantiatedPlan,
 				}
 			}
@@ -372,6 +360,9 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 	// own assertions), then cleanup.
 	verResults, verOutcome, verErr := e.runVerification(ctx, verificationSteps, state, len(sorted), total)
 	stepResults = append(stepResults, verResults...)
+	if verOutcome == OutcomeError && ctx.Err() != nil {
+		return e.abortedResult(ctx, instantiatedPlan, cleanupStack, state, stepResults)
+	}
 	if verOutcome != OutcomePassed {
 		outcome = verOutcome
 	}
@@ -413,13 +404,21 @@ func (e *Engine) runCleanup(ctx context.Context, p *plan.Plan, cleanupStack *Cle
 		e.Observer.OnCleanupStart(total)
 	}
 
-	results := make([]StepResult, 0, total)
-	// Cleanup must run even when the parent context is cancelled.
+	// Cleanup must run even when the run's context is cancelled. After an
+	// interrupt it gets abortedCleanupBudget, so a hung API cannot keep the
+	// process alive.
 	cleanupCtx := context.WithoutCancel(ctx)
+	if outcome == OutcomeAborted {
+		var cancel context.CancelFunc
+		cleanupCtx, cancel = context.WithTimeout(cleanupCtx, abortedCleanupBudget)
+		defer cancel()
+	}
+
+	results := make([]StepResult, 0, total)
 	for _, entry := range planEntries {
 		results = append(results, executeCleanupEntry(cleanupCtx, entry, e.graph, e.registry, e.router, state))
 	}
-	results = append(results, cleanupStack.ExecuteAll(ctx, e.graph, e.registry, e.router, state)...)
+	results = append(results, cleanupStack.ExecuteAll(cleanupCtx, e.graph, e.registry, e.router, state)...)
 
 	if e.Observer != nil {
 		for i, cr := range results {
@@ -427,6 +426,22 @@ func (e *Engine) runCleanup(ctx context.Context, p *plan.Plan, cleanupStack *Cle
 		}
 	}
 	return results
+}
+
+// abortedCleanupBudget bounds the cleanup of an interrupted run.
+const abortedCleanupBudget = 30 * time.Second
+
+// abortedResult ends a run whose context was cancelled, such as by Ctrl+C:
+// it runs cleanup under abortedCleanupBudget and records the outcome as
+// aborted with the steps that ran.
+func (e *Engine) abortedResult(ctx context.Context, p *plan.Plan, cleanupStack *CleanupStack, state *RunState, steps []StepResult) *RunResult {
+	return &RunResult{
+		Outcome:          OutcomeAborted,
+		Steps:            steps,
+		CleanupResults:   e.runCleanup(ctx, p, cleanupStack, state, OutcomeAborted),
+		Error:            fmt.Errorf("execution cancelled: %w", ctx.Err()),
+		InstantiatedPlan: p,
+	}
 }
 
 // cleanupRunOnMatches reports whether a plan-level cleanup step with the given
@@ -477,11 +492,11 @@ func (e *Engine) runVerification(ctx context.Context, steps []plan.Step, state *
 		case sr.Error != nil:
 			return results, OutcomeError, sr.Error
 		case sr.StatusCode >= 400:
-			failure = fmt.Errorf("verification step %q returned status %d", step.StepID(), sr.StatusCode)
+			failure = fmt.Errorf("verification step %s returned status %d", stepRef(step), sr.StatusCode)
 		case sr.ResponseBodyError != nil:
-			failure = fmt.Errorf("verification step %q: %s", step.StepID(), sr.ResponseBodyError.Summary())
+			failure = fmt.Errorf("verification step %s: %s", stepRef(step), sr.ResponseBodyError.Summary())
 		case sr.Validation != nil && !sr.Validation.Passed:
-			failure = fmt.Errorf("verification step %q failed mechanical validation", step.StepID())
+			failure = fmt.Errorf("verification step %s failed mechanical validation", stepRef(step))
 		}
 		if failure == nil {
 			failure = e.oasStrictError(step, &sr)
@@ -539,7 +554,41 @@ func (e *Engine) oasStrictError(step plan.Step, result *StepResult) error {
 	if n == 0 {
 		return nil
 	}
-	return fmt.Errorf("step %q: OAS validation failed in strict mode (%d error(s))", step.StepID(), n)
+	return fmt.Errorf("step %s: OAS validation failed in strict mode (%d error(s))", stepRef(step), n)
+}
+
+// stepRef names a step in an error message by its ID, which is what
+// --stop-after, dependsOn, and the archive use, adding the node when the two
+// differ so that two steps on one node can be told apart: "addSocks" (addItem).
+func stepRef(step plan.Step) string {
+	id := step.StepID()
+	if id == step.Node {
+		return strconv.Quote(id)
+	}
+	return fmt.Sprintf("%q (%s)", id, step.Node)
+}
+
+// stopAfterError returns an error when no step has the ID --stop-after names.
+// Run output shows a node beside each step ID, so when the name is a node the
+// error lists the IDs of the steps that run it.
+func stopAfterError(name string, steps []plan.Step) error {
+	var ids []string
+	for _, step := range steps {
+		if step.StepID() == name {
+			return nil
+		}
+		if step.Node == name {
+			ids = append(ids, strconv.Quote(step.StepID()))
+		}
+	}
+	switch len(ids) {
+	case 0:
+		return fmt.Errorf("--stop-after: no step %q in plan", name)
+	case 1:
+		return fmt.Errorf("--stop-after: no step %q in plan (node %s is step %s)", name, name, ids[0])
+	default:
+		return fmt.Errorf("--stop-after: no step %q in plan (node %s is steps %s)", name, name, strings.Join(ids, ", "))
+	}
 }
 
 // fillValuesByOutputName wires any node input the step leaves unset to the

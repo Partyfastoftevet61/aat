@@ -344,17 +344,6 @@ func TestMatchSteps_DuplicateNodes(t *testing.T) {
 	assert.NotNil(t, pairs[1].s2)
 }
 
-// --- totalDurationMs ---
-
-func TestTotalDurationMs(t *testing.T) {
-	a := testArchive("passed",
-		testStep("a", 200, 100),
-		testStep("b", 200, 250),
-	)
-	a.Cleanup = []archive.StepRecord{testStep("c", 200, 50)}
-	assert.Equal(t, int64(400), totalDurationMs(a))
-}
-
 // --- findFailedSteps ---
 
 func TestFindFailedSteps_MixedResults(t *testing.T) {

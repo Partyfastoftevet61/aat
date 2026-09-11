@@ -13,14 +13,16 @@ type TerminalInfo struct {
 	Height int
 }
 
-// DetectTerminal checks whether stdout is a terminal and queries its size.
+// DetectTerminal checks whether f, the file progress output goes to, is a
+// terminal and queries its size. Callers pass the file they write to: with
+// --dump-state -, progress goes to stderr while stdout carries the state.
 // Returns sensible defaults (80x24, non-TTY) on failure.
 // Honors NO_COLOR (https://no-color.org/) by forcing non-TTY mode.
-func DetectTerminal() TerminalInfo {
+func DetectTerminal(f *os.File) TerminalInfo {
 	if os.Getenv("NO_COLOR") != "" {
 		return TerminalInfo{IsTTY: false, Width: 80, Height: 24}
 	}
-	fd := int(os.Stdout.Fd())
+	fd := int(f.Fd())
 	if !term.IsTerminal(fd) {
 		return TerminalInfo{IsTTY: false, Width: 80, Height: 24}
 	}

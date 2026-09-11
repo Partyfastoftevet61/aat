@@ -22,8 +22,9 @@ func ToArchive(result *RunResult, meta archive.ArchiveMetadata, baseURL string, 
 	a := &archive.Archive{
 		Metadata: meta,
 		Result: archive.ArchiveResult{
-			Outcome: result.Outcome.String(),
-			Error:   errString(result.Error),
+			Outcome:    result.Outcome.String(),
+			Error:      errString(result.Error),
+			DurationMs: result.Elapsed().Milliseconds(),
 		},
 	}
 

@@ -94,6 +94,13 @@ func TestRetryOnTransientStatus(t *testing.T) {
 	assert.Equal(t, []ErrorCategory{CategoryTransient, CategoryTransient}, result.Steps[0].RetriedOn,
 		"a step that recovers still records why it retried")
 	assert.Equal(t, int32(3), callCount.Load())
+
+	// The step is timed from its first attempt, so its duration includes both
+	// backoff waits (at least 375ms and 750ms after jitter).
+	step := result.Steps[0]
+	assert.GreaterOrEqual(t, step.Duration, 1125*time.Millisecond, "retry waits count toward the step's duration")
+	assert.False(t, step.StartTime.Before(result.StartTime), "the step starts inside the run")
+	assert.GreaterOrEqual(t, result.Duration, step.Duration, "the run lasts at least as long as its step")
 }
 
 func TestRetryExhausted(t *testing.T) {
@@ -217,11 +224,13 @@ func TestRetryRespectsContextCancellation(t *testing.T) {
 
 	result := engine.Run(ctx, p)
 
-	// Should fail due to context cancellation during backoff
-	assert.NotEqual(t, OutcomePassed, result.Outcome)
+	// A run cancelled while a step waits to retry is aborted, not an error.
+	assert.Equal(t, OutcomeAborted, result.Outcome)
+	assert.ErrorIs(t, result.Error, context.DeadlineExceeded)
 	require.Len(t, result.Steps, 1)
 	// Should have tried at least once
 	assert.GreaterOrEqual(t, callCount.Load(), int32(1))
+	assert.Equal(t, []ErrorCategory{CategoryTransient}, result.Steps[0].RetriedOn, "the step still says why it was retrying")
 }
 
 func TestExistingBehaviorPreserved(t *testing.T) {

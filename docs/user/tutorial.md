@@ -607,7 +607,7 @@ aat: executing plan (5 steps)...
   [4/5] checkoutCart         201  0ms
         Order: ord_0001
         Total: $103.40
-  [5/5] paymentCharge        404  0ms  ASSERTIONS FAILED  OAS: 1 warning(s)
+  [5/5] pay (paymentCharge)  404  0ms  ASSERTIONS FAILED  OAS: 1 warning(s)
         status: expected status 201, got 404
         fieldEquals: field "paymentStatus" does not exist
 
@@ -615,7 +615,7 @@ aat: executing plan (5 steps)...
     deleteOrder            204  0ms
     deleteCart             204  0ms
 
-FAILED: step "paymentCharge" returned status 404
+FAILED: step "pay" (paymentCharge) returned status 404
 OAS: 1 warning(s)
 Archive: /home/you/shop-tutorial/runs/run-20260910-235242-8e0a1311/archive.json
 ```
@@ -676,7 +676,7 @@ aat: executing plan (5 steps)...
   [4/5] checkoutCart         201  0ms
         Order: ord_0002
         Total: $103.40
-  [5/5] paymentCharge        201  351ms
+  [5/5] pay (paymentCharge)  201  351ms
 
   cleanup:
     deleteOrder            204  0ms
@@ -774,7 +774,7 @@ aat: executing plan (5 steps)...
   [4/5] checkoutCart         201  0ms
         Order: ord_0003
         Total: $200.82
-  [5/5] paymentCharge        201  351ms
+  [5/5] pay (paymentCharge)  201  351ms
 
   cleanup:
     deleteCart             204  0ms
@@ -919,7 +919,7 @@ aat: executing plan (5 steps)...
   [4/5] checkoutCart         201  0ms
         Order: ord_0001
         Total: €87.78
-  [5/5] paymentCharge        201  351ms
+  [5/5] pay (paymentCharge)  201  351ms
 
   cleanup:
     deleteOrder            204  0ms

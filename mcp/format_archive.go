@@ -11,7 +11,7 @@ import (
 // formatArchiveListEntry returns a one-line Markdown summary for an archive.
 func formatArchiveListEntry(a *archive.Archive) string {
 	stepCount := len(a.Steps)
-	dur := totalDurationMs(a)
+	dur := archive.RunDurationMs(a)
 	return fmt.Sprintf("**%s** — %s — %s — %s (%d steps)",
 		a.Metadata.RunID,
 		a.Metadata.Timestamp.Format("2006-01-02 15:04:05"),
@@ -29,7 +29,7 @@ func formatArchiveDetail(a *archive.Archive) string {
 	fmt.Fprintf(&b, "# Run: %s\n\n", a.Metadata.RunID)
 	fmt.Fprintf(&b, "- **Timestamp:** %s\n", a.Metadata.Timestamp.Format("2006-01-02 15:04:05"))
 	fmt.Fprintf(&b, "- **Outcome:** %s\n", a.Result.Outcome)
-	fmt.Fprintf(&b, "- **Duration:** %s\n", formatDurationMs(totalDurationMs(a)))
+	fmt.Fprintf(&b, "- **Duration:** %s\n", formatDurationMs(archive.RunDurationMs(a)))
 	fmt.Fprintf(&b, "- **Environment:** %s\n", a.Metadata.Environment)
 	if a.Result.Error != "" {
 		fmt.Fprintf(&b, "- **Error:** %s\n", a.Result.Error)
@@ -283,8 +283,8 @@ func formatArchiveDiff(a1, a2 *archive.Archive) string {
 		a2.Metadata.Timestamp.Format("2006-01-02 15:04:05"))
 	fmt.Fprintf(&b, "| **Outcome** | %s | %s |\n", a1.Result.Outcome, a2.Result.Outcome)
 	fmt.Fprintf(&b, "| **Duration** | %s | %s |\n",
-		formatDurationMs(totalDurationMs(a1)),
-		formatDurationMs(totalDurationMs(a2)))
+		formatDurationMs(archive.RunDurationMs(a1)),
+		formatDurationMs(archive.RunDurationMs(a2)))
 	fmt.Fprintf(&b, "| **Steps** | %d | %d |\n", len(a1.Steps), len(a2.Steps))
 	b.WriteString("\n")
 
@@ -427,18 +427,6 @@ func suggestNextSteps(category string) string {
 }
 
 // --- internal helpers ---
-
-// totalDurationMs sums step durations across all steps and cleanup.
-func totalDurationMs(a *archive.Archive) int64 {
-	var total int64
-	for _, s := range a.Steps {
-		total += s.DurationMs
-	}
-	for _, s := range a.Cleanup {
-		total += s.DurationMs
-	}
-	return total
-}
 
 // findFailedSteps returns steps that have errors, status >= 400, or failed validation.
 func findFailedSteps(steps []archive.StepRecord) []archive.StepRecord {

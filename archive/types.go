@@ -191,6 +191,10 @@ type RunSummary struct {
 type ArchiveResult struct {
 	Outcome string `json:"outcome"`
 	Error   string `json:"error,omitempty"`
+	// DurationMs is the run's wall-clock time, retry waits and cleanup
+	// included. Archives written before it was recorded omit it; see
+	// RunDurationMs.
+	DurationMs int64 `json:"durationMs,omitempty"`
 }
 
 // BatchArchive is the top-level JSON structure for a batch run (batch.json).

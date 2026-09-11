@@ -713,6 +713,29 @@ func TestGetRun_DurationDisplay(t *testing.T) {
 	assert.Equal(t, "1.5s", run.Steps[0].DurationDisplay)
 }
 
+// TestRunDuration_PrefersRecordedWallClock checks that the run list and run
+// detail show the wall-clock time the archive records, which includes retry
+// waits, rather than the sum of step durations.
+func TestRunDuration_PrefersRecordedWallClock(t *testing.T) {
+	dir := t.TempDir()
+
+	a := makeArchive("run-20260101-100000-aaaa0001", "passed", makeStep("search", 200, 100))
+	a.Cleanup = []archive.StepRecord{makeStep("cleanup", 200, 50)}
+	a.Result.DurationMs = 2900
+	writeArchive(t, dir, a)
+
+	svc := NewArchiveService(dir)
+	runs, err := svc.ListRuns(0, false)
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+	assert.Equal(t, int64(2900), runs[0].DurationMs)
+
+	run, err := svc.GetRun("run-20260101-100000-aaaa0001")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2900), run.DurationMs)
+	assert.Equal(t, "2.9s", run.DurationDisplay)
+}
+
 // --- GetStep ---
 
 func TestGetStep_ByNode(t *testing.T) {

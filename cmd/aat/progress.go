@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gburgyan/aat/engine"
 	"github.com/gburgyan/aat/plan"
@@ -15,7 +15,7 @@ import (
 type CLIProgressObserver struct {
 	out   io.Writer
 	term  TerminalInfo
-	total int // cached from OnRunStart for duration calculation
+	total int // cached from OnRunStart for the ABORTED and STOPPED counts
 }
 
 func (o *CLIProgressObserver) OnRunStart(total int) {
@@ -27,75 +27,16 @@ func (o *CLIProgressObserver) OnStepStart(index, total int, step plan.Step) {
 }
 
 func (o *CLIProgressObserver) OnStepComplete(index, total int, result engine.StepResult) {
-	totalStr := fmt.Sprintf("%d", total)
-	width := len(totalStr)
-	color := o.term.IsTTY
-
-	// Dynamic node column width (overhead=60 gives ncw=20 at 80-col terminal)
-	ncw := nodeColWidth(o.term.Width, 60)
-	nodeStr := formatNodeCol(result.Node, ncw, color)
-
-	// indent = "  [" (3) + width + "/" (1) + len(totalStr) + "] " (2)
-	indent := 6 + width + len(totalStr)
-	prefix := fmt.Sprintf("  [%*d/%s] %s", width, index+1, totalStr, nodeStr)
-
-	if result.Error != nil {
-		errLabel := colorize("ERROR", colorRed, color)
-		if result.RetryCount > 0 {
-			cat := errorCategory(result)
-			if o.term.Width > 100 && result.StatusCode > 0 {
-				_, _ = fmt.Fprintf(o.out, "%s %s [%s] (retried %dx, last status %d)\n", prefix, errLabel, cat, result.RetryCount, result.StatusCode)
-			} else {
-				_, _ = fmt.Fprintf(o.out, "%s %s [%s] (after %d retries)\n", prefix, errLabel, cat, result.RetryCount)
-			}
-		} else {
-			_, _ = fmt.Fprintf(o.out, "%s %s: %s\n", prefix, errLabel, result.Error)
-		}
-	} else if result.Response != nil {
-		status := colorStatus(result.StatusCode, color)
-		durStr := fmt.Sprintf("%dms", result.Duration.Milliseconds())
-		if color {
-			durStr = colorDim + durStr + colorReset
-		}
-		_, _ = fmt.Fprintf(o.out, "%s %s  %s%s\n", prefix, status, durStr, stepMarks(result, color))
-		for _, do := range result.DisplayOutputs {
-			_, _ = fmt.Fprintf(o.out, "%*s%s: %v\n", indent, "", do.Label, do.Value)
-		}
-		for _, msg := range failedAssertions(result.Validation) {
-			_, _ = fmt.Fprintf(o.out, "%*s%s\n", indent, "", colorize(msg, colorYellow, color))
-		}
-	} else {
-		_, _ = fmt.Fprintf(o.out, "%s (no response)\n", prefix)
-	}
+	writeStepResult(o.out, "  ", index, total, result, o.term)
 }
 
 func (o *CLIProgressObserver) OnCleanupStart(total int) {
-	if o.term.IsTTY {
-		_, _ = fmt.Fprintf(o.out, "\n  %scleanup:%s\n", colorDim, colorReset)
-	} else {
-		_, _ = fmt.Fprintln(o.out, "\n  cleanup:")
-	}
+	_, _ = fmt.Fprintln(o.out)
+	writeCleanupHeader(o.out, "  ", o.term.IsTTY)
 }
 
 func (o *CLIProgressObserver) OnCleanupStepComplete(index, total int, result engine.StepResult) {
-	color := o.term.IsTTY
-	ncw := nodeColWidth(o.term.Width, 58)
-	node := fmt.Sprintf("%-*s", ncw, truncateNode(result.Node, ncw))
-	prefix := fmt.Sprintf("    %s", node)
-
-	if result.Error != nil {
-		errLabel := colorize("ERROR", colorRed, color)
-		_, _ = fmt.Fprintf(o.out, "%s %s: %s\n", prefix, errLabel, result.Error)
-	} else if result.Response != nil {
-		status := colorStatus(result.StatusCode, color)
-		durStr := fmt.Sprintf("%dms", result.Duration.Milliseconds())
-		if color {
-			durStr = colorDim + durStr + colorReset
-		}
-		_, _ = fmt.Fprintf(o.out, "%s %s  %s\n", prefix, status, durStr)
-	} else {
-		_, _ = fmt.Fprintf(o.out, "%s (no response)\n", prefix)
-	}
+	writeCleanupResult(o.out, "    ", result, o.term)
 }
 
 func (o *CLIProgressObserver) OnRunComplete(result *engine.RunResult) {
@@ -103,21 +44,110 @@ func (o *CLIProgressObserver) OnRunComplete(result *engine.RunResult) {
 	_, _ = fmt.Fprintln(o.out)
 	total := len(result.Steps)
 	planned := max(o.total, total) // steps the run meant to execute, for ABORTED and STOPPED
+	elapsed := formatDuration(result.Elapsed())
 	switch result.Outcome {
 	case engine.OutcomePassed:
-		_, _ = fmt.Fprintf(o.out, "%s (%d/%d steps, %s)\n", colorOutcome("PASSED", color), total, total, observerTotalDuration(result))
+		_, _ = fmt.Fprintf(o.out, "%s (%d/%d steps, %s)\n", colorOutcome("PASSED", color), total, total, elapsed)
 	case engine.OutcomeFailed:
 		_, _ = fmt.Fprintf(o.out, "%s: %s\n", colorOutcome("FAILED", color), outcomeMessage(result))
 	case engine.OutcomeError:
 		_, _ = fmt.Fprintf(o.out, "%s: %s\n", colorOutcome("ERROR", color), outcomeMessage(result))
 	case engine.OutcomeAborted:
-		_, _ = fmt.Fprintf(o.out, "%s (%d/%d steps, %s)\n", colorOutcome("ABORTED", color), total, planned, observerTotalDuration(result))
+		_, _ = fmt.Fprintf(o.out, "%s (%d/%d steps, %s)\n", colorOutcome("ABORTED", color), total, planned, elapsed)
 	case engine.OutcomeStopped:
-		_, _ = fmt.Fprintf(o.out, "%s at %q (%d/%d steps, %s)\n", colorOutcome("STOPPED", color), result.StoppedAt, total, planned, observerTotalDuration(result))
+		_, _ = fmt.Fprintf(o.out, "%s at %q (%d/%d steps, %s)\n", colorOutcome("STOPPED", color), result.StoppedAt, total, planned, elapsed)
 	}
-	if n := oasWarningCount(result.Steps); n > 0 {
-		_, _ = fmt.Fprintf(o.out, "OAS: %s\n", colorize(fmt.Sprintf("%d warning(s)", n), colorYellow, color))
+	writeOASTotal(o.out, "", result.Steps, color)
+}
+
+// OnRetryStart implements RetryNotifier for plan-level retries.
+func (o *CLIProgressObserver) OnRetryStart(attempt, maxAttempts int) {
+	label := colorize(fmt.Sprintf("retry %d/%d", attempt, maxAttempts), colorYellow, o.term.IsTTY)
+	_, _ = fmt.Fprintf(o.out, "\n%s\n", label)
+}
+
+// writeStepResult prints one completed step: a line with its position, label,
+// status, duration, and marks, then its display outputs and failed assertions
+// indented beneath the label. lead is the indent before "[i/n]": the plan
+// observer uses two spaces and the sequential batch observer four, so both
+// print the same lines.
+func writeStepResult(w io.Writer, lead string, index, total int, result engine.StepResult, term TerminalInfo) {
+	color := term.IsTTY
+	totalStr := strconv.Itoa(total)
+	label := stepLabel(result, nodeColWidth(term.Width, 60), color)
+	prefix := fmt.Sprintf("%s[%*d/%s] %s", lead, len(totalStr), index+1, totalStr, label)
+	// Sub-lines start under the label: lead, "[", the index, "/", the total, "] ".
+	indent := strings.Repeat(" ", len(lead)+4+2*len(totalStr))
+
+	switch {
+	case result.Error != nil:
+		_, _ = fmt.Fprintf(w, "%s %s: %s%s\n", prefix, colorize("ERROR", colorRed, color), result.Error, stepMarks(result, color))
+	case result.Response != nil:
+		duration := colorize(formatDuration(result.Duration), colorDim, color)
+		_, _ = fmt.Fprintf(w, "%s %s  %s%s\n", prefix, colorStatus(result.StatusCode, color), duration, stepMarks(result, color))
+		for _, do := range result.DisplayOutputs {
+			_, _ = fmt.Fprintf(w, "%s%s: %v\n", indent, do.Label, do.Value)
+		}
+		for _, msg := range failedAssertions(result.Validation) {
+			_, _ = fmt.Fprintf(w, "%s%s\n", indent, colorize(msg, colorYellow, color))
+		}
+	default:
+		_, _ = fmt.Fprintf(w, "%s (no response)\n", prefix)
 	}
+}
+
+// writeCleanupHeader prints the line that opens the cleanup section.
+func writeCleanupHeader(w io.Writer, lead string, color bool) {
+	_, _ = fmt.Fprintf(w, "%s%s\n", lead, colorize("cleanup:", colorDim, color))
+}
+
+// writeCleanupResult prints one cleanup step: its label, then its status and
+// duration or its error.
+func writeCleanupResult(w io.Writer, lead string, result engine.StepResult, term TerminalInfo) {
+	color := term.IsTTY
+	prefix := lead + stepLabel(result, nodeColWidth(term.Width, 58), false)
+	switch {
+	case result.Error != nil:
+		_, _ = fmt.Fprintf(w, "%s %s: %s\n", prefix, colorize("ERROR", colorRed, color), result.Error)
+	case result.Response != nil:
+		duration := colorize(formatDuration(result.Duration), colorDim, color)
+		_, _ = fmt.Fprintf(w, "%s %s  %s\n", prefix, colorStatus(result.StatusCode, color), duration)
+	default:
+		_, _ = fmt.Fprintf(w, "%s (no response)\n", prefix)
+	}
+}
+
+// writeOASTotal prints the run's count of OpenAPI violations, when it has any.
+func writeOASTotal(w io.Writer, lead string, steps []engine.StepResult, color bool) {
+	if n := oasWarningCount(steps); n > 0 {
+		_, _ = fmt.Fprintf(w, "%sOAS: %s\n", lead, colorize(fmt.Sprintf("%d warning(s)", n), colorYellow, color))
+	}
+}
+
+// stepLabel renders a step's name for a progress line, padded to width visible
+// columns. It is the step ID, which --stop-after, dependsOn, and the archive
+// use, followed by the node in parentheses when the two differ and both fit:
+// "checkout (checkoutCart)". A result without a step ID shows its node.
+func stepLabel(result engine.StepResult, width int, color bool) string {
+	id := resultStepID(result)
+	if result.Node == "" || result.Node == id || len(id)+len(result.Node)+3 > width {
+		return formatNodeCol(id, width, color)
+	}
+	suffix := " (" + result.Node + ")"
+	pad := strings.Repeat(" ", width-len(id)-len(suffix))
+	if !color {
+		return id + suffix + pad
+	}
+	return colorCyan + id + colorReset + colorDim + suffix + colorReset + pad
+}
+
+// resultStepID returns the step ID of a result, or its node for a result that
+// carries no ID.
+func resultStepID(result engine.StepResult) string {
+	if result.StepID != "" {
+		return result.StepID
+	}
+	return result.Node
 }
 
 // stepMarks renders the notes after a step's status and duration: retries,
@@ -147,17 +177,7 @@ func oasWarningCount(steps []engine.StepResult) int {
 	return n
 }
 
-// OnRetryStart implements RetryNotifier for plan-level retries.
-func (o *CLIProgressObserver) OnRetryStart(attempt, maxAttempts int) {
-	color := o.term.IsTTY
-	label := fmt.Sprintf("retry %d/%d", attempt, maxAttempts)
-	if color {
-		label = colorYellow + label + colorReset
-	}
-	_, _ = fmt.Fprintf(o.out, "\n%s\n", label)
-}
-
-// retryNote summarizes the retries behind a step that got a response, such as
+// retryNote summarizes the retries behind a step, such as
 // "retried 2x: transient". It is empty when the step did not retry.
 func retryNote(result engine.StepResult) string {
 	if result.RetryCount == 0 {
@@ -176,19 +196,4 @@ func retryNote(result engine.StepResult) string {
 		note += ": " + strings.Join(categories, ", ")
 	}
 	return note
-}
-
-// observerTotalDuration sums the duration of all steps and cleanup.
-func observerTotalDuration(result *engine.RunResult) string {
-	var total time.Duration
-	for _, s := range result.Steps {
-		total += s.Duration
-	}
-	for _, s := range result.CleanupResults {
-		total += s.Duration
-	}
-	if total < time.Second {
-		return fmt.Sprintf("%dms", total.Milliseconds())
-	}
-	return fmt.Sprintf("%.1fs", total.Seconds())
 }

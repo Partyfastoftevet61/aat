@@ -43,6 +43,8 @@ func (s *CleanupStack) Filter(keep func(CleanupEntry) bool) {
 
 // ExecuteAll runs all cleanup entries in FILO order (last pushed, first executed).
 // Errors are recorded in the StepResult but do not stop subsequent cleanup steps.
+// The requests use ctx as given: Engine.runCleanup passes a context detached
+// from the run's cancellation, with a deadline when the run was aborted.
 func (s *CleanupStack) ExecuteAll(
 	ctx context.Context,
 	g *graph.Graph,
@@ -56,15 +58,10 @@ func (s *CleanupStack) ExecuteAll(
 
 	results := make([]StepResult, 0, len(s.entries))
 
-	// Use context.WithoutCancel so cleanup HTTP calls still execute
-	// even when the parent context is cancelled. Cleanup is for resource
-	// deletion — it must run.
-	cleanupCtx := context.WithoutCancel(ctx)
-
 	// Execute in reverse order (FILO)
 	for i := len(s.entries) - 1; i >= 0; i-- {
 		entry := s.entries[i]
-		result := executeCleanupEntry(cleanupCtx, entry, g, registry, router, state)
+		result := executeCleanupEntry(ctx, entry, g, registry, router, state)
 		results = append(results, result)
 	}
 
@@ -80,14 +77,20 @@ func executeCleanupEntry(
 	state *RunState,
 ) StepResult {
 	start := time.Now()
+	// base identifies the cleanup step and when it started, so archives place
+	// it on the run's timeline like any other step.
+	base := StepResult{StepID: entry.NodeName, Node: entry.NodeName, StartTime: start}
+	failed := func(inputs map[string]any, err error) StepResult {
+		sr := base
+		sr.Inputs = inputs
+		sr.Error = err
+		sr.Duration = time.Since(start)
+		return sr
+	}
 
 	node, ok := g.Nodes[entry.NodeName]
 	if !ok {
-		return StepResult{
-			Node:     entry.NodeName,
-			Error:    fmt.Errorf("cleanup node %q not found in graph", entry.NodeName),
-			Duration: time.Since(start),
-		}
+		return failed(nil, fmt.Errorf("cleanup node %q not found in graph", entry.NodeName))
 	}
 
 	// Resolve inputs from current state using name-matching.
@@ -112,62 +115,34 @@ func executeCleanupEntry(
 
 	adp, err := registry.Get(node.Adapter)
 	if err != nil {
-		return StepResult{
-			Node:     entry.NodeName,
-			Inputs:   inputs,
-			Error:    fmt.Errorf("cleanup adapter: %w", err),
-			Duration: time.Since(start),
-		}
+		return failed(inputs, fmt.Errorf("cleanup adapter: %w", err))
 	}
 
 	// Resolve executor/config/rewrite for the cleanup node
 	exec, cfg, rewrite := router.Resolve(entry.NodeName)
-	actualBaseURL := exec.BaseURL
+	base.ActualBaseURL = exec.BaseURL
 
 	req, err := adp.BuildRequest(inputs, cfg)
 	if err != nil {
-		return StepResult{
-			Node:          entry.NodeName,
-			Inputs:        inputs,
-			Error:         fmt.Errorf("cleanup build request: %w", err),
-			Duration:      time.Since(start),
-			ActualBaseURL: actualBaseURL,
-		}
+		return failed(inputs, fmt.Errorf("cleanup build request: %w", err))
 	}
 
-	originalPath := req.Path
 	if rewrite != nil {
+		base.OriginalPath = req.Path
 		req.Path = adapter.RewritePath(req.Path, rewrite)
 	}
+	base.Request = req
 
 	resp, err := exec.Execute(ctx, req)
 	if err != nil {
-		sr := StepResult{
-			Node:          entry.NodeName,
-			Inputs:        inputs,
-			Request:       req,
-			Error:         fmt.Errorf("cleanup execute: %w", err),
-			Duration:      time.Since(start),
-			ActualBaseURL: actualBaseURL,
-		}
-		if rewrite != nil {
-			sr.OriginalPath = originalPath
-		}
-		return sr
+		return failed(inputs, fmt.Errorf("cleanup execute: %w", err))
 	}
 
-	result := StepResult{
-		Node:          entry.NodeName,
-		Inputs:        inputs,
-		Request:       req,
-		Response:      resp,
-		StatusCode:    resp.StatusCode,
-		Duration:      time.Since(start),
-		ActualBaseURL: actualBaseURL,
-	}
-	if rewrite != nil {
-		result.OriginalPath = originalPath
-	}
+	result := base
+	result.Inputs = inputs
+	result.Response = resp
+	result.StatusCode = resp.StatusCode
+	result.Duration = time.Since(start)
 
 	// Extract outputs (best-effort for cleanup)
 	outputs, err := adp.ExtractOutputs(resp)

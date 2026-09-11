@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gburgyan/aat/adapter"
@@ -497,6 +498,48 @@ func TestEngine_Run_FailingAssertionTriggersCleanup(t *testing.T) {
 	require.Len(t, result.Steps, 1)
 	// Cleanup should have run
 	assert.True(t, cleanupCalled)
+}
+
+// TestEngine_Run_ErrorNamesStepID checks that a failing step is named by its
+// step ID, with its node, so two steps on one node can be told apart.
+func TestEngine_Run_ErrorNamesStepID(t *testing.T) {
+	g := &graph.Graph{
+		Version: "1.0.0",
+		Nodes: map[string]*graph.Node{
+			"addItem": {Name: "addItem", Adapter: "test.addItem", Outputs: []graph.Output{{Name: "lineCount", Type: "integer"}}},
+		},
+	}
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 2 {
+			w.WriteHeader(http.StatusConflict)
+		}
+		_, _ = w.Write([]byte(`{"lineCount": 1}`))
+	}))
+	defer server.Close()
+
+	registry := adapter.NewRegistry()
+	require.NoError(t, registry.Register("test.addItem", &stubAdapter{method: "POST", path: "/items", response: map[string]any{"lineCount": 1}}))
+	eng := NewEngine(g, registry, NewExecutorRouter(adapter.NewHTTPExecutor(server.URL), &adapter.EnvironmentConfig{}))
+
+	result := eng.Run(context.Background(), &plan.Plan{
+		Metadata: plan.Metadata{GraphVersion: "1.0.0"},
+		Execution: plan.Execution{Steps: []plan.Step{
+			{ID: "addProduct", Node: "addItem"},
+			{ID: "addSocks", Node: "addItem", DependsOn: []string{"addProduct"}},
+		}},
+	})
+
+	assert.Equal(t, OutcomeFailed, result.Outcome)
+	assert.EqualError(t, result.Error, `step "addSocks" (addItem) returned status 409`)
+}
+
+func TestStepRef(t *testing.T) {
+	assert.Equal(t, `"getShipment"`, stepRef(plan.Step{Node: "getShipment"}))
+	assert.Equal(t, `"getShipment"`, stepRef(plan.Step{ID: "getShipment", Node: "getShipment"}))
+	assert.Equal(t, `"checkout" (checkoutCart)`, stepRef(plan.Step{ID: "checkout", Node: "checkoutCart"}))
 }
 
 func TestEngine_Run_FieldExistsAssertionOnBody(t *testing.T) {
@@ -1204,12 +1247,29 @@ func TestEngine_Run_CleanupRunsDespiteCancellation(t *testing.T) {
 		},
 	}
 
+	// The verify request hangs until the run is cancelled, as when Ctrl+C
+	// arrives mid-request.
+	verifyStarted := make(chan struct{})
+	release := make(chan struct{})
+	var deleteCalled atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/verify":
+			close(verifyStarted)
+			select {
+			case <-r.Context().Done():
+			case <-release:
+			}
+			return
+		case "/delete":
+			deleteCalled.Store(true)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer server.Close()
+	defer close(release) // lets the hung handler return before the server closes
 
 	registry := adapter.NewRegistry()
 	require.NoError(t, registry.Register("test.create", &stubAdapter{
@@ -1237,22 +1297,22 @@ func TestEngine_Run_CleanupRunsDespiteCancellation(t *testing.T) {
 		},
 	}
 
-	// Create a context that will be cancelled between steps.
-	// We use a normal context and run, expecting "create" succeeds, pushes
-	// cleanup, then "verify" also succeeds. But to test cleanup-despite-cancel,
-	// we need cancellation to happen at step boundary. Instead, let's verify
-	// that a cancelled context in Run's main loop triggers cleanup.
 	ctx, cancel := context.WithCancel(context.Background())
-
-	// Cancel immediately — the first step check should catch it
-	cancel()
+	defer cancel()
+	go func() {
+		<-verifyStarted
+		cancel()
+	}()
 
 	result := eng.Run(ctx, p)
 
-	assert.Equal(t, OutcomeAborted, result.Outcome)
+	assert.Equal(t, OutcomeAborted, result.Outcome, "an interrupt mid-request aborts the run: %v", result.Error)
 	assert.ErrorIs(t, result.Error, context.Canceled)
-	// Cleanup stack was empty (no steps executed), so nothing to clean up in this case
-	// but the mechanism is verified: cleanup uses a detached context
+	require.Len(t, result.Steps, 2)
+	require.Len(t, result.CleanupResults, 1)
+	assert.NoError(t, result.CleanupResults[0].Error, "cleanup requests are not cancelled with the run")
+	assert.Equal(t, 200, result.CleanupResults[0].StatusCode)
+	assert.True(t, deleteCalled.Load())
 }
 
 func TestEngine_Run_StepAliasing(t *testing.T) {

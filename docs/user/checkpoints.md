@@ -32,33 +32,33 @@ aat: override: payment*
 aat: executing plan (5 steps)...
 
   [1/5] listProducts         200  0ms
-  [2/5] createCart           201  1ms
+  [2/5] createCart           201  0ms
   [3/5] addItem              201  0ms
-  [4/5] checkoutCart         201  1ms
+  [4/5] checkout             201  0ms
         Order: ord_0001
         Receipt: RCPT-US-0001
         Tax: Sales tax 8.25%
         Total: $103.40
-  [5/5] paymentCharge        201  1ms
+  [5/5] paymentCharge        201  0ms
         Charged: $103.40
 
-STOPPED at "paymentCharge" (5/5 steps, 5ms)
+STOPPED at "paymentCharge" (5/5 steps, 1ms)
 Archive: /path/to/shop/_output/runs/run-20260910-230852-8b2139bc/archive.json
 aat: state dumped to state.json
 ```
 
 How the stop works:
 
-- `STEP` is a step ID: the step's `id:` if it has one, otherwise its node name. The progress lines show node names, so the two can differ. In the shop's `smoke` recipe, the `checkoutCart` node runs as step `checkout`. To list the step IDs of a plan or recipe, run it once with `--json`: `aat run plan smoke --json | jq -r '.steps[].name'`.
+- `STEP` is a step ID: the step's `id:` if it has one, otherwise its node name. The progress lines show step IDs, with the node in parentheses when the two differ and the terminal is wide enough: in the shop's `smoke` recipe, the `checkoutCart` node runs as step `checkout`. The `--json` summary lists them too: `aat run plan smoke --json | jq -r '.steps[].name'`.
 - The stop happens only when the step passes, including an `expectFailure` step whose expected error came back. If the run fails or errors before or at that step, it ends the normal way and cleanup runs.
 - Only main steps can be stop points. Verification steps run after every main step, so a checkpoint always skips them.
 - The outcome is `stopped` and the exit code is `0`. `--quiet` prints `STOPPED (5/5 steps)`, and the `--json` summary carries `"outcome": "stopped"` and `"stopped_at": "paymentCharge"`, with no `cleanup` array.
 - The run archive is still written, with outcome `stopped` and no cleanup records. See [Archives](archives.md).
 - A stopped run counts as a success, so `--retries` does not retry it.
-- An unknown step ID fails the run before any step runs, with outcome `error` and exit code `2`:
+- An unknown step ID fails the run before any step runs, with outcome `error` and exit code `2`. A node name gets a pointer to the step IDs that run it:
 
     ```
-    ERROR: --stop-after: no step "checkoutCart" in plan
+    ERROR: --stop-after: no step "checkoutCart" in plan (node checkoutCart is step "checkout")
     ```
 
 AAT does not clean up after a checkpoint, then or later. Whatever takes over owns the resources, as the [pytest example](#hand-off-to-pytest) below shows.

@@ -184,10 +184,9 @@ func formatExecutionSummary(result *engine.RunResult, runID string) string {
 
 	// Step summary table
 	if len(result.Steps) > 0 {
-		b.WriteString("| # | Node | Status | Duration |\n")
-		b.WriteString("|---|------|--------|----------|\n")
+		b.WriteString("| # | Step | Node | Status | Duration |\n")
+		b.WriteString("|---|------|------|--------|----------|\n")
 
-		var totalDur time.Duration
 		for i, step := range result.Steps {
 			status := "OK"
 			if step.Error != nil {
@@ -208,13 +207,16 @@ func formatExecutionSummary(result *engine.RunResult, runID string) string {
 				status += " (assertions failed)"
 			}
 
-			fmt.Fprintf(&b, "| %d | %s | %s | %s |\n",
-				i+1, step.Node, status, formatDurationMs(step.Duration.Milliseconds()))
-			totalDur += step.Duration
+			stepID := step.StepID
+			if stepID == "" {
+				stepID = step.Node
+			}
+			fmt.Fprintf(&b, "| %d | %s | %s | %s | %s |\n",
+				i+1, stepID, step.Node, status, formatDurationMs(step.Duration.Milliseconds()))
 		}
 
 		b.WriteString("\n")
-		fmt.Fprintf(&b, "**Total duration:** %s\n", formatDurationMs(totalDur.Milliseconds()))
+		fmt.Fprintf(&b, "**Total duration:** %s\n", formatDurationMs(result.Elapsed().Milliseconds()))
 	}
 
 	// Cleanup

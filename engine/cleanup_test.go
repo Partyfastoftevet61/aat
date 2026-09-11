@@ -208,6 +208,17 @@ func TestEngine_Run_WithCleanup(t *testing.T) {
 	assert.NoError(t, result.CleanupResults[0].Error)
 	require.NotNil(t, capturedDestroyInputs)
 	assert.Equal(t, "res-123", capturedDestroyInputs["resourceId"])
+
+	// Cleanup steps are identified and timed like main steps, and the run's
+	// wall-clock span covers all of them.
+	cleanup := result.CleanupResults[0]
+	assert.Equal(t, "destroy", cleanup.StepID)
+	assert.False(t, cleanup.StartTime.IsZero(), "cleanup start time is recorded")
+	assert.False(t, cleanup.StartTime.Before(result.Steps[1].StartTime), "cleanup starts after the main steps")
+	assert.False(t, result.StartTime.After(result.Steps[0].StartTime), "the run starts before its first step")
+	runEnd := result.StartTime.Add(result.Duration)
+	assert.False(t, runEnd.Before(cleanup.StartTime.Add(cleanup.Duration)), "the run ends after its last cleanup step")
+	assert.Equal(t, result.Duration, result.Elapsed())
 }
 
 func TestEngine_Run_CleanupOnFailure(t *testing.T) {

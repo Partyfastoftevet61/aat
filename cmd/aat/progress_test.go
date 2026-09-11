@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,12 +57,13 @@ func TestCLIProgressObserver_StepComplete_WithRetries(t *testing.T) {
 		Node:       "searchFlights",
 		Error:      assert.AnError,
 		RetryCount: 2,
-		ErrorClass: &engine.ErrorClassification{Category: engine.CategoryServer},
+		RetriedOn:  []engine.ErrorCategory{engine.CategoryNetwork, engine.CategoryNetwork},
+		ErrorClass: &engine.ErrorClassification{Category: engine.CategoryNetwork},
 	})
 
 	output := buf.String()
-	assert.Contains(t, output, "ERROR [server]")
-	assert.Contains(t, output, "after 2 retries")
+	assert.Contains(t, output, "ERROR: "+assert.AnError.Error())
+	assert.Contains(t, output, "retried 2x: network", "a failed step notes its retries like a recovered one")
 }
 
 func TestCLIProgressObserver_StepComplete_RecoveredAfterRetries(t *testing.T) {
@@ -249,21 +251,96 @@ func TestCLIProgressObserver_WideTerminal_NodeTruncation(t *testing.T) {
 	assert.Contains(t, output, "200")
 }
 
-func TestCLIProgressObserver_WideTerminal_RetryDetail(t *testing.T) {
-	var buf bytes.Buffer
-	obs := &CLIProgressObserver{out: &buf, term: TerminalInfo{IsTTY: false, Width: 120}}
-
-	obs.OnStepComplete(0, 1, engine.StepResult{
+// TestCLIProgressObserver_RetryNoteIgnoresWidth checks that a failed step's
+// retry note reads the same on narrow and wide terminals.
+func TestCLIProgressObserver_RetryNoteIgnoresWidth(t *testing.T) {
+	step := engine.StepResult{
 		Node:       "searchFlights",
 		Error:      assert.AnError,
 		RetryCount: 2,
-		StatusCode: 502,
-		ErrorClass: &engine.ErrorClassification{Category: engine.CategoryServer},
+		RetriedOn:  []engine.ErrorCategory{engine.CategoryTimeout, engine.CategoryNetwork},
+	}
+	for _, width := range []int{80, 120} {
+		var buf bytes.Buffer
+		obs := &CLIProgressObserver{out: &buf, term: TerminalInfo{IsTTY: false, Width: width}}
+		obs.OnStepComplete(0, 1, step)
+		assert.Contains(t, buf.String(), "ERROR: "+assert.AnError.Error()+"  retried 2x: timeout, network\n", "width %d", width)
+	}
+}
+
+func TestStepLabel(t *testing.T) {
+	tests := []struct {
+		name   string
+		result engine.StepResult
+		width  int
+		want   string
+	}{
+		{name: "id equals node", result: engine.StepResult{StepID: "getCart", Node: "getCart"}, width: 20, want: "getCart             "},
+		{name: "no id shows the node", result: engine.StepResult{Node: "deleteCart"}, width: 20, want: "deleteCart          "},
+		{name: "id and node fit", result: engine.StepResult{StepID: "addProduct", Node: "addItem"}, width: 20, want: "addProduct (addItem)"},
+		{name: "node does not fit", result: engine.StepResult{StepID: "checkout", Node: "checkoutCart"}, width: 20, want: "checkout            "},
+		{name: "wide column fits the node", result: engine.StepResult{StepID: "checkout", Node: "checkoutCart"}, width: 30, want: "checkout (checkoutCart)       "},
+		{name: "long id is truncated", result: engine.StepResult{StepID: "aVeryLongStepIdentifier", Node: "x"}, width: 15, want: "aVeryLongStepI~"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, stepLabel(tt.result, tt.width, false))
+			colored := stepLabel(tt.result, tt.width, true)
+			assert.Equal(t, tt.want, stripANSI(colored), "colour does not change the visible text or its padding")
+		})
+	}
+}
+
+// TestPlanAndBatchStepLinesMatch guards against the plan and sequential batch
+// renderers drifting apart again: apart from the indent, they print the same
+// lines.
+func TestPlanAndBatchStepLinesMatch(t *testing.T) {
+	steps := []engine.StepResult{
+		{StepID: "addSocks", Node: "addItem", StatusCode: 201, Response: &adapter.Response{StatusCode: 201}, Duration: 12 * time.Millisecond,
+			DisplayOutputs: []engine.DisplayOutput{{Label: "Lines", Name: "lineCount", Value: 2}}},
+		{StepID: "getShipment", Node: "getShipment", StatusCode: 200, Response: &adapter.Response{StatusCode: 200}, Duration: 1600 * time.Millisecond,
+			RetryCount: 2, RetriedOn: []engine.ErrorCategory{engine.CategoryTransient, engine.CategoryTransient}},
+		{StepID: "pay", Node: "paymentCharge", StatusCode: 404, Response: &adapter.Response{StatusCode: 404},
+			Validation: &validate.MechanicalResult{Results: []validate.AssertionResult{{Type: validate.AssertStatus, Message: "expected status 201, got 404"}}}},
+		{StepID: "ship", Node: "shipOrder", Error: assert.AnError},
+	}
+	for _, term := range []TerminalInfo{noColorTerm, {IsTTY: true, Width: 120}} {
+		var planOut, batchOut bytes.Buffer
+		planObs := &CLIProgressObserver{out: &planOut, term: term}
+		batchObs := NewBatchStreamObserver(&batchOut, "smoke", term, 0, 1)
+		for i, step := range steps {
+			planObs.OnStepComplete(i, len(steps), step)
+			batchObs.OnStepComplete(i, len(steps), step)
+		}
+		planLines := strings.Split(strings.TrimSuffix(planOut.String(), "\n"), "\n")
+		batchLines := strings.Split(strings.TrimSuffix(batchOut.String(), "\n"), "\n")
+		if assert.Len(t, batchLines, len(planLines)) {
+			for i := range planLines {
+				assert.Equal(t, "  "+planLines[i], batchLines[i])
+			}
+		}
+	}
+}
+
+func TestCLIProgressObserver_RunComplete_UsesWallClock(t *testing.T) {
+	var buf bytes.Buffer
+	obs := &CLIProgressObserver{out: &buf, term: noColorTerm}
+
+	obs.OnRunComplete(&engine.RunResult{
+		Outcome:  engine.OutcomePassed,
+		Duration: 2900 * time.Millisecond,
+		Steps:    []engine.StepResult{{Duration: 100 * time.Millisecond}, {Duration: 200 * time.Millisecond}},
 	})
 
-	output := buf.String()
-	assert.Contains(t, output, "retried 2x")
-	assert.Contains(t, output, "last status 502")
+	assert.Contains(t, buf.String(), "PASSED (2/2 steps, 2.9s)", "retry waits between steps count")
+}
+
+// stripANSI removes the colour escape sequences run output uses.
+func stripANSI(s string) string {
+	for _, code := range []string{colorReset, colorRed, colorGreen, colorYellow, colorCyan, colorBold, colorDim} {
+		s = strings.ReplaceAll(s, code, "")
+	}
+	return s
 }
 
 // TestCLIProgressObserver_ReportsWhyAStepFailed checks that run output names

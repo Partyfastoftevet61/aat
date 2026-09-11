@@ -17,8 +17,19 @@ func (e *Engine) executeStepWithTracking(ctx context.Context, step plan.Step, no
 
 // executeStepWithRetry wraps executeStep with retry logic based on the step's
 // RetryConfig. If no RetryConfig is set, it behaves identically to executeStep.
-func (e *Engine) executeStepWithRetry(ctx context.Context, step plan.Step, node *graph.Node, state *RunState) StepResult {
-	result := e.executeStep(ctx, step, node, state)
+// The result of a retried step is its last attempt's, timed from the start of
+// the first attempt, so its duration includes the failed attempts and the
+// backoff between them.
+func (e *Engine) executeStepWithRetry(ctx context.Context, step plan.Step, node *graph.Node, state *RunState) (result StepResult) {
+	result = e.executeStep(ctx, step, node, state)
+	firstStart := result.StartTime
+	defer func() {
+		if result.StartTime.After(firstStart) {
+			end := result.StartTime.Add(result.Duration)
+			result.StartTime = firstStart
+			result.Duration = end.Sub(firstStart)
+		}
+	}()
 
 	// Negative assertion steps should not retry — the failure IS the expected behavior.
 	if step.ExpectFailure != nil {
@@ -54,6 +65,7 @@ func (e *Engine) executeStepWithRetry(ctx context.Context, step plan.Step, node 
 				RetryAttempt: attempt,
 			}
 			result.RetryCount = attempt - 1
+			result.RetriedOn = append([]ErrorCategory(nil), retriedOn...)
 			return result
 		default:
 		}
@@ -83,6 +95,7 @@ func (e *Engine) executeStepWithRetry(ctx context.Context, step plan.Step, node 
 				RetryAttempt: attempt,
 			}
 			result.RetryCount = attempt
+			result.RetriedOn = append([]ErrorCategory(nil), retriedOn...)
 			return result
 		case <-time.After(backoff):
 		}

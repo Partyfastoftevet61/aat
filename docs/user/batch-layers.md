@@ -202,107 +202,134 @@ Fixes the random seed for reproducible ordering. When `--seed` is 0 (the default
 aat run batch --layer-group "us,eu" --parallel 4
 ```
 
-Runs up to 4 plans concurrently. Combine with `--shuffle` to avoid correlated timing patterns. In parallel mode, AAT replaces the step-by-step output with a live-updating progress display — each active plan gets its own progress bar showing completed steps, current node, and retry status, with a status line tracking overall batch completion. Completed plans scroll up as permanent result lines while active plans continue updating in place.
+Runs up to 4 plans concurrently. Combine with `--shuffle` to avoid correlated timing patterns. In parallel mode, AAT replaces the step-by-step output with a live-updating progress display — each active plan gets its own progress bar showing completed steps, the current step ID, and retry status, with a status line tracking overall batch completion. Completed plans scroll up as permanent result lines while active plans continue updating in place.
 
 ## Reading the Output
 
+The samples in this section come from the [shop example](examples/shop.md), running its seven plans across two layer groups of two shipping tiers and two baskets.
+
 ### Default progress
 
-With layer groups, the initial output shows the matrix dimensions:
+```
+aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel
+```
+
+With layer groups, the initial output shows the matrix dimensions, then every duplicate the dedup pass skips:
 
 ```
-aat: batch run — 5 plans x 12 permutations = 60 total runs
+aat: batch run — 7 plans x 9 permutations = 63 total runs
 
-aat: dedup — 8 duplicate permutations detected:
-  quick-test [us] → duplicate of quick-test [(base)]
-  quick-test [eu] → duplicate of quick-test [(base)]
-  quick-test [apac] → duplicate of quick-test [(base)]
-  checkout-eu [(base)] → duplicate of checkout-eu [eu]
+aat: loading environment...
+aat: loaded environment "us"
+aat: loaded graph (17 nodes)
+aat: loaded domain knowledge
+aat: loaded 17 templates
+aat: loaded 4 layers
+aat: loaded 1 OAS spec(s) for runtime validation
+aat: dedup — 36 duplicate permutations detected:
+  full-lifecycle [basket-apparel, shipping-standard] → duplicate of full-lifecycle [basket-apparel]
+  full-lifecycle [basket-gear, shipping-standard] → duplicate of full-lifecycle [basket-gear]
+  full-lifecycle [shipping-standard] → duplicate of full-lifecycle [(base)]
+  giftcard-express [(base)] → duplicate of giftcard-express [shipping-express]
   ...
 ```
 
-Each executed run shows its permutation label in brackets:
+Each executed run shows its permutation label in brackets, and its steps print as [`aat run plan`](running.md#default-progress) prints them, indented two more spaces:
 
 ```
-  ── checkout [(base)] (3 steps) [plan 1/52] ──
-    [1/3] CreateOrder          201  245ms
-    [2/3] ProcessPayment       200  189ms
-    [3/3] ConfirmOrder         200  134ms
-  ── checkout [(base)]: PASSED (3 steps, 623ms) [plan 1/52] ──
+  ── full-lifecycle [(base)] (15 steps) [plan 1/27] ──
+    [ 1/15] listProducts         200  0ms
+    [ 2/15] checkInventory       200  590ms  retried 1x: response_error
+    [ 3/15] createCart           201  0ms
+    [ 4/15] addProduct (addItem) 201  0ms
+    [ 5/15] addSocks (addItem)   201  0ms
+    ...
+    [15/15] verify_getOrder      200  0ms
+    cleanup:
+      deleteOrder            204  0ms
+      deleteCart             204  0ms
+  ── full-lifecycle [(base)]: PASSED (15 steps, 2.4s) [plan 1/27] ──
 
-  ── checkout [credit-card, us] (3 steps) [plan 2/52] ──
+  ── full-lifecycle [basket-apparel] (15 steps) [plan 2/27] ──
   ...
 ```
 
 The run ends with a summary line and the batch archive path:
 
 ```
-Batch: 52/60 PASSED, 8 SKIPPED (41.2s)
-Archive: runs/batch-20260301-143022-a1b2c3d4
+Batch: 27/63 PASSED, 36 SKIPPED (20.7s)
+Archive: /path/to/shop/_output/runs/batch-20260911-123631-e0669ad3
 ```
 
 ### Quiet mode
 
 ```
-aat run batch --layer-group "us,eu" --quiet
+aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --quiet
 ```
 
 Shows one line per run — executed runs first, then the skipped duplicates — followed by the summary:
 
 ```
-checkout [(base)]: PASSED
-checkout [credit-card, us]: PASSED
-quick-test [us]: SKIPPED (duplicate of quick-test [(base)])
-Batch: 52/60 PASSED, 8 SKIPPED
-Archive: runs/batch-20260301-143022-a1b2c3d4
+full-lifecycle [(base)]: PASSED
+full-lifecycle [basket-apparel]: PASSED
+full-lifecycle [basket-apparel, shipping-express]: PASSED
+...
+smoke [shipping-express]: PASSED
+full-lifecycle [basket-apparel, shipping-standard]: SKIPPED (duplicate of full-lifecycle [basket-apparel])
+...
+smoke [shipping-standard]: SKIPPED (duplicate of smoke [(base)])
+Batch: 27/63 PASSED, 36 SKIPPED
+Archive: /path/to/shop/_output/runs/batch-20260911-123658-ba22ca32
 ```
 
 ### JSON mode
 
 ```
-aat run batch --layer-group "us,eu" --json
+aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --json
 ```
 
-Produces a machine-readable `BatchSummary` to stdout (implies `--quiet`). Each run entry includes `permutation`, `layers`, `skipped`, and `duplicate_of` fields (the `(base)` permutation with no `--layer` flags has no `layers`). The batch ID key is `batchId`, while the other keys are snake_case:
+Produces a machine-readable `BatchSummary` to stdout (implies `--quiet`). Each run entry includes `permutation`, `layers`, `skipped`, and `duplicate_of` fields (the `(base)` permutation with no `--layer` flags has no `layers`). A run's `duration_ms` is its wall-clock time, retry waits included; the summary's is the whole batch's. The batch ID key is `batchId`, while the other keys are snake_case. Trimmed to one executed and one skipped run:
 
 ```json
 {
   "outcome": "passed",
-  "batchId": "batch-20260301-143022-a1b2c3d4",
+  "batchId": "batch-20260911-123725-0fe7aa4c",
   "runs": [
     {
-      "plan_name": "checkout",
+      "plan_name": "full-lifecycle",
       "outcome": "passed",
-      "step_count": 3,
-      "passed_steps": 3,
+      "step_count": 15,
+      "passed_steps": 15,
       "failed_steps": 0,
-      "duration_ms": 623,
-      "archive_path": "runs/batch-20260301-143022-a1b2c3d4/run-20260301-143022-e5f6a7b8/archive.json",
-      "layers": ["premium"],
+      "duration_ms": 1819,
+      "archive_path": "/path/to/shop/_output/runs/batch-20260911-123725-0fe7aa4c/run-20260911-123725-f460a192/archive.json",
       "permutation": "(base)"
     },
     {
-      "plan_name": "quick-test",
+      "plan_name": "full-lifecycle",
       "outcome": "skipped",
       "step_count": 0,
       "passed_steps": 0,
       "failed_steps": 0,
       "duration_ms": 0,
-      "layers": ["premium", "us"],
-      "permutation": "us",
+      "layers": [
+        "shipping-standard",
+        "basket-apparel"
+      ],
+      "permutation": "basket-apparel, shipping-standard",
       "skipped": true,
-      "duplicate_of": "quick-test [(base)]"
+      "duplicate_of": "full-lifecycle [basket-apparel]"
     }
   ],
   "summary": {
-    "total_plans": 60,
-    "passed_plans": 52,
+    "total_plans": 63,
+    "passed_plans": 27,
     "failed_plans": 0,
     "error_plans": 0,
-    "skipped_plans": 8,
-    "duration_ms": 41230
+    "skipped_plans": 36,
+    "duration_ms": 19246
   },
-  "archive_path": "runs/batch-20260301-143022-a1b2c3d4"
+  "archive_path": "/path/to/shop/_output/runs/batch-20260911-123725-0fe7aa4c"
 }
 ```
 

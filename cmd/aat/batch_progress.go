@@ -12,15 +12,14 @@ import (
 )
 
 // BatchStreamObserver implements engine.ProgressObserver for sequential batch mode.
-// It wraps the existing CLIProgressObserver formatting but adds plan header/footer lines.
+// It prints the same step lines as CLIProgressObserver, indented under a header
+// and footer line for each plan.
 type BatchStreamObserver struct {
 	out       io.Writer
 	planName  string
 	term      TerminalInfo
 	planIndex int // 0-based index into the batch
 	planTotal int // total plans in the batch
-	total     int
-	start     time.Time
 }
 
 // NewBatchStreamObserver creates a BatchStreamObserver for a single plan in a sequential batch.
@@ -35,116 +34,50 @@ func NewBatchStreamObserver(out io.Writer, planName string, term TerminalInfo, p
 }
 
 func (o *BatchStreamObserver) OnRunStart(total int) {
-	o.total = total
-	o.start = time.Now()
-	color := o.term.IsTTY
-	name := o.planName
-	if color {
-		name = colorCyan + name + colorReset
-	}
-	counter := fmt.Sprintf(" [plan %d/%d]", o.planIndex+1, o.planTotal)
-	_, _ = fmt.Fprintf(o.out, "  ── %s (%d steps)%s ──\n", name, total, counter)
+	name := colorize(o.planName, colorCyan, o.term.IsTTY)
+	_, _ = fmt.Fprintf(o.out, "  ── %s (%d steps)%s ──\n", name, total, o.counter())
 }
 
 func (o *BatchStreamObserver) OnStepStart(index, total int, step plan.Step) {}
 
 func (o *BatchStreamObserver) OnStepComplete(index, total int, result engine.StepResult) {
-	totalStr := fmt.Sprintf("%d", total)
-	width := len(totalStr)
-	color := o.term.IsTTY
-	ncw := nodeColWidth(o.term.Width, 60)
-	nodeStr := formatNodeCol(result.Node, ncw, color)
-	indent := 6 + width + len(totalStr)
-	prefix := fmt.Sprintf("    [%*d/%s] %s", width, index+1, totalStr, nodeStr)
-
-	if result.Error != nil {
-		errLabel := colorize("ERROR", colorRed, color)
-		if result.RetryCount > 0 {
-			cat := errorCategory(result)
-			if o.term.Width > 100 && result.StatusCode > 0 {
-				_, _ = fmt.Fprintf(o.out, "%s %s [%s] (retried %dx, last status %d)\n", prefix, errLabel, cat, result.RetryCount, result.StatusCode)
-			} else {
-				_, _ = fmt.Fprintf(o.out, "%s %s [%s] (after %d retries)\n", prefix, errLabel, cat, result.RetryCount)
-			}
-		} else {
-			_, _ = fmt.Fprintf(o.out, "%s %s: %s\n", prefix, errLabel, result.Error)
-		}
-	} else if result.Response != nil {
-		status := colorStatus(result.StatusCode, color)
-		durStr := fmt.Sprintf("%dms", result.Duration.Milliseconds())
-		if color {
-			durStr = colorDim + durStr + colorReset
-		}
-		_, _ = fmt.Fprintf(o.out, "%s %s  %s%s\n", prefix, status, durStr, stepMarks(result, color))
-		for _, do := range result.DisplayOutputs {
-			_, _ = fmt.Fprintf(o.out, "%*s  %s: %v\n", indent, "", do.Label, do.Value)
-		}
-		for _, msg := range failedAssertions(result.Validation) {
-			_, _ = fmt.Fprintf(o.out, "%*s  %s\n", indent, "", colorize(msg, colorYellow, color))
-		}
-	} else {
-		_, _ = fmt.Fprintf(o.out, "%s (no response)\n", prefix)
-	}
+	writeStepResult(o.out, "    ", index, total, result, o.term)
 }
 
 func (o *BatchStreamObserver) OnCleanupStart(total int) {
-	if o.term.IsTTY {
-		_, _ = fmt.Fprintf(o.out, "    %scleanup:%s\n", colorDim, colorReset)
-	} else {
-		_, _ = fmt.Fprintln(o.out, "    cleanup:")
-	}
+	writeCleanupHeader(o.out, "    ", o.term.IsTTY)
 }
 
 func (o *BatchStreamObserver) OnCleanupStepComplete(index, total int, result engine.StepResult) {
-	color := o.term.IsTTY
-	ncw := nodeColWidth(o.term.Width, 58)
-	node := fmt.Sprintf("%-*s", ncw, truncateNode(result.Node, ncw))
-	prefix := fmt.Sprintf("      %s", node)
-
-	if result.Error != nil {
-		errLabel := colorize("ERROR", colorRed, color)
-		_, _ = fmt.Fprintf(o.out, "%s %s: %s\n", prefix, errLabel, result.Error)
-	} else if result.Response != nil {
-		status := colorStatus(result.StatusCode, color)
-		durStr := fmt.Sprintf("%dms", result.Duration.Milliseconds())
-		if color {
-			durStr = colorDim + durStr + colorReset
-		}
-		_, _ = fmt.Fprintf(o.out, "%s %s  %s\n", prefix, status, durStr)
-	} else {
-		_, _ = fmt.Fprintf(o.out, "%s (no response)\n", prefix)
-	}
+	writeCleanupResult(o.out, "      ", result, o.term)
 }
 
 func (o *BatchStreamObserver) OnRunComplete(result *engine.RunResult) {
-	dur := time.Since(o.start)
-	total := len(result.Steps)
 	color := o.term.IsTTY
-	name := o.planName
-	if color {
-		name = colorCyan + name + colorReset
-	}
-	counter := fmt.Sprintf(" [plan %d/%d]", o.planIndex+1, o.planTotal)
+	writeOASTotal(o.out, "    ", result.Steps, color)
+	name := colorize(o.planName, colorCyan, color)
+	elapsed := formatDuration(result.Elapsed())
 	switch result.Outcome {
 	case engine.OutcomePassed:
-		_, _ = fmt.Fprintf(o.out, "  ── %s: %s (%d steps, %s)%s ──\n", name, colorOutcome("PASSED", color), total, formatDuration(dur), counter)
+		_, _ = fmt.Fprintf(o.out, "  ── %s: %s (%d steps, %s)%s ──\n", name, colorOutcome("PASSED", color), len(result.Steps), elapsed, o.counter())
 	case engine.OutcomeFailed:
-		_, _ = fmt.Fprintf(o.out, "  ── %s: %s (%s)%s ──\n", name, colorOutcome("FAILED", color), formatDuration(dur), counter)
+		_, _ = fmt.Fprintf(o.out, "  ── %s: %s (%s)%s ──\n", name, colorOutcome("FAILED", color), elapsed, o.counter())
 	case engine.OutcomeError:
-		_, _ = fmt.Fprintf(o.out, "  ── %s: %s (%s)%s ──\n", name, colorOutcome("ERROR", color), formatDuration(dur), counter)
+		_, _ = fmt.Fprintf(o.out, "  ── %s: %s (%s)%s ──\n", name, colorOutcome("ERROR", color), elapsed, o.counter())
 	case engine.OutcomeAborted:
-		_, _ = fmt.Fprintf(o.out, "  ── %s: %s (%s)%s ──\n", name, colorOutcome("ABORTED", color), formatDuration(dur), counter)
+		_, _ = fmt.Fprintf(o.out, "  ── %s: %s (%s)%s ──\n", name, colorOutcome("ABORTED", color), elapsed, o.counter())
 	}
 }
 
 // OnRetryStart implements RetryNotifier for plan-level retries in sequential mode.
 func (o *BatchStreamObserver) OnRetryStart(attempt, maxAttempts int) {
-	color := o.term.IsTTY
-	label := fmt.Sprintf("retry %d/%d", attempt, maxAttempts)
-	if color {
-		label = colorYellow + label + colorReset
-	}
+	label := colorize(fmt.Sprintf("retry %d/%d", attempt, maxAttempts), colorYellow, o.term.IsTTY)
 	_, _ = fmt.Fprintf(o.out, "    %s\n", label)
+}
+
+// counter renders the plan's position in the batch, such as " [plan 3/27]".
+func (o *BatchStreamObserver) counter() string {
+	return fmt.Sprintf(" [plan %d/%d]", o.planIndex+1, o.planTotal)
 }
 
 // PlanProgressState tracks one plan's progress for the parallel renderer.
@@ -154,7 +87,7 @@ type PlanProgressState struct {
 	PlanIndex      int
 	TotalSteps     int
 	CompletedSteps int
-	CurrentNode    string
+	CurrentStep    string
 	StartTime      time.Time
 	Done           bool
 	Outcome        string
@@ -164,11 +97,11 @@ type PlanProgressState struct {
 }
 
 // Update safely updates the plan's progress after a step completes.
-func (s *PlanProgressState) Update(completedSteps int, currentNode string) {
+func (s *PlanProgressState) Update(completedSteps int, currentStep string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.CompletedSteps = completedSteps
-	s.CurrentNode = currentNode
+	s.CurrentStep = currentStep
 }
 
 // Complete marks the plan as done with a final outcome.
@@ -189,7 +122,7 @@ func (s *PlanProgressState) Snapshot() PlanProgressState {
 		PlanIndex:      s.PlanIndex,
 		TotalSteps:     s.TotalSteps,
 		CompletedSteps: s.CompletedSteps,
-		CurrentNode:    s.CurrentNode,
+		CurrentStep:    s.CurrentStep,
 		StartTime:      s.StartTime,
 		Done:           s.Done,
 		Outcome:        s.Outcome,
@@ -221,12 +154,12 @@ func (o *ParallelProgressObserver) OnRunStart(total int) {
 }
 
 func (o *ParallelProgressObserver) OnStepStart(index, total int, step plan.Step) {
-	o.state.Update(index, step.Node)
+	o.state.Update(index, step.StepID())
 	o.renderer.Refresh()
 }
 
 func (o *ParallelProgressObserver) OnStepComplete(index, total int, result engine.StepResult) {
-	o.state.Update(index+1, result.Node)
+	o.state.Update(index+1, resultStepID(result))
 	o.renderer.Refresh()
 }
 
@@ -245,7 +178,7 @@ func (o *ParallelProgressObserver) OnRetryStart(attempt, maxAttempts int) {
 	o.state.Attempt = attempt
 	o.state.MaxAttempts = maxAttempts
 	o.state.CompletedSteps = 0
-	o.state.CurrentNode = ""
+	o.state.CurrentStep = ""
 	o.state.mu.Unlock()
 	o.renderer.Refresh()
 }
@@ -380,7 +313,7 @@ func (r *ProgressRenderer) renderLocked() {
 }
 
 // formatPlanLine renders a single plan's progress bar.
-// Format: "  planName  [####------]  3/7  currentNode"
+// Format: "  planName  [####------]  3/7  currentStep"
 // denomWidth is the digit width of the largest TotalSteps; both numerator and
 // denominator are padded to this width so the slash aligns across plans.
 func (r *ProgressRenderer) formatPlanLine(snap *PlanProgressState, denomWidth int) string {
@@ -415,18 +348,18 @@ func (r *ProgressRenderer) formatPlanLine(snap *PlanProgressState, denomWidth in
 	}
 	countStr := fmt.Sprintf("%*d/%-*d", denomWidth, snap.CompletedSteps, denomWidth, snap.TotalSteps)
 
-	// Node column: scales with terminal width.
-	nodeCol := tw / 6
-	if nodeCol < 20 {
-		nodeCol = 20
+	// Step column: scales with terminal width.
+	stepCol := tw / 6
+	if stepCol < 20 {
+		stepCol = 20
 	}
-	if nodeCol > 30 {
-		nodeCol = 30
+	if stepCol > 30 {
+		stepCol = 30
 	}
-	rawNode := truncateNode(snap.CurrentNode, nodeCol)
+	rawStep := truncateNode(snap.CurrentStep, stepCol)
 
 	// Bar fills remaining space, capped at 1/3 of terminal width.
-	fixedOverhead := 2 + nameCol + 3 + 2 + len(countStr) + 2 + nodeCol
+	fixedOverhead := 2 + nameCol + 3 + 2 + len(countStr) + 2 + stepCol
 	barWidth := tw - fixedOverhead
 	if barWidth < 10 {
 		barWidth = 10
@@ -448,10 +381,10 @@ func (r *ProgressRenderer) formatPlanLine(snap *PlanProgressState, denomWidth in
 	}
 	bar := strings.Repeat("#", filled) + strings.Repeat("-", barWidth-filled)
 
-	// Color the current node name if enabled
-	displayNode := rawNode
+	// Color the current step ID if enabled
+	displayStep := rawStep
 	if r.color {
-		displayNode = colorCyan + rawNode + colorReset
+		displayStep = colorCyan + rawStep + colorReset
 	}
 
 	retrySuffix := ""
@@ -462,5 +395,5 @@ func (r *ProgressRenderer) formatPlanLine(snap *PlanProgressState, denomWidth in
 		}
 	}
 
-	return fmt.Sprintf("  %s  [%s] %s  %s%s", nameStr, bar, countStr, displayNode, retrySuffix)
+	return fmt.Sprintf("  %s  [%s] %s  %s%s", nameStr, bar, countStr, displayStep, retrySuffix)
 }

@@ -51,13 +51,13 @@ Directory names are `run-` or `batch-`, the local date and time (`YYYYMMDD-HHMMS
 | `metadata` | Run ID, timestamp, environment name, graph version, AAT version, the plan as loaded (`plan`), the plan after graph defaults and layers were merged in (`instantiatedPlan`), the layers applied, and `attempt`/`totalAttempts` for retried runs |
 | `steps` | One record per main and verification step (see below) |
 | `cleanup` | Cleanup step records in the same format; absent when no cleanup ran |
-| `result` | `outcome` (`passed`, `failed`, `error`, `aborted`, or `stopped`) and `error` |
+| `result` | `outcome` (`passed`, `failed`, `error`, `aborted`, or `stopped`), `error`, and `durationMs`, the run's wall-clock time (archives written before it was recorded omit it, and the web UI then sums the step durations) |
 
 Each step record holds:
 
 | Field | Contents |
 |-------|----------|
-| `stepId`, `node`, `startTime`, `duration_ms` | Which step ran, and when |
+| `stepId`, `node`, `startTime`, `duration_ms` | Which step ran, and when: a retried step's start and duration cover every attempt and the waits between them |
 | `inputs` | The resolved input values |
 | `request` | Method, full URL, headers, and body. When an override routed the step elsewhere, `originalUrl` holds the URL it would have used |
 | `response` | Status, headers, and body |

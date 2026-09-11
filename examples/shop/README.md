@@ -27,27 +27,29 @@ directory as `../../aat` and `../../aat-sandbox`.
 
 ```
   [ 1/15] listProducts         200  0ms
-  [ 2/15] checkInventory       200  0ms  retried 1x: response_error
+  [ 2/15] checkInventory       200  609ms  retried 1x: response_error
   [ 3/15] createCart           201  0ms
+  [ 4/15] addProduct (addItem) 201  0ms
+  [ 5/15] addSocks (addItem)   201  0ms
   ...
-  [ 8/15] checkoutCart         201  0ms
+  [ 8/15] checkout             201  0ms
           Order: ord_0001
           Receipt: RCPT-US-0001
           Tax: Sales tax 8.25%
           Total: $130.66
-  [ 9/15] paymentCharge        201  352ms
+  [ 9/15] paymentCharge        201  351ms
           Charged: $130.66
   [10/15] shipOrder            201  601ms
           Tracking: 1Z298498081
-  [11/15] getShipment          200  0ms  retried 2x: transient
+  [11/15] getShipment          200  1.3s  retried 2x: transient
   ...
-  [15/15] getOrder             200  0ms
+  [15/15] verify_getOrder      200  0ms
 
   cleanup:
     deleteOrder            204  0ms
     deleteCart             204  0ms
 
-PASSED (15/15 steps, 960ms)
+PASSED (15/15 steps, 2.9s)
 ```
 
 - **Nobody wired the data by hand.** `graph.yaml` declares where inputs come from: `cartId` from
@@ -58,7 +60,8 @@ PASSED (15/15 steps, 960ms)
   instead, and the bearer token is not sent there.
 - **Retries by category.** The first inventory read of `SKU-1004` answers `200` with
   `status: ERROR`; the graph's `errorDetection` rule turns that into a `response_error`, which the
-  step's retry rule accepts. Shipment tracking answers `503` twice, a `transient` error.
+  step's retry rule accepts. Shipment tracking answers `503` twice, a `transient` error. A step's
+  duration includes the waits between its attempts.
 - **A response join.** `getCart` returns lines as SKU and quantity only; a Lua transform in
   `templates/getCart.yaml` joins in names and prices from the response's `products` array.
 - **Verification and cleanup.** Step 15 checks that the order ended `returned` and `refunded`.

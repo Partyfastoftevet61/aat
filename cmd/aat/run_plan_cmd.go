@@ -114,19 +114,18 @@ func executeRun(ra *runArgs) int {
 		ra.Quiet = true
 	}
 
-	ti := DetectTerminal()
-	color := ti.IsTTY
-
 	// console receives progress and the summary line. With --dump-state - (and
 	// no --json) stdout carries only the state export, so they go to stderr and
-	// the export pipes cleanly into another tool.
-	var console io.Writer = os.Stdout
+	// the export pipes cleanly into another tool. Colour follows the console.
+	console := os.Stdout
 	if ra.DumpStatePath == "-" && !ra.JSON {
 		console = os.Stderr
 	}
+	ti := DetectTerminal(console)
+	color := ti.IsTTY
 
 	// Choose output writer: --quiet suppresses progress
-	out := console
+	var out io.Writer = console
 	if ra.Quiet {
 		out = io.Discard
 	}

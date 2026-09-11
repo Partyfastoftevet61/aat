@@ -80,6 +80,19 @@ the graph and plan formats may still change before 1.0.
 - **BREAKING:** a manifest that exists but fails to load is an error for every command that discovers
   it; it was skipped, so commands fell back to a lower-priority project or to none. A missing manifest
   is still skipped, and a higher-priority manifest that loads still wins.
+- Run output names each step by its step ID, which `--stop-after`, `dependsOn`, the archive, and the web
+  UI use, with the node in parentheses when the two differ and the column has room
+  (`addProduct (addItem)`); it printed the node, so two steps on one node looked alike and the name shown
+  was not the one `--stop-after` accepts. Engine errors do the same (`step "addSocks" (addItem) returned
+  status 409`), and so do the parallel batch display and the MCP `execute_plan` table.
+- Durations are wall-clock: a retried step's duration runs from its first attempt to the end of its last,
+  so retry waits count, and a run's duration (the `PASSED` line, the `--json` `summary.duration_ms`,
+  `batch.json` run entries, the web UI, and MCP) is the time the run took, recorded in the archive as
+  `result.durationMs`. Both were sums of the last attempt of each step, so `full-lifecycle` printed `955ms`
+  for a three-second run. Archives written before keep showing the sum. Step durations of a second or more
+  read `1.4s`.
+- A step that fails after retrying prints its error followed by the same `retried Nx: <category>` note as
+  a step that recovers; the note used to take one of two other forms depending on the terminal width.
 - `aat run` progress output marks OpenAPI violations on each step (`OAS: 1 warning(s)`) and totals them
   after the outcome, as documented; only an unused summary path printed them before.
 - `aat validate` and `aat validate workflow` show OpenAPI and workflow-compatibility warnings as a `WARN`
@@ -178,6 +191,16 @@ the graph and plan formats may still change before 1.0.
 - Workflow composition fills slots in declaration order, so merged cleanup, slot verification, and slot
   `inject` values no longer vary between runs, and neither can batch dedup fingerprints.
 - `--stop-after` stops after a passing `expectFailure` step instead of running on to the end.
+- Ctrl+C during a request or a retry wait ends the run as `aborted` (exit code `130`) with cleanup, as
+  documented; it was reported as an `error` (exit code `2`), so an interrupt was aborted only when it landed
+  between steps. Cleanup after an interrupt keeps its 30-second budget, which was lost on the way to the
+  cleanup requests.
+- `--stop-after` naming a node instead of a step ID says which step IDs run that node.
+- The sequential batch display prints a run's `OAS: N warning(s)` total, as the plan display does.
+- With `--dump-state -`, run output is coloured when stderr, where it goes, is a terminal; colour
+  followed stdout.
+- Cleanup steps carry a step ID and a start time in archives, so the web UI places them on the timeline;
+  their start time was empty.
 - `--override NODE=URL` routes keep the environment headers, plan headers, overlay headers, and the
   credential, like an `overrides:` entry with that `match` and `baseUrl`; they used to send no headers.
 - `aat prompt` rejects layers when the manifest sets no layers directory instead of silently running

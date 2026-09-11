@@ -10,6 +10,7 @@ import (
 
 	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/engine"
+	"github.com/gburgyan/aat/graph/oas"
 	"github.com/gburgyan/aat/plan"
 	"github.com/gburgyan/aat/validate"
 	"github.com/stretchr/testify/assert"
@@ -135,12 +136,48 @@ func TestBatchStreamObserver_WithRetries(t *testing.T) {
 		Node:       "flakyNode",
 		Error:      assert.AnError,
 		RetryCount: 3,
-		ErrorClass: &engine.ErrorClassification{Category: engine.CategoryServer},
+		RetriedOn:  []engine.ErrorCategory{engine.CategoryNetwork, engine.CategoryNetwork, engine.CategoryNetwork},
+		ErrorClass: &engine.ErrorClassification{Category: engine.CategoryNetwork},
 	})
 
 	output := buf.String()
-	assert.Contains(t, output, "ERROR [server]")
-	assert.Contains(t, output, "after 3 retries")
+	assert.Contains(t, output, "ERROR: "+assert.AnError.Error())
+	assert.Contains(t, output, "retried 3x: network")
+}
+
+// TestBatchStreamObserver_FooterAndOASTotal checks that the footer reports the
+// run's wall-clock time and that the OpenAPI violation total is printed, as
+// the plan observer does.
+func TestBatchStreamObserver_FooterAndOASTotal(t *testing.T) {
+	var buf bytes.Buffer
+	obs := NewBatchStreamObserver(&buf, "smoke", noColorTerm, 0, 1)
+
+	step := engine.StepResult{
+		StepID: "addItem", Node: "addItem", StatusCode: 400, Response: &adapter.Response{StatusCode: 400},
+		OASValidation: &oas.ValidationResult{Request: &oas.PayloadResult{
+			Errors: []oas.SchemaError{{Path: "$.quantity", Message: "got string, want integer"}},
+		}},
+	}
+	obs.OnRunStart(1)
+	obs.OnStepComplete(0, 1, step)
+	obs.OnRunComplete(&engine.RunResult{Outcome: engine.OutcomeFailed, Duration: 1200 * time.Millisecond, Steps: []engine.StepResult{step}})
+
+	output := buf.String()
+	assert.Contains(t, output, "\n    OAS: 1 warning(s)\n  ── smoke: FAILED (1.2s) [plan 1/1] ──\n")
+}
+
+func TestParallelProgressObserver_ShowsStepID(t *testing.T) {
+	var buf bytes.Buffer
+	renderer := NewProgressRenderer(&buf, 80, false, 0)
+	state := &PlanProgressState{PlanName: "full-lifecycle", TotalSteps: 15}
+	renderer.AddPlan(state)
+	obs := NewParallelProgressObserver(state, renderer)
+
+	obs.OnStepStart(4, 15, plan.Step{ID: "addSocks", Node: "addItem"})
+	assert.Equal(t, "addSocks", state.Snapshot().CurrentStep)
+
+	obs.OnStepComplete(4, 15, engine.StepResult{StepID: "addSocks", Node: "addItem"})
+	assert.Equal(t, "addSocks", state.Snapshot().CurrentStep)
 }
 
 func TestBatchStreamObserver_CleanupOutput(t *testing.T) {
@@ -256,7 +293,7 @@ func TestPlanProgressState_Update(t *testing.T) {
 
 	snap := s.Snapshot()
 	assert.Equal(t, 3, snap.CompletedSteps)
-	assert.Equal(t, "confirmItinerary", snap.CurrentNode)
+	assert.Equal(t, "confirmItinerary", snap.CurrentStep)
 	assert.False(t, snap.Done)
 }
 
@@ -312,7 +349,7 @@ func TestProgressRenderer_Refresh_WithProgress(t *testing.T) {
 		PlanIndex:      0,
 		TotalSteps:     10,
 		CompletedSteps: 5,
-		CurrentNode:    "priceOffers",
+		CurrentStep:    "priceOffers",
 		StartTime:      time.Now(),
 	}
 	r.AddPlan(state)
@@ -356,8 +393,8 @@ func TestProgressRenderer_MultiplePlans(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewProgressRenderer(&buf, 80, false, 0)
 
-	s1 := &PlanProgressState{PlanName: "plan-a", TotalSteps: 5, CompletedSteps: 2, CurrentNode: "step2"}
-	s2 := &PlanProgressState{PlanName: "plan-b", TotalSteps: 3, CompletedSteps: 1, CurrentNode: "step1"}
+	s1 := &PlanProgressState{PlanName: "plan-a", TotalSteps: 5, CompletedSteps: 2, CurrentStep: "step2"}
+	s2 := &PlanProgressState{PlanName: "plan-b", TotalSteps: 3, CompletedSteps: 1, CurrentStep: "step1"}
 	r.AddPlan(s1)
 	r.AddPlan(s2)
 
@@ -406,7 +443,7 @@ func TestProgressRenderer_FormatPlanLine_Bar(t *testing.T) {
 		PlanName:       "my-plan",
 		TotalSteps:     10,
 		CompletedSteps: 5,
-		CurrentNode:    "currentStep",
+		CurrentStep:    "currentStep",
 	}, 0)
 
 	assert.Contains(t, line, "my-plan")
@@ -435,7 +472,7 @@ func TestProgressRenderer_FormatPlanLine_LongName(t *testing.T) {
 		PlanName:       "very-long-plan-name-that-exceeds-column",
 		TotalSteps:     5,
 		CompletedSteps: 3,
-		CurrentNode:    "node",
+		CurrentStep:    "node",
 	}, 0)
 
 	// Name should be truncated
@@ -450,7 +487,7 @@ func TestProgressRenderer_FormatPlanLine_Complete(t *testing.T) {
 		PlanName:       "doneplan",
 		TotalSteps:     4,
 		CompletedSteps: 4,
-		CurrentNode:    "lastStep",
+		CurrentStep:    "lastStep",
 	}, 0)
 
 	assert.Contains(t, line, "4/4")
@@ -475,14 +512,14 @@ func TestProgressRenderer_FormatPlanLine_CountAlignment(t *testing.T) {
 		PlanName:       "plan-short",
 		TotalSteps:     9,
 		CompletedSteps: 7,
-		CurrentNode:    "addPayment",
+		CurrentStep:    "addPayment",
 	}, denomWidth)
 
 	line15 := r.formatPlanLine(&PlanProgressState{
 		PlanName:       "plan-long",
 		TotalSteps:     15,
 		CompletedSteps: 6,
-		CurrentNode:    "addTraveler",
+		CurrentStep:    "addTraveler",
 	}, denomWidth)
 
 	// The slashes should be at the same column.
@@ -527,7 +564,7 @@ func TestParallelProgressObserver_StepUpdatesState(t *testing.T) {
 
 	snap := state.Snapshot()
 	assert.Equal(t, 3, snap.CompletedSteps)
-	assert.Equal(t, "priceOffers", snap.CurrentNode)
+	assert.Equal(t, "priceOffers", snap.CurrentStep)
 }
 
 func TestParallelProgressObserver_OnRunComplete(t *testing.T) {
@@ -582,7 +619,7 @@ func TestProgressRenderer_StatusBar(t *testing.T) {
 		PlanIndex:      4,
 		TotalSteps:     9,
 		CompletedSteps: 3,
-		CurrentNode:    "addOfferByRef",
+		CurrentStep:    "addOfferByRef",
 		StartTime:      time.Now(),
 	}
 	r.AddPlan(state)
