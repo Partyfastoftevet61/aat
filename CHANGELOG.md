@@ -13,6 +13,10 @@ the graph and plan formats may still change before 1.0.
   manifest as its `aat-project.yaml`. The `shop-api` server in `.mcp.json` reads the kit manifest, so it
   shows what an integrator's AI tool would see. `make example-shop` packages the kit, then validates and
   runs the unpacked copy.
+- Docs: *Share Your API with Integrators* describes an integration kit for any API: what to ship and what
+  to keep, a kit manifest beside the project manifest, internal environments that `include:` the shipped
+  file, packaging and checking the kit in CI, and what an integrator's AI tool can read through the `api`
+  persona. The docs home page, the examples index, Project Setup, and MCP Server link to it.
 - `make demos` regenerates the docs site's recordings and screenshots against a fresh `aat-sandbox`: VHS
   recordings of `aat run plan full-lifecycle` and a parallel layer-group batch, Playwright screenshots of
   the run timeline, a step's request with Copy as cURL, and the batch matrix, plus an MP4 of the plan run

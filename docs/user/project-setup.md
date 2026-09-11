@@ -33,6 +33,8 @@ my-ecommerce-api/
 
 These paths are convention, not enforced. You can name files and directories however you like — the manifest maps each artifact type to its actual location.
 
+To share part of a project with your API's integrators while keeping your internal tests, add a second manifest for that part and package it in CI; see [Share Your API with Integrators](integration-kit.md).
+
 ## The Project Manifest
 
 The manifest is a YAML file named `aat-project.yaml` that declares your project's artifacts:

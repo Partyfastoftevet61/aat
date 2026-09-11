@@ -52,7 +52,7 @@ The seven OpenAPI tools register only when an OAS spec is loaded (from the manif
 
 ### Choosing a Persona
 
-**Use `api`** when building client code against the API that AAT describes. The API persona renames tools to match integration vocabulary (e.g., `list_api_operations` instead of `list_nodes`) and includes OAS schema tools, domain value pools, and data flow tracing.
+**Use `api`** when building client code against the API that AAT describes. The API persona renames tools to match integration vocabulary (e.g., `list_api_operations` instead of `list_nodes`) and includes OAS schema tools, domain value pools, and data flow tracing. To give your API's integrators this view without your internal tests, package an [integration kit](integration-kit.md).
 
 **Use `test`** when creating, running, or debugging AAT test plans. The test persona includes plan management, execution, archive inspection, and failure analysis tools.
 

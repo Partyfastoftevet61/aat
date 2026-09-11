@@ -100,6 +100,7 @@ nav:
       - Validation: validation.md
   - AI and integration:
       - MCP server: mcp-server.md
+      - Integration kits: integration-kit.md
       - AI assistant primer: llms.md
       - Scaffolding from OpenAPI: generate.md
       - Generating API docs: docs-generate.md
