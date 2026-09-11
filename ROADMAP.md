@@ -24,6 +24,8 @@ Roughly in priority order. None of these have dates.
 - **CLI reference page.** One generated page listing every command and flag.
 - **More example integrations.** GitHub and Stripe graphs, with the setup chains needed to run them
   end to end.
+- **Docs site on Zensical.** The site is built with Material for MkDocs, which gets critical fixes
+  only until 2026-11-05; its successor, Zensical, aims to build existing Material projects.
 
 ## Not planned
 

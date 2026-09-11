@@ -410,7 +410,7 @@ Reports which graph nodes a batch exercised — passed, failed, or never touched
 python3 tools/batch-coverage.py _output/runs/batch-XXXXX graph.yaml
 ```
 
-See `tools/README.md` in the repository for the full option list.
+See [`tools/README.md`](https://github.com/gburgyan/aat/blob/main/tools/README.md) for the full option list.
 
 ## Debugging Failures
 

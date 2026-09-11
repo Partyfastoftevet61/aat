@@ -2,7 +2,7 @@
 
 Get from zero to a running API test in 5 minutes. This guide uses the [Petstore API](https://petstore.swagger.io/) as an example — substitute your own API to make it real.
 
-> **Want to watch AAT work before setting it up?** The [shop example](../../examples/shop/README.md) needs no API key or network:
+> **Want to watch AAT work before setting it up?** The [shop example](examples/shop.md) needs no API key or network:
 >
 > ```bash
 > aat-sandbox init shop && cd shop
@@ -119,6 +119,7 @@ nodes:
 ```
 
 Key points:
+
 - `satisfies: [pet]` on addPet means it provides the `pet` ordering token
 - `requires: [pet]` on getPetById and deletePet means they must run after a node that satisfies `pet`
 - `cleanup: deletePet` pairs addPet with its teardown operation

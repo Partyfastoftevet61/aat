@@ -9,7 +9,7 @@ LDFLAGS   := -X github.com/gburgyan/aat/internal/version.Version=$(VERSION) \
              -X github.com/gburgyan/aat/internal/version.GitCommit=$(COMMIT) \
              -X github.com/gburgyan/aat/internal/version.BuildDate=$(DATE)
 
-.PHONY: build cli sandbox example-shop test test-race lint fmt check clean frontend
+.PHONY: build cli sandbox example-shop test test-race lint fmt check clean frontend docs docs-serve
 
 build: frontend sandbox
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD)
@@ -45,8 +45,23 @@ fmt:
 
 check: fmt test-race lint
 
+# The docs site (mkdocs.yml over docs/user), built as the docs workflow does:
+# broken links, anchors, and pages missing from the nav fail the build.
+DOCS_VENV := .venv-docs
+
+$(DOCS_VENV)/.installed: docs/requirements.txt
+	python3 -m venv $(DOCS_VENV)
+	$(DOCS_VENV)/bin/pip install --quiet -r docs/requirements.txt
+	touch $@
+
+docs: $(DOCS_VENV)/.installed
+	$(DOCS_VENV)/bin/mkdocs build --strict
+
+docs-serve: $(DOCS_VENV)/.installed
+	$(DOCS_VENV)/bin/mkdocs serve
+
 # Removes build output only: server/web/dist/index.html is tracked (it satisfies
 # the go:embed pattern when no frontend has been built), so only assets go.
 clean:
 	rm -f $(BINARY) $(SANDBOX)
-	rm -rf server/web/dist/assets server/web/node_modules
+	rm -rf server/web/dist/assets server/web/node_modules site

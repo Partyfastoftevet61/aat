@@ -1,0 +1,101 @@
+site_name: AAT — Adaptive API Toolkit
+site_url: https://gburgyan.github.io/aat/
+site_description: >-
+  Model your API as a graph once. Get long-chain integration tests, layer × environment matrices,
+  CI-ready runs, and an MCP server for AI coding tools — all from the same YAML.
+repo_url: https://github.com/gburgyan/aat
+repo_name: gburgyan/aat
+edit_uri: edit/main/docs/user/
+docs_dir: docs/user
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - search.highlight
+    - toc.follow
+
+# No macros plugin: the docs contain template placeholders such as {{petId}} that must stay literal.
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.snippets:
+      base_path: [.]
+      check_paths: true
+
+# Broken links, broken anchors, and pages missing from the nav fail `mkdocs build --strict`.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Quickstart: quickstart.md
+      - Petstore walkthrough: petstore-walkthrough.md
+      - Tutorial: tutorial.md
+  - Examples:
+      - Shop: examples/shop.md
+  - Core guides:
+      - Project setup: project-setup.md
+      - API graphs: graphs.md
+      - Templates: templates.md
+      - Lua transforms: lua-transforms.md
+      - Environments: environments.md
+      - Plans and recipes: plans.md
+      - Workflows: workflows.md
+      - Value resolution: value-flow.md
+      - Domain knowledge: domain.md
+  - Running:
+      - Running tests: running.md
+      - Matrix testing: batch-layers.md
+      - Local development: local-dev.md
+      - CI/CD: ci-cd.md
+      - Web UI and archives: web-ui.md
+      - Visualizers: visualizers.md
+      - Validation: validation.md
+  - AI and integration:
+      - MCP server: mcp-server.md
+      - AI assistant primer: llms.md
+      - LLM-assisted planning: prompt.md
+  - Reference:
+      - Changelog: changelog.md

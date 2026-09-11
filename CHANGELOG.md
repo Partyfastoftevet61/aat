@@ -7,6 +7,9 @@ the graph and plan formats may still change before 1.0.
 ## [Unreleased]
 
 ### Added
+- A documentation site built from `docs/user` with Material for MkDocs (`mkdocs.yml`), deployed to GitHub
+  Pages by a new Docs workflow that fails on broken links, broken anchors, and pages missing from the
+  navigation. `make docs` runs the same strict build locally.
 - `aat-sandbox`, a second binary that serves an offline e-commerce demo API (`aat-sandbox serve`:
   shop API on :8765 with OAuth2 tokens, payments API on :8766 with an API key, `us`/`eu` regions
   with their own currency, tax, tiers, and coupons, an order state machine, simulated latency, and

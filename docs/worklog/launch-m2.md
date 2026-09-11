@@ -116,3 +116,35 @@ strategy, recipe `overrides.descriptions`, the `warn` OAS mode, and the web UI's
 **Open questions:** the private airline project may carry keys strict decoding now rejects; `aat validate` lists
 them. Fixture sweep: only `graph/testdata/valid/travel_flow.yaml` and inline graph YAML in two `cmd/aat` tests had
 ignored keys (an input `source:`/`from:`), plus `settings.defaultRetries` in `examples/petstore/env.yaml`.
+
+## 2026-09-10 — Commit 3: docs site scaffold
+
+**What:** `mkdocs.yml` over `docs/user` with Material for MkDocs 9.7.7 (pinned in `docs/requirements.txt`), a nav of
+the existing pages plus `changelog.md` and `examples/shop.md`, `.github/workflows/docs.yml` (strict build on pull
+requests and pushes, Pages deploy from main), and `make docs` / `make docs-serve`. The strict build passes with no
+warnings.
+
+**Decisions:**
+
+- **Strict validation is the drift guard.** MkDocs 1.6 reports omitted nav pages, unrecognized links, and missing
+  anchors at `info` by default; `validation:` raises all four to `warn`, so `--strict` fails on them. A scratch
+  orphan page with a bad anchor confirmed both are caught.
+- **Material for MkDocs now, Zensical later.** Material gets critical fixes only until 2026-11-05
+  (squidfunk/mkdocs-material#8523) and its successor, Zensical, aims to build existing Material projects. Switching
+  before launch would add a young tool to the launch path for no reader-visible gain; ROADMAP carries the move.
+  Pinning an exact version keeps the build reproducible while upstream is in maintenance.
+- **No macros plugin.** The docs are full of template placeholders such as `{{petId}}`; a Jinja-based plugin would
+  try to render them.
+- **One source for the shop README.** `examples/shop.md` includes `examples/shop/README.md` between HTML-comment
+  section markers (invisible on GitHub and harmless in `aat-sandbox init` output), and `changelog.md` includes
+  `CHANGELOG.md`, which keeps its own H1. These two includes are the only site-only syntax; every other page stays
+  plain Markdown that reads the same on GitHub. Links that left `docs_dir` now point at `examples/shop.md` or, for
+  petstore, at GitHub.
+- **Python-Markdown differences fixed in the source.** A list needs a blank line before it (12 places) and content
+  inside a list item needs four spaces (one fence in plans.md); GitHub renders both forms, so the fixes change
+  nothing there. The missing `assets/ui-batch-matrix.png` image was removed until M3 records the web UI.
+- **Pages the scaffold does not add yet.** install, lua-transforms (rewritten), checkpoints, archives, generate,
+  docs-generate, the examples index, and the airline case study join the nav in commit 4, each in the change that
+  creates it, so every commit builds strict.
+
+**Open questions:** the deploy job fails until the author enables Pages (Settings → Pages → Source = GitHub Actions).

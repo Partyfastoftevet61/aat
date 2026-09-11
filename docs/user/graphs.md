@@ -376,10 +376,12 @@ aat validate graph --graph graph.yaml --strict
 The validator checks 7 rules, classified as errors or warnings:
 
 **Errors** (always fail validation):
+
 - `operationId` not found in any loaded spec
 - Spec path referenced but file not found
 
 **Warnings** (fail only with `--strict`):
+
 - Graph input not in OAS parameters or request body
 - Required OAS parameter missing from graph inputs
 - Graph output not in the 2xx response schema; when templates are loaded (`aat validate`, or `aat validate graph --templates`), each output is looked up at its template extract path, through nested objects and array items
@@ -532,4 +534,4 @@ See [Validation](validation.md) for the full reference covering all `aat validat
 
 ---
 
-*Source: Restructured from `docs/user/graph-authoring.md`. Workflow content moved to [workflows.md](workflows.md).*
+*Source: graph types in `graph/types.go`, parsing in `graph/parse.go`, validation in `graph/validate.go`, scaffolding in `graph/oas/generate.go`.*

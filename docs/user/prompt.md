@@ -99,6 +99,7 @@ aat prompt --save smoke-test "create an order and check status"
 ```
 
 Name resolution for `--save`:
+
 - Absolute paths are used as-is
 - Names with `.yaml` or `.yml` extension are treated as literal paths
 - Plain names are resolved through the manifest's plan directories, with `.yaml` appended automatically

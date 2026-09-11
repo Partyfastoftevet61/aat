@@ -18,6 +18,8 @@ make frontend      # cd server/web && npm install && npm run build
 make test          # go test ./...
 make check         # fmt + test-race + lint — mirrors the CI test and lint jobs
 make example-shop  # examples/shop against a local sandbox — mirrors the CI example-shop job
+make docs          # mkdocs build --strict in .venv-docs — mirrors the Docs workflow
+make docs-serve    # live-reloading docs site on :8000
 make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 ```
 
@@ -142,7 +144,7 @@ The environment file supports two formats: **single-environment** (legacy, one `
 
 - **`docs/internal/`** — progress tracker, architecture notes (for contributors)
 - **`docs/worklog/`** — decision log entries per stage (date, decisions, rationale)
-- **`docs/user/`** — user-facing docs (created when there's something to document)
+- **`docs/user/`** — user-facing docs, built into the site at https://gburgyan.github.io/aat/ (`mkdocs.yml`, Material for MkDocs; `.github/workflows/docs.yml` deploys it from main). Every page must be listed in the `mkdocs.yml` nav; links, anchors, and nav coverage are checked by `make docs`, so run it before committing doc changes. Keep pages readable on GitHub (plain Markdown); the one site-only construct is the `--8<--` snippet include in `changelog.md` and `examples/shop.md`, which pulls in `CHANGELOG.md` and the `examples/shop/README.md` section between its `[start:body]`/`[end:body]` markers
 
 Record user-visible changes in `CHANGELOG.md` under *Unreleased* as tasks complete. Add worklog entries for non-trivial decisions. The public launch roadmap lives in `LAUNCH-PLAN.md`.
 

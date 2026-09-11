@@ -165,9 +165,10 @@ overrides:
 Three paths to creating a recipe:
 
 1. **`aat prompt --save`** — describe what you want in natural language; AAT generates a recipe
-   ```bash
-   aat prompt --save plans/my-test.yaml "order electronics with express shipping"
-   ```
+
+    ```bash
+    aat prompt --save plans/my-test.yaml "order electronics with express shipping"
+    ```
 
 2. **Write by hand** — create a YAML file with `kind: recipe` and the selection/overrides you need
 

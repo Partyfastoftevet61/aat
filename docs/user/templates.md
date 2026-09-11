@@ -463,6 +463,7 @@ aat validate graph --graph graph.yaml --templates templates/
 ```
 
 This catches:
+
 - **Graph output not extracted by template** — the node declares an output but the template has no extract entry, so the output will be nil at runtime
 - **Template extracts undeclared output** — the template extracts a key the graph doesn't declare (dead extraction, likely a typo)
 - **Element field mismatch** — for array outputs, the template's `fields` keys should match the graph's `elementFields` names
@@ -499,4 +500,4 @@ response:
 
 ---
 
-*Source: Restructured from `docs/user/templates.md` with new sections on conditional blocks, iteration blocks, input classification, and Lua transforms.*
+*Source: `adapter/template.go`, `adapter/lua.go`.*

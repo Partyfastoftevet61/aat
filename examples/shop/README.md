@@ -1,5 +1,6 @@
 # Shop: the AAT quick start
 
+<!-- --8<-- [start:body] -->
 A complete AAT project for a small e-commerce API that runs on your machine. `aat-sandbox` serves
 the API with no signup and no network, and this directory holds everything AAT needs to drive it:
 a 17-operation graph, workflows with slots and addons, 12 layers, 7 plans, two regions, negative
@@ -235,3 +236,4 @@ visualizers/                   the Receipt tab for order responses
 .mcp.json, .claude/            MCP servers and Claude Code permissions
 .aat-overrides.yaml.example    local-development routing
 ```
+<!-- --8<-- [end:body] -->

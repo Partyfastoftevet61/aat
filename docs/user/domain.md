@@ -251,6 +251,7 @@ This gives the LLM enough context to generate plans that use realistic values an
 ### Documentation
 
 `aat docs generate --domain domain.yaml` enriches generated documentation with:
+
 - Concept descriptions for fields that match `applies_to` entries
 - Type format and validation details for typed inputs/outputs
 - Value pool examples for fields with matching types

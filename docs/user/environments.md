@@ -7,6 +7,7 @@ The environment file configures how AAT connects to your API at runtime — base
 AAT separates **what to test** (graph, plans, templates) from **where to test** (environment). The environment file holds connection details for a specific target: API endpoints, credentials, static headers, and runtime settings. Switching between development, staging, and production is a matter of selecting a different environment via `--env` or the [project manifest](project-setup.md).
 
 AAT supports two environment file formats:
+
 - **Single-environment** (legacy) — one environment per file, selected by pointing `--env-config` (or the manifest's `environment:`) at the file
 - **Multi-environment** — multiple environments in one file, selected with `--env`
 
@@ -686,6 +687,7 @@ overrides:
 ```
 
 Overlays are useful for:
+
 - Routing specific services to local instances during development
 - Switching a subset of nodes to a sandbox environment
 - Replacing auth credentials for an entire test run
@@ -696,6 +698,7 @@ Overlays are useful for:
 `aat validate` checks environment files for structural correctness. A key that no field accepts, such as a misspelled `apiBaseURL`, is an error naming the file, the line, and the likely intended key.
 
 **Single-environment files:**
+
 - `environment` name is required
 - `apiBaseUrl` is required
 - Auth type must be one of: `oauth2`, `apikey`, `bearer`, `none`
@@ -706,6 +709,7 @@ Overlays are useful for:
 - `settings.oasValidation` must be `auto`, `strict`, or `off`
 
 **Multi-environment files** — all the above, plus:
+
 - All `extends` targets must exist
 - No circular inheritance chains
 - All `${var}` references must resolve after merging

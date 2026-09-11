@@ -208,6 +208,7 @@ iframe.contentWindow.postMessage({
 ```
 
 If the visualizer appears but shows nothing, check:
+
 - The `bodyContains` key matches a top-level key in the response (not a nested key)
 - The `node` name matches the graph node (not the step ID)
 - The JavaScript `render()` function handles the response structure correctly

@@ -5,7 +5,7 @@ AAT (Adaptive API Toolkit) is a CLI tool that tests API workflows end-to-end. It
 ## Quick Links by Role
 
 ### I want to see AAT run first
-- [Shop example](../../examples/shop/README.md) — an offline e-commerce sandbox and a complete project for it; running in 60 seconds with no API key or network
+- [Shop example](examples/shop.md) — an offline e-commerce sandbox and a complete project for it; running in 60 seconds with no API key or network
 
 ### I want to run existing tests
 - [Running Tests](running.md) — execute plans and batches from the command line
@@ -33,7 +33,7 @@ AAT (Adaptive API Toolkit) is a CLI tool that tests API workflows end-to-end. It
 
 ### Shop sandbox (1 minute)
 
-Start here if you want to watch AAT drive a realistic API before writing anything. `aat-sandbox` serves an offline shop API, and `aat-sandbox init` extracts a complete project for it: workflows with slots and addons, a layer matrix, two regions, negative tests, and checkpoints. [Go to the shop example](../../examples/shop/README.md)
+Start here if you want to watch AAT drive a realistic API before writing anything. `aat-sandbox` serves an offline shop API, and `aat-sandbox init` extracts a complete project for it: workflows with slots and addons, a layer matrix, two regions, negative tests, and checkpoints. [Go to the shop example](examples/shop.md)
 
 ### Quickstart (5 minutes)
 
@@ -84,7 +84,7 @@ Progressive reading order — each builds on the previous.
 
 | Document | What you'll learn |
 |----------|-------------------|
-| [Shop example](../../examples/shop/README.md) | The offline quick start: a 17-operation graph, slots and addons, a layer matrix with dedup, `us`/`eu` environments, negative tests, checkpoints, and MCP configuration |
+| [Shop example](examples/shop.md) | The offline quick start: a 17-operation graph, slots and addons, a layer matrix with dedup, `us`/`eu` environments, negative tests, checkpoints, and MCP configuration |
 | [Petstore Walkthrough](petstore-walkthrough.md) | A line-by-line tour of a working example: graph, templates, workflows, recipes, and how they compose |
 
 ## Concepts Glossary

@@ -2,7 +2,7 @@
 
 Trace from a 21-line recipe to a fully automated, self-cleaning API test.
 
-This walkthrough takes you through every file in the [Petstore example](../../examples/petstore/) and explains how they compose into working tests. By the end, you will understand how AAT models an API, wires data between steps, runs cleanup automatically, and keeps test plans short.
+This walkthrough takes you through every file in the [Petstore example](https://github.com/gburgyan/aat/tree/main/examples/petstore) and explains how they compose into working tests. By the end, you will understand how AAT models an API, wires data between steps, runs cleanup automatically, and keeps test plans short.
 
 **Prerequisites:** Go 1.25+, internet access (the Petstore API is public).
 
