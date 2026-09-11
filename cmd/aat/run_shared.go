@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"github.com/gburgyan/aat/intent"
 	"github.com/gburgyan/aat/internal/version"
 	"github.com/gburgyan/aat/plan"
+	"github.com/gburgyan/aat/validate"
 	"github.com/spf13/cobra"
 )
 
@@ -84,6 +84,7 @@ type StepSummary struct {
 	RetriedOn        []string             `json:"retried_on,omitempty"` // error category of each retried attempt
 	AssertionsPassed int                  `json:"assertions_passed"`
 	AssertionsFailed int                  `json:"assertions_failed"`
+	FailedAssertions []string             `json:"failed_assertions,omitempty"` // "type: message" per failed assertion
 	DisplayOutputs   []DisplayOutputEntry `json:"display_outputs,omitempty"`
 }
 
@@ -255,82 +256,24 @@ func toStepSummary(step engine.StepResult) StepSummary {
 			}
 		}
 	}
+	ss.FailedAssertions = failedAssertions(step.Validation)
 
 	return ss
 }
 
-// printRunSummary writes a human-readable step-by-step summary to the given writer.
-func printRunSummary(result *engine.RunResult, out io.Writer, ti TerminalInfo) {
-	total := len(result.Steps)
-	color := ti.IsTTY
-	ncw := nodeColWidth(ti.Width, 60)
-
-	var oasWarnings int
-	for i, step := range result.Steps {
-		nodeStr := formatNodeCol(step.Node, ncw, color)
-		prefix := fmt.Sprintf("  [%d/%d] %s", i+1, total, nodeStr)
-		if step.Error != nil {
-			errLabel := colorize("ERROR", colorRed, color)
-			if step.RetryCount > 0 {
-				_, _ = fmt.Fprintf(out, "%s %s [%s] (after %d retries)\n", prefix, errLabel, errorCategory(step), step.RetryCount)
-			} else {
-				_, _ = fmt.Fprintf(out, "%s %s: %s\n", prefix, errLabel, step.Error)
-			}
-		} else if step.Response != nil {
-			status := colorStatus(step.StatusCode, color)
-			validMark := ""
-			if step.Validation != nil && !step.Validation.Passed {
-				validMark = "  " + colorize("ASSERTIONS FAILED", colorYellow, color)
-			}
-			oasMark := ""
-			if step.OASValidation != nil && step.OASValidation.HasErrors() {
-				ec := step.OASValidation.ErrorCount()
-				oasWarnings += ec
-				oasMark = "  " + colorize(fmt.Sprintf("OAS: %d warning(s)", ec), colorYellow, color)
-			}
-			_, _ = fmt.Fprintf(out, "%s %s  %dms%s%s\n", prefix, status, step.Duration.Milliseconds(), validMark, oasMark)
-			for _, do := range step.DisplayOutputs {
-				_, _ = fmt.Fprintf(out, "        %s: %v\n", do.Label, do.Value)
-			}
-		} else {
-			_, _ = fmt.Fprintf(out, "%s (no response)\n", prefix)
+// failedAssertions describes each failed assertion as "type: message", such as
+// "status: expected status 200, got 201", so run output says why a step failed.
+func failedAssertions(v *validate.MechanicalResult) []string {
+	if v == nil {
+		return nil
+	}
+	var msgs []string
+	for _, ar := range v.Results {
+		if !ar.Passed {
+			msgs = append(msgs, fmt.Sprintf("%s: %s", ar.Type, ar.Message))
 		}
 	}
-
-	if len(result.CleanupResults) > 0 {
-		_, _ = fmt.Fprintln(out, "\n  cleanup:")
-		cleanupNCW := nodeColWidth(ti.Width, 58)
-		for _, step := range result.CleanupResults {
-			node := fmt.Sprintf("%-*s", cleanupNCW, truncateNode(step.Node, cleanupNCW))
-			prefix := fmt.Sprintf("    %s", node)
-			if step.Error != nil {
-				errLabel := colorize("ERROR", colorRed, color)
-				_, _ = fmt.Fprintf(out, "%s %s: %s\n", prefix, errLabel, step.Error)
-			} else if step.Response != nil {
-				status := colorStatus(step.StatusCode, color)
-				_, _ = fmt.Fprintf(out, "%s %s  %dms\n", prefix, status, step.Duration.Milliseconds())
-			} else {
-				_, _ = fmt.Fprintf(out, "%s (no response)\n", prefix)
-			}
-		}
-	}
-
-	_, _ = fmt.Fprintln(out)
-	switch result.Outcome {
-	case engine.OutcomePassed:
-		_, _ = fmt.Fprintf(out, "%s (%d/%d steps, %s)\n", colorOutcome("PASSED", color), total, total, totalDuration(result))
-	case engine.OutcomeFailed:
-		_, _ = fmt.Fprintf(out, "%s: %s\n", colorOutcome("FAILED", color), outcomeMessage(result))
-	case engine.OutcomeError:
-		_, _ = fmt.Fprintf(out, "%s: %s\n", colorOutcome("ERROR", color), outcomeMessage(result))
-	case engine.OutcomeAborted:
-		_, _ = fmt.Fprintf(out, "%s (%d/%d steps, %s)\n", colorOutcome("ABORTED", color), len(result.Steps), total, totalDuration(result))
-	case engine.OutcomeStopped:
-		_, _ = fmt.Fprintf(out, "%s at %q (%d/%d steps, %s)\n", colorOutcome("STOPPED", color), result.StoppedAt, len(result.Steps), total, totalDuration(result))
-	}
-	if oasWarnings > 0 {
-		_, _ = fmt.Fprintf(out, "OAS: %s\n", colorize(fmt.Sprintf("%d warning(s)", oasWarnings), colorYellow, color))
-	}
+	return msgs
 }
 
 // errorCategory returns the error classification category string for a step.
@@ -339,21 +282,6 @@ func errorCategory(step engine.StepResult) string {
 		return step.ErrorClass.Category.String()
 	}
 	return "unknown"
-}
-
-// totalDuration sums the duration of all steps.
-func totalDuration(result *engine.RunResult) string {
-	var total time.Duration
-	for _, s := range result.Steps {
-		total += s.Duration
-	}
-	for _, s := range result.CleanupResults {
-		total += s.Duration
-	}
-	if total < time.Second {
-		return fmt.Sprintf("%dms", total.Milliseconds())
-	}
-	return fmt.Sprintf("%.1fs", total.Seconds())
 }
 
 // outcomeMessage produces a summary error string.
@@ -1025,11 +953,6 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 
 	result := eng.Run(ctx, p)
 
-	// Print human-readable summary only when no observer is active
-	if observer == nil {
-		printRunSummary(result, io.Discard, TerminalInfo{})
-	}
-
 	// 8. Write archive
 	secrets := make(map[string]bool)
 	for k, v := range rctx.Secrets {
@@ -1040,13 +963,11 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 			secrets[k] = v
 		}
 	}
-	if autoOverlay != nil && autoOverlay.Auth != nil {
-		for k, v := range config.CollectAuthSecrets(autoOverlay.Auth) {
-			secrets[k] = v
+	for _, overlay := range []*config.OverlayFile{autoOverlay, envOverlayFile} {
+		if overlay == nil {
+			continue
 		}
-	}
-	if envOverlayFile != nil && envOverlayFile.Auth != nil {
-		for k, v := range config.CollectAuthSecrets(envOverlayFile.Auth) {
+		for k, v := range overlay.CollectSecrets() {
 			secrets[k] = v
 		}
 	}

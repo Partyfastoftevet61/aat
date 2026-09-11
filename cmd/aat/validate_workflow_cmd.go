@@ -84,7 +84,7 @@ func workflowValidateCommand(args *workflowValidateArgs, out io.Writer) int {
 		graphDir := filepath.Dir(args.GraphPath)
 		compatResult := intent.ValidateWorkflowCompat(g, graphDir)
 
-		if compatResult.HasErrors() || (args.Strict && compatResult.HasIssues()) {
+		if compatResult.HasErrors() || compatResult.HasIssues() {
 			var wfErrors []string
 			for _, e := range compatResult.Errors {
 				wfErrors = append(wfErrors, fmt.Sprintf("workflow %q: %s", e.Workflow, e.Err))
@@ -94,14 +94,14 @@ func workflowValidateCommand(args *workflowValidateArgs, out io.Writer) int {
 			}
 			sections = append(sections, sectionResult{
 				Name:   "Workflow compatibility",
-				Status: "FAILED",
+				Status: issueStatus(compatResult.HasErrors(), args.Strict),
 				Errors: wfErrors,
 			})
 		} else {
 			sections = append(sections, sectionResult{
 				Name:   "Workflow compatibility",
 				Status: "OK",
-				Detail: fmt.Sprintf("(%d workflows)", len(g.Workflows)),
+				Detail: "(" + pluralize(len(g.Workflows), "workflow") + ")",
 			})
 		}
 	}
@@ -118,9 +118,9 @@ func workflowValidateCommand(args *workflowValidateArgs, out io.Writer) int {
 				Errors: pvr.Errors,
 			})
 		} else if pvr.Total > 0 {
-			detail := fmt.Sprintf("(%d files", pvr.Total)
+			detail := "(" + pluralize(pvr.Total, "file")
 			if pvr.Templates > 0 {
-				detail += fmt.Sprintf(", %d templates", pvr.Templates)
+				detail += ", " + pluralize(pvr.Templates, "template")
 			}
 			detail += ")"
 			sections = append(sections, sectionResult{

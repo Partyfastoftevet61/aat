@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -35,8 +36,9 @@ type ProjectPaths struct {
 //  3. CWD manifest discovery (walk up from cwd for aat-project.yaml)
 //  4. Explicit flag values in overrides (highest priority)
 //
-// A level whose manifest does not exist is skipped, so a stale home config or
-// missing CWD manifest doesn't block operation when explicit flags are provided.
+// A discovered level whose manifest does not exist is skipped, so a stale home
+// config doesn't block operation when explicit flags are provided; a --manifest
+// that does not exist is an error.
 // A manifest that exists but fails to load is an error, unless a higher-priority
 // level loads a manifest after it: otherwise a typo in aat-project.yaml would
 // quietly run against a lower-priority project, or none.
@@ -69,9 +71,18 @@ func ResolveProjectPaths(overrides ProjectPaths) (*ProjectPaths, error) {
 		apply(found)
 	}
 
-	// 3.5. Explicit --manifest flag (overrides auto-discovery)
+	// 3.5. Explicit --manifest flag (overrides auto-discovery). Unlike the
+	// discovered levels, a manifest the user named must exist.
 	if overrides.ExplicitManifest != "" {
-		apply(overrides.ExplicitManifest)
+		loaded, err := applyManifest(result, overrides.ExplicitManifest)
+		switch {
+		case err != nil:
+			manifestErr = err
+		case !loaded:
+			manifestErr = fmt.Errorf("manifest not found: %s", resolveManifestPath(overrides.ExplicitManifest))
+		default:
+			manifestErr = nil
+		}
 	}
 	if manifestErr != nil {
 		return nil, manifestErr

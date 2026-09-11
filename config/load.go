@@ -55,6 +55,18 @@ type OverlayFile struct {
 	Overrides   []HostOverride    `yaml:"overrides"`
 }
 
+// CollectSecrets resolves the credentials of the overlay's auth and of its
+// overrides' auth, for redaction in archives.
+func (o *OverlayFile) CollectSecrets() map[string]bool {
+	secrets := CollectAuthSecrets(o.Auth)
+	for _, ov := range o.Overrides {
+		for k := range CollectAuthSecrets(ov.Auth) {
+			secrets[k] = true
+		}
+	}
+	return secrets
+}
+
 // LoadOverlayFile reads a YAML overlay file and returns the parsed overlay.
 // The caller should check overlay.Auth for transaction-level auth and
 // overlay.Overrides for per-node overrides.

@@ -12,9 +12,11 @@ var sensitiveHeaders = map[string]bool{
 	"proxy-authorization": true,
 }
 
-// RedactHeaders returns a copy of headers with sensitive values replaced by [REDACTED].
-// Matching is case-insensitive.
-func RedactHeaders(headers map[string]string) map[string]string {
+// RedactHeaders returns a copy of headers with sensitive values replaced by
+// [REDACTED]: every header with a well-known credential name (matched
+// case-insensitively), and any value containing a known secret, which covers
+// an API key sent under a custom header name.
+func RedactHeaders(headers map[string]string, secrets map[string]bool) map[string]string {
 	if headers == nil {
 		return nil
 	}
@@ -23,7 +25,7 @@ func RedactHeaders(headers map[string]string) map[string]string {
 		if sensitiveHeaders[strings.ToLower(k)] {
 			result[k] = "[REDACTED]"
 		} else {
-			result[k] = v
+			result[k] = RedactValue(v, secrets).(string)
 		}
 	}
 	return result

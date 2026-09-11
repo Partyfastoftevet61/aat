@@ -26,6 +26,17 @@ func TestApplySelection_ImplementsEveryStrategy(t *testing.T) {
 	assert.ErrorContains(t, err, `unknown selection strategy "llm"`)
 }
 
+func TestApplySelection_FilterWithoutStrategyMeansMatch(t *testing.T) {
+	arr := []any{
+		map[string]any{"sku": "a", "inStock": false},
+		map[string]any{"sku": "b", "inStock": true},
+	}
+	result, err := applySelection(arr, &plan.SelectionConfig{Filter: "inStock == true"})
+	require.NoError(t, err)
+	assert.Equal(t, "b", result.element.(map[string]any)["sku"])
+	assert.Equal(t, 1, result.index)
+}
+
 func TestApplySelection_NilConfig_DefaultsToFirst(t *testing.T) {
 	arr := []any{"a", "b", "c"}
 	result, err := applySelection(arr, nil)

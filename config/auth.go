@@ -110,7 +110,7 @@ func authenticateOAuth2(ctx context.Context, auth AuthConfig) (*OAuthToken, erro
 		for _, k := range keys {
 			v := form.Get(k)
 			if k == "client_secret" || k == "password" {
-				v = v[:min(4, len(v))] + "..."
+				v = secretPreview(v)
 			}
 			_, _ = fmt.Fprintf(vw, "[auth]   %s = %s\n", k, v)
 		}

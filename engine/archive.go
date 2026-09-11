@@ -6,14 +6,19 @@ import (
 
 	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/archive"
+	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/graph/oas"
+	"github.com/gburgyan/aat/plan"
 	"github.com/gburgyan/aat/validate"
 )
 
 // ToArchive converts an engine RunResult into a serializable Archive.
 // The baseURL is prepended to request paths to produce full URLs.
-// If secrets is non-nil, matching values in Inputs, Resolutions, etc. are redacted.
+// Credential headers are always redacted. If secrets is non-nil, values
+// containing a secret are redacted in inputs, resolutions, and headers, and
+// the archived plans lose their literal credentials.
 func ToArchive(result *RunResult, meta archive.ArchiveMetadata, baseURL string, secrets map[string]bool) *archive.Archive {
+	meta.Plan = redactPlan(meta.Plan, secrets)
 	a := &archive.Archive{
 		Metadata: meta,
 		Result: archive.ArchiveResult{
@@ -24,7 +29,7 @@ func ToArchive(result *RunResult, meta archive.ArchiveMetadata, baseURL string, 
 
 	a.Steps = convertStepResults(result.Steps, baseURL, secrets)
 	a.Cleanup = convertStepResults(result.CleanupResults, baseURL, secrets)
-	a.Metadata.InstantiatedPlan = result.InstantiatedPlan
+	a.Metadata.InstantiatedPlan = redactPlan(result.InstantiatedPlan, secrets)
 
 	return a
 }
@@ -57,10 +62,10 @@ func convertStepResult(s StepResult, baseURL string, secrets map[string]bool) ar
 	}
 
 	if s.Request != nil {
-		rec.Request = convertRequest(s.Request, s.ActualBaseURL, baseURL, s.OriginalPath)
+		rec.Request = convertRequest(s.Request, s.ActualBaseURL, baseURL, s.OriginalPath, secrets)
 	}
 	if s.Response != nil {
-		rec.Response = convertResponse(s.Response)
+		rec.Response = convertResponse(s.Response, secrets)
 	}
 	if s.Validation != nil {
 		rec.Validation = convertValidation(s.Validation)
@@ -107,7 +112,7 @@ func convertStepResult(s StepResult, baseURL string, secrets map[string]bool) ar
 	return rec
 }
 
-func convertRequest(req *adapter.Request, actualBaseURL, defaultBaseURL, originalPath string) *archive.RequestRecord {
+func convertRequest(req *adapter.Request, actualBaseURL, defaultBaseURL, originalPath string, secrets map[string]bool) *archive.RequestRecord {
 	// Use the actual executor base URL if available, fall back to default
 	effectiveBase := actualBaseURL
 	if effectiveBase == "" {
@@ -118,7 +123,7 @@ func convertRequest(req *adapter.Request, actualBaseURL, defaultBaseURL, origina
 	rec := &archive.RequestRecord{
 		Method:  req.Method,
 		URL:     actualURL,
-		Headers: archive.RedactHeaders(req.Headers),
+		Headers: archive.RedactHeaders(req.Headers, secrets),
 		Body:    toRawMessage(req.Body),
 	}
 
@@ -135,12 +140,36 @@ func convertRequest(req *adapter.Request, actualBaseURL, defaultBaseURL, origina
 	return rec
 }
 
-func convertResponse(resp *adapter.Response) *archive.ResponseRecord {
+func convertResponse(resp *adapter.Response, secrets map[string]bool) *archive.ResponseRecord {
 	return &archive.ResponseRecord{
 		Status:  resp.StatusCode,
-		Headers: archive.RedactHeaders(flattenHeaders(resp.Headers)),
+		Headers: archive.RedactHeaders(flattenHeaders(resp.Headers), secrets),
 		Body:    toRawMessage(resp.Body),
 	}
+}
+
+// redactPlan returns p with its auth credentials' literal values and its
+// headers redacted, copying what it changes so the caller's plan is untouched.
+// Environment-variable references keep their variable names, which are not
+// secret.
+func redactPlan(p *plan.Plan, secrets map[string]bool) *plan.Plan {
+	if p == nil || (p.Auth == nil && len(p.Headers) == 0) {
+		return p
+	}
+	cp := *p
+	if p.Auth != nil {
+		auth := *p.Auth
+		auth.Credentials = make(map[string]config.SecretRef, len(p.Auth.Credentials))
+		for name, ref := range p.Auth.Credentials {
+			if ref.Value != "" {
+				ref.Value = "[REDACTED]"
+			}
+			auth.Credentials[name] = ref
+		}
+		cp.Auth = &auth
+	}
+	cp.Headers = archive.RedactHeaders(p.Headers, secrets)
+	return &cp
 }
 
 func convertValidation(v *validate.MechanicalResult) *archive.ValidationRecord {

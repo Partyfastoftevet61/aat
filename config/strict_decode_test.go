@@ -117,6 +117,15 @@ func TestResolveProjectPaths_BrokenManifest(t *testing.T) {
 		assert.Equal(t, filepath.Join(good, "aat-project.yaml"), result.ManifestPath)
 	})
 
+	t.Run("a missing --manifest is an error", func(t *testing.T) {
+		require.NoError(t, os.Chdir(good))
+		t.Setenv("AAT_PROJECT", "")
+		missing := filepath.Join(t.TempDir(), "aat-project.yaml")
+
+		_, err := ResolveProjectPaths(ProjectPaths{ExplicitManifest: missing})
+		assert.EqualError(t, err, "manifest not found: "+missing)
+	})
+
 	t.Run("a missing manifest is not an error", func(t *testing.T) {
 		require.NoError(t, os.Chdir(t.TempDir()))
 		t.Setenv("AAT_PROJECT", filepath.Join(t.TempDir(), "gone"))

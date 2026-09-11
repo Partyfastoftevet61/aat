@@ -7,8 +7,8 @@ import "github.com/gburgyan/aat/plan"
 // Implementations must not block for extended periods.
 type ProgressObserver interface {
 	// OnRunStart is called once at the beginning of execution with the total
-	// number of steps and the effective execution mode.
-	OnRunStart(total int, mode string)
+	// number of steps.
+	OnRunStart(total int)
 
 	// OnStepStart is called immediately before a step begins execution.
 	OnStepStart(index, total int, step plan.Step)

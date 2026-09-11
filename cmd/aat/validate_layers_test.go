@@ -66,7 +66,7 @@ func TestValidate_RecipeLayersResolved(t *testing.T) {
 	code := validateCommand(&validateArgs{ManifestPath: manifest}, &buf)
 
 	assert.Equal(t, 0, code, buf.String())
-	assert.Regexp(t, `Layers:\s+OK \(1 layers\)`, buf.String())
+	assert.Regexp(t, `Layers:\s+OK \(1 layer\)`, buf.String())
 }
 
 func TestValidate_RecipeUnknownLayerFails(t *testing.T) {

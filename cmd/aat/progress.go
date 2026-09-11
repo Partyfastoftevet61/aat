@@ -11,14 +11,14 @@ import (
 )
 
 // CLIProgressObserver implements engine.ProgressObserver for interactive CLI output.
-// It prints each step result as it completes, matching the format of printRunSummary.
+// It prints each step result as it completes.
 type CLIProgressObserver struct {
 	out   io.Writer
 	term  TerminalInfo
 	total int // cached from OnRunStart for duration calculation
 }
 
-func (o *CLIProgressObserver) OnRunStart(total int, mode string) {
+func (o *CLIProgressObserver) OnRunStart(total int) {
 	o.total = total
 }
 
@@ -57,16 +57,12 @@ func (o *CLIProgressObserver) OnStepComplete(index, total int, result engine.Ste
 		if color {
 			durStr = colorDim + durStr + colorReset
 		}
-		marks := ""
-		if note := retryNote(result); note != "" {
-			marks += "  " + colorize(note, colorYellow, color)
-		}
-		if result.Validation != nil && !result.Validation.Passed {
-			marks += "  " + colorize("ASSERTIONS FAILED", colorYellow, color)
-		}
-		_, _ = fmt.Fprintf(o.out, "%s %s  %s%s\n", prefix, status, durStr, marks)
+		_, _ = fmt.Fprintf(o.out, "%s %s  %s%s\n", prefix, status, durStr, stepMarks(result, color))
 		for _, do := range result.DisplayOutputs {
 			_, _ = fmt.Fprintf(o.out, "%*s%s: %v\n", indent, "", do.Label, do.Value)
+		}
+		for _, msg := range failedAssertions(result.Validation) {
+			_, _ = fmt.Fprintf(o.out, "%*s%s\n", indent, "", colorize(msg, colorYellow, color))
 		}
 	} else {
 		_, _ = fmt.Fprintf(o.out, "%s (no response)\n", prefix)
@@ -118,6 +114,36 @@ func (o *CLIProgressObserver) OnRunComplete(result *engine.RunResult) {
 	case engine.OutcomeStopped:
 		_, _ = fmt.Fprintf(o.out, "%s at %q (%d/%d steps, %s)\n", colorOutcome("STOPPED", color), result.StoppedAt, len(result.Steps), total, observerTotalDuration(result))
 	}
+	if n := oasWarningCount(result.Steps); n > 0 {
+		_, _ = fmt.Fprintf(o.out, "OAS: %s\n", colorize(fmt.Sprintf("%d warning(s)", n), colorYellow, color))
+	}
+}
+
+// stepMarks renders the notes after a step's status and duration: retries,
+// failed assertions, and OpenAPI violations.
+func stepMarks(result engine.StepResult, color bool) string {
+	marks := ""
+	if note := retryNote(result); note != "" {
+		marks += "  " + colorize(note, colorYellow, color)
+	}
+	if result.Validation != nil && !result.Validation.Passed {
+		marks += "  " + colorize("ASSERTIONS FAILED", colorYellow, color)
+	}
+	if result.OASValidation != nil && result.OASValidation.HasErrors() {
+		marks += "  " + colorize(fmt.Sprintf("OAS: %d warning(s)", result.OASValidation.ErrorCount()), colorYellow, color)
+	}
+	return marks
+}
+
+// oasWarningCount totals the OpenAPI violations across steps.
+func oasWarningCount(steps []engine.StepResult) int {
+	n := 0
+	for _, step := range steps {
+		if step.OASValidation != nil {
+			n += step.OASValidation.ErrorCount()
+		}
+	}
+	return n
 }
 
 // OnRetryStart implements RetryNotifier for plan-level retries.

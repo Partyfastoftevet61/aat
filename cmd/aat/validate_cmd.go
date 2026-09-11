@@ -66,7 +66,7 @@ type validateArgs struct {
 // sectionResult tracks the outcome of one validation section.
 type sectionResult struct {
 	Name   string
-	Status string // "OK", "FAILED", "SKIPPED"
+	Status string // "OK", "WARN" (issues that fail only under --strict), "FAILED"
 	Detail string // e.g. "(59 nodes)"
 	Errors []string
 }
@@ -190,7 +190,7 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 	sections = append(sections, sectionResult{
 		Name:   "Graph structure",
 		Status: "OK",
-		Detail: fmt.Sprintf("(%d nodes)", len(g.Nodes)),
+		Detail: "(" + pluralize(len(g.Nodes), "node") + ")",
 	})
 
 	// Templates feed the OAS output check (outputs are looked up at their
@@ -227,16 +227,10 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 			})
 		} else {
 			result := validator.Validate(g)
-			if result.HasErrors() {
+			if result.HasIssues() {
 				sections = append(sections, sectionResult{
 					Name:   "OAS validation",
-					Status: "FAILED",
-					Errors: []string{result.Format()},
-				})
-			} else if args.Strict && result.HasIssues() {
-				sections = append(sections, sectionResult{
-					Name:   "OAS validation",
-					Status: "FAILED",
+					Status: issueStatus(result.HasErrors(), args.Strict),
 					Errors: []string{result.Format()},
 				})
 			} else {
@@ -265,7 +259,7 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 		sections = append(sections, sectionResult{
 			Name:   "Adapter outputs",
 			Status: "OK",
-			Detail: fmt.Sprintf("(%d templates)", templateCount),
+			Detail: "(" + pluralize(templateCount, "template") + ")",
 		})
 	}
 
@@ -288,7 +282,7 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 		graphDir := filepath.Dir(m.GraphPath)
 		compatResult := intent.ValidateWorkflowCompat(g, graphDir)
 
-		if compatResult.HasErrors() || (args.Strict && compatResult.HasIssues()) {
+		if compatResult.HasErrors() || compatResult.HasIssues() {
 			var wfErrors []string
 			for _, e := range compatResult.Errors {
 				wfErrors = append(wfErrors, fmt.Sprintf("workflow %q: %s", e.Workflow, e.Err))
@@ -298,14 +292,14 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 			}
 			sections = append(sections, sectionResult{
 				Name:   "Workflow compatibility",
-				Status: "FAILED",
+				Status: issueStatus(compatResult.HasErrors(), args.Strict),
 				Errors: wfErrors,
 			})
 		} else {
 			sections = append(sections, sectionResult{
 				Name:   "Workflow compatibility",
 				Status: "OK",
-				Detail: fmt.Sprintf("(%d workflows)", len(g.Workflows)),
+				Detail: "(" + pluralize(len(g.Workflows), "workflow") + ")",
 			})
 		}
 	}
@@ -322,9 +316,9 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 				Errors: pvr.Errors,
 			})
 		} else if pvr.Total > 0 {
-			detail := fmt.Sprintf("(%d files", pvr.Total)
+			detail := "(" + pluralize(pvr.Total, "file")
 			if pvr.Templates > 0 {
-				detail += fmt.Sprintf(", %d templates", pvr.Templates)
+				detail += ", " + pluralize(pvr.Templates, "template")
 			}
 			detail += ")"
 			sections = append(sections, sectionResult{
@@ -351,12 +345,9 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 				Errors: pvr.Errors,
 			})
 		} else if pvr.Total > 0 {
-			detail := fmt.Sprintf("(%d files", pvr.Total)
+			detail := "(" + pluralize(pvr.Total, "file")
 			if pvr.Recipes > 0 {
-				detail += fmt.Sprintf(", %d recipe", pvr.Recipes)
-				if pvr.Recipes > 1 {
-					detail += "s"
-				}
+				detail += ", " + pluralize(pvr.Recipes, "recipe")
 			}
 			detail += ")"
 			sections = append(sections, sectionResult{
@@ -370,10 +361,13 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 	printSections(out, sections)
 
 	// Determine overall result
-	failedCount := 0
+	failedCount, warnCount := 0, 0
 	for _, s := range sections {
-		if s.Status == "FAILED" {
+		switch s.Status {
+		case "FAILED":
 			failedCount++
+		case "WARN":
+			warnCount++
 		}
 	}
 
@@ -382,8 +376,21 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 		_, _ = fmt.Fprintf(out, "Project validation: FAILED (%d section(s) with errors)\n", failedCount)
 		return 1
 	}
+	if warnCount > 0 {
+		_, _ = fmt.Fprintf(out, "Project validation: PASSED with warnings in %s (--strict fails on them)\n", pluralize(warnCount, "section"))
+		return 0
+	}
 	_, _ = fmt.Fprintln(out, "Project validation: PASSED")
 	return 0
+}
+
+// issueStatus is the status of a section that found problems: FAILED for
+// errors, or for warnings under --strict; WARN for warnings otherwise.
+func issueStatus(hasErrors, strict bool) string {
+	if hasErrors || strict {
+		return "FAILED"
+	}
+	return "WARN"
 }
 
 // workflowValidationResult holds counts from workflow validation for the detail string.
@@ -519,7 +526,7 @@ func validateLayers(dir string, g *graph.Graph) sectionResult {
 	if len(errs) > 0 {
 		return sectionResult{Name: "Layers", Status: "FAILED", Errors: errs}
 	}
-	return sectionResult{Name: "Layers", Status: "OK", Detail: fmt.Sprintf("(%d layers)", len(layers))}
+	return sectionResult{Name: "Layers", Status: "OK", Detail: "(" + pluralize(len(layers), "layer") + ")"}
 }
 
 // validateDomain parses the domain knowledge file.
@@ -528,8 +535,8 @@ func validateDomain(path string) sectionResult {
 	if err != nil {
 		return sectionResult{Name: "Domain", Status: "FAILED", Errors: []string{err.Error()}}
 	}
-	return sectionResult{Name: "Domain", Status: "OK", Detail: fmt.Sprintf("(%d concepts, %d types, %d value pools)",
-		len(kb.Concepts), len(kb.Types), len(kb.ValuePools))}
+	return sectionResult{Name: "Domain", Status: "OK", Detail: fmt.Sprintf("(%s, %s, %s)",
+		pluralize(len(kb.Concepts), "concept"), pluralize(len(kb.Types), "type"), pluralize(len(kb.ValuePools), "value pool"))}
 }
 
 // validateVisualizers loads the visualizer manifest and checks that each
@@ -539,11 +546,7 @@ func validateVisualizers(dir string) sectionResult {
 	if err != nil {
 		return sectionResult{Name: "Visualizers", Status: "FAILED", Errors: []string{err.Error()}}
 	}
-	detail := fmt.Sprintf("(%d visualizers)", len(defs))
-	if len(defs) == 1 {
-		detail = "(1 visualizer)"
-	}
-	return sectionResult{Name: "Visualizers", Status: "OK", Detail: detail}
+	return sectionResult{Name: "Visualizers", Status: "OK", Detail: "(" + pluralize(len(defs), "visualizer") + ")"}
 }
 
 // shortenManifestPaths rewrites the manifest's paths relative to the working
@@ -572,6 +575,15 @@ func shortenManifestPaths(m *config.ProjectManifest) {
 	}
 }
 
+// pluralize renders a count with its noun: pluralize(1, "file") is "1 file",
+// pluralize(2, "file") is "2 files". Every noun aat validate counts takes "s".
+func pluralize(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
+
 // printSections prints the validation sections in aligned columns.
 func printSections(out io.Writer, sections []sectionResult) {
 	// Find max name length for alignment
@@ -590,7 +602,7 @@ func printSections(out io.Writer, sections []sectionResult) {
 		}
 		_, _ = fmt.Fprintln(out, line)
 
-		if s.Status == "FAILED" {
+		if s.Status == "FAILED" || s.Status == "WARN" {
 			for _, e := range s.Errors {
 				// Indent each line of the error
 				for _, eline := range strings.Split(e, "\n") {
@@ -676,6 +688,6 @@ func validateEnvironmentFile(envPath, defaultEnv string, vars map[string]string)
 	return &sectionResult{
 		Name:   "Environment",
 		Status: "OK",
-		Detail: fmt.Sprintf("(%d environments: %s)", len(names), strings.Join(names, ", ")),
+		Detail: fmt.Sprintf("(%s: %s)", pluralize(len(names), "environment"), strings.Join(names, ", ")),
 	}
 }

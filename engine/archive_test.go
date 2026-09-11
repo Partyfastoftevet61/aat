@@ -10,6 +10,7 @@ import (
 
 	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/archive"
+	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/plan"
 	"github.com/gburgyan/aat/validate"
 	"github.com/stretchr/testify/assert"
@@ -914,4 +915,49 @@ func TestToArchive_NilSecretsNoRedaction(t *testing.T) {
 
 	// Without secrets, values pass through unchanged
 	assert.Equal(t, "secret-value", a.Steps[0].Inputs["apiKey"])
+}
+
+// TestToArchive_RedactsCredentialsEverywhere covers the places a credential
+// used to survive: an API key under a custom header name, and literal
+// credentials and auth headers in the archived plans.
+func TestToArchive_RedactsCredentialsEverywhere(t *testing.T) {
+	secrets := map[string]bool{"shop-key-123": true, "plan-token-456": true}
+	p := &plan.Plan{
+		Auth: &config.AuthConfig{Type: "bearer", Credentials: map[string]config.SecretRef{
+			"token": {Source: "literal", Value: "plan-token-456"},
+			"other": {Source: "env", Var: "OTHER_TOKEN"},
+		}},
+		Headers:   map[string]string{"Authorization": "Bearer plan-token-456", "X-Client": "aat"},
+		Execution: plan.Execution{Steps: []plan.Step{{Node: "step1"}}},
+	}
+	result := &RunResult{
+		Outcome:          OutcomePassed,
+		InstantiatedPlan: p,
+		Steps: []StepResult{{
+			Node: "step1",
+			Request: &adapter.Request{Method: "GET", Path: "/items", Headers: map[string]string{
+				"X-Shop-Token": "shop-key-123",
+				"Accept":       "application/json",
+			}},
+			Response: &adapter.Response{StatusCode: 200, Headers: http.Header{"X-Echo-Key": {"shop-key-123"}}},
+		}},
+	}
+
+	a := ToArchive(result, archive.ArchiveMetadata{Version: "1", RunID: "run-creds", Plan: p}, "https://api.example.com", secrets)
+
+	assert.Equal(t, "[REDACTED]", a.Steps[0].Request.Headers["X-Shop-Token"])
+	assert.Equal(t, "application/json", a.Steps[0].Request.Headers["Accept"])
+	assert.Equal(t, "[REDACTED]", a.Steps[0].Response.Headers["X-Echo-Key"])
+
+	for name, archived := range map[string]*plan.Plan{"plan": a.Metadata.Plan, "instantiated plan": a.Metadata.InstantiatedPlan} {
+		assert.Equal(t, "[REDACTED]", archived.Auth.Credentials["token"].Value, name)
+		assert.Equal(t, "OTHER_TOKEN", archived.Auth.Credentials["other"].Var, name)
+		assert.Equal(t, "[REDACTED]", archived.Headers["Authorization"], name)
+		assert.Equal(t, "aat", archived.Headers["X-Client"], name)
+	}
+	body, err := json.Marshal(a)
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), "shop-key-123")
+	assert.NotContains(t, string(body), "plan-token-456")
+	assert.Equal(t, "plan-token-456", p.Auth.Credentials["token"].Value, "the run's plan is not modified")
 }

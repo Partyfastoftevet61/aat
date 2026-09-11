@@ -96,7 +96,7 @@ func TestRedactHeaders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := RedactHeaders(tt.headers)
+			got := RedactHeaders(tt.headers, nil)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -107,7 +107,7 @@ func TestRedactHeaders_DoesNotMutateInput(t *testing.T) {
 		"Authorization": "Bearer secret",
 		"Content-Type":  "application/json",
 	}
-	RedactHeaders(original)
+	RedactHeaders(original, map[string]bool{"secret": true})
 	assert.Equal(t, "Bearer secret", original["Authorization"])
 }
 
@@ -186,4 +186,17 @@ func TestRedactMap(t *testing.T) {
 		got := RedactMap(nil, secrets)
 		assert.Nil(t, got)
 	})
+}
+
+func TestRedactHeaders_KnownSecretUnderAnyName(t *testing.T) {
+	got := RedactHeaders(map[string]string{
+		"X-Shop-Token": "k3y-value",
+		"X-Trace":      "trace-k3y-value-1",
+		"Accept":       "application/json",
+	}, map[string]bool{"k3y-value": true})
+	assert.Equal(t, map[string]string{
+		"X-Shop-Token": "[REDACTED]",
+		"X-Trace":      "trace-[REDACTED]-1",
+		"Accept":       "application/json",
+	}, got)
 }

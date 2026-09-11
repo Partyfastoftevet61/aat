@@ -28,8 +28,9 @@ func applySelection(arr []any, sel *plan.SelectionConfig) (*selectionResult, err
 		return &selectionResult{element: arr[0], index: 0, filteredSize: len(arr)}, nil
 	}
 
-	// match uses filter directly without pre-filtering
-	if sel.Strategy == "match" {
+	// match uses filter directly without pre-filtering; a filter with no
+	// strategy means match, as plan.SelectionStrategies documents
+	if sel.Strategy == "match" || sel.Strategy == "" {
 		elem, idx, err := selectMatch(arr, sel.Filter)
 		if err != nil {
 			return nil, err

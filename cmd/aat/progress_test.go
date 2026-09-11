@@ -7,6 +7,7 @@ import (
 
 	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/engine"
+	"github.com/gburgyan/aat/graph/oas"
 	"github.com/gburgyan/aat/plan"
 	"github.com/gburgyan/aat/validate"
 	"github.com/stretchr/testify/assert"
@@ -207,7 +208,7 @@ func TestCLIProgressObserver_OnStepStart_NoOp(t *testing.T) {
 
 func TestCLIProgressObserver_OnRunStart_CachesTotal(t *testing.T) {
 	obs := &CLIProgressObserver{term: noColorTerm}
-	obs.OnRunStart(5, "lean")
+	obs.OnRunStart(5)
 	assert.Equal(t, 5, obs.total)
 }
 
@@ -263,4 +264,35 @@ func TestCLIProgressObserver_WideTerminal_RetryDetail(t *testing.T) {
 	output := buf.String()
 	assert.Contains(t, output, "retried 2x")
 	assert.Contains(t, output, "last status 502")
+}
+
+// TestCLIProgressObserver_ReportsWhyAStepFailed checks that run output names
+// each failed assertion and counts OpenAPI violations, on the step line and in
+// a total after the outcome.
+func TestCLIProgressObserver_ReportsWhyAStepFailed(t *testing.T) {
+	var buf bytes.Buffer
+	obs := &CLIProgressObserver{out: &buf, term: noColorTerm}
+
+	step := engine.StepResult{
+		Node:       "addItem",
+		StatusCode: 400,
+		Response:   &adapter.Response{StatusCode: 400},
+		Validation: &validate.MechanicalResult{Results: []validate.AssertionResult{
+			{Type: validate.AssertStatus, Passed: false, Message: "expected status 201, got 400"},
+			{Type: validate.AssertFieldExists, Passed: true, Message: `field "cartId" exists`},
+			{Type: validate.AssertSchema, Passed: true, Skipped: true, Message: "schema validation unavailable"},
+		}},
+		OASValidation: &oas.ValidationResult{Request: &oas.PayloadResult{
+			Errors: []oas.SchemaError{{Path: "$.quantity", Message: "got string, want integer"}},
+		}},
+	}
+	obs.OnRunStart(1)
+	obs.OnStepComplete(0, 1, step)
+	obs.OnRunComplete(&engine.RunResult{Outcome: engine.OutcomeFailed, Steps: []engine.StepResult{step}})
+
+	output := buf.String()
+	assert.Contains(t, output, "ASSERTIONS FAILED  OAS: 1 warning(s)")
+	assert.Contains(t, output, "status: expected status 201, got 400")
+	assert.NotContains(t, output, "cartId", "passed and skipped assertions are not listed")
+	assert.Contains(t, output, "\nOAS: 1 warning(s)\n")
 }

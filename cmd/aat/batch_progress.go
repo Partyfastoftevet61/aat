@@ -20,7 +20,6 @@ type BatchStreamObserver struct {
 	planIndex int // 0-based index into the batch
 	planTotal int // total plans in the batch
 	total     int
-	mode      string
 	start     time.Time
 }
 
@@ -35,9 +34,8 @@ func NewBatchStreamObserver(out io.Writer, planName string, term TerminalInfo, p
 	}
 }
 
-func (o *BatchStreamObserver) OnRunStart(total int, mode string) {
+func (o *BatchStreamObserver) OnRunStart(total int) {
 	o.total = total
-	o.mode = mode
 	o.start = time.Now()
 	color := o.term.IsTTY
 	name := o.planName
@@ -45,7 +43,7 @@ func (o *BatchStreamObserver) OnRunStart(total int, mode string) {
 		name = colorCyan + name + colorReset
 	}
 	counter := fmt.Sprintf(" [plan %d/%d]", o.planIndex+1, o.planTotal)
-	_, _ = fmt.Fprintf(o.out, "  ── %s (%d steps, mode=%s)%s ──\n", name, total, mode, counter)
+	_, _ = fmt.Fprintf(o.out, "  ── %s (%d steps)%s ──\n", name, total, counter)
 }
 
 func (o *BatchStreamObserver) OnStepStart(index, total int, step plan.Step) {}
@@ -77,16 +75,12 @@ func (o *BatchStreamObserver) OnStepComplete(index, total int, result engine.Ste
 		if color {
 			durStr = colorDim + durStr + colorReset
 		}
-		marks := ""
-		if note := retryNote(result); note != "" {
-			marks += "  " + colorize(note, colorYellow, color)
-		}
-		if result.Validation != nil && !result.Validation.Passed {
-			marks += "  " + colorize("ASSERTIONS FAILED", colorYellow, color)
-		}
-		_, _ = fmt.Fprintf(o.out, "%s %s  %s%s\n", prefix, status, durStr, marks)
+		_, _ = fmt.Fprintf(o.out, "%s %s  %s%s\n", prefix, status, durStr, stepMarks(result, color))
 		for _, do := range result.DisplayOutputs {
 			_, _ = fmt.Fprintf(o.out, "%*s  %s: %v\n", indent, "", do.Label, do.Value)
+		}
+		for _, msg := range failedAssertions(result.Validation) {
+			_, _ = fmt.Fprintf(o.out, "%*s  %s\n", indent, "", colorize(msg, colorYellow, color))
 		}
 	} else {
 		_, _ = fmt.Fprintf(o.out, "%s (no response)\n", prefix)
@@ -217,7 +211,7 @@ func NewParallelProgressObserver(state *PlanProgressState, renderer *ProgressRen
 	return &ParallelProgressObserver{state: state, renderer: renderer}
 }
 
-func (o *ParallelProgressObserver) OnRunStart(total int, mode string) {
+func (o *ParallelProgressObserver) OnRunStart(total int) {
 	o.state.mu.Lock()
 	o.state.TotalSteps = total
 	o.state.StartTime = time.Now()

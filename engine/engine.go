@@ -177,7 +177,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 	total := len(sorted) + len(verificationSteps)
 
 	if e.Observer != nil {
-		e.Observer.OnRunStart(total, "strict")
+		e.Observer.OnRunStart(total)
 	}
 
 	for i, step := range sorted {

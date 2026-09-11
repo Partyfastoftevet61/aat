@@ -6,6 +6,7 @@ import (
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func loadPetstoreModel(t *testing.T) *petstoreFixture {
@@ -188,6 +189,30 @@ func TestGenerate_GetPet_Template(t *testing.T) {
 	assert.Equal(t, "id", tmpl.Response.Extract["id"].Path)
 	assert.Equal(t, "name", tmpl.Response.Extract["name"].Path)
 	assert.Equal(t, "tag", tmpl.Response.Extract["tag"].Path)
+}
+
+// TestGenerate_OptionalResponseProperties checks that a response property the
+// schema does not require is an optional output with an optional extract rule,
+// so a response without it still runs.
+func TestGenerate_OptionalResponseProperties(t *testing.T) {
+	fix := loadPetstoreModel(t)
+	node := fix.result.Graph.Nodes["getPet"]
+	require.NotNil(t, node)
+	optional := map[string]bool{}
+	for _, out := range node.Outputs {
+		optional[out.Name] = out.Optional
+	}
+	assert.Equal(t, map[string]bool{"id": false, "name": false, "tag": true}, optional)
+
+	tmpl := fix.findTemplate("getPet")
+	require.NotNil(t, tmpl)
+	assert.False(t, tmpl.Response.Extract["name"].Optional)
+	assert.True(t, tmpl.Response.Extract["tag"].Optional)
+
+	out, err := yaml.Marshal(tmpl.Response.Extract)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "name: name\n")
+	assert.Contains(t, string(out), "tag:\n    path: tag\n    optional: true\n")
 }
 
 func TestGenerate_DeletePet_Node(t *testing.T) {

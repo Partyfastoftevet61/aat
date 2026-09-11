@@ -240,10 +240,13 @@ func (env *Environment) BuildOverrideConfigsWithProvider(ctx context.Context, ba
 func (env *Environment) CollectSecrets() map[string]bool {
 	secrets := make(map[string]bool)
 
-	// Auth credentials
-	for _, ref := range env.Auth.Credentials {
-		if val, err := ref.Resolve(); err == nil && val != "" {
-			secrets[val] = true
+	// Auth credentials, including those of host overrides
+	for k := range CollectAuthSecrets(&env.Auth) {
+		secrets[k] = true
+	}
+	for _, ov := range env.Overrides {
+		for k := range CollectAuthSecrets(ov.Auth) {
+			secrets[k] = true
 		}
 	}
 

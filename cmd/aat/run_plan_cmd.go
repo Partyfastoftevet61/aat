@@ -194,8 +194,9 @@ func executeRun(ra *runArgs) int {
 		return exitCode(res)
 	}
 
-	// Normal (non-quiet, non-JSON): errors already printed during execution
-	if res.err != nil {
+	// Normal (non-quiet, non-JSON): once the engine ran, the progress output has
+	// already printed the outcome and its error; print only errors from before.
+	if res.err != nil && res.summary == nil {
 		fmt.Fprintf(os.Stderr, "aat: %s\n", res.err)
 	}
 	return exitCode(res)

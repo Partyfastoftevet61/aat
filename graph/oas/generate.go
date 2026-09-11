@@ -2,6 +2,7 @@ package oas
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/pb33f/libopenapi/datamodel/high/base"
@@ -41,22 +42,20 @@ type ScaffoldTemplateResponse struct {
 
 // ScaffoldExtractRule mirrors adapter.ExtractRule for scaffold generation.
 type ScaffoldExtractRule struct {
-	Path   string            `yaml:"path"`
-	Fields map[string]string `yaml:"fields,omitempty"`
+	Path     string            `yaml:"path"`
+	Fields   map[string]string `yaml:"fields,omitempty"`
+	Optional bool              `yaml:"optional,omitempty"`
 }
 
-// MarshalYAML emits a bare string when Fields is empty (backward-compatible
-// scalar format), or a mapping when Fields is set.
+// MarshalYAML emits a bare string for a required path without fields
+// (backward-compatible scalar format), or a mapping otherwise.
 func (r ScaffoldExtractRule) MarshalYAML() (interface{}, error) {
-	if len(r.Fields) == 0 {
+	if len(r.Fields) == 0 && !r.Optional {
 		return r.Path, nil
 	}
-	// Return a struct so YAML renders as {path: ..., fields: {...}}
-	type raw struct {
-		Path   string            `yaml:"path"`
-		Fields map[string]string `yaml:"fields,omitempty"`
-	}
-	return raw(r), nil
+	// The raw type has no methods, so YAML renders it as {path: ..., fields: {...}}.
+	type rawScaffoldExtractRule ScaffoldExtractRule
+	return rawScaffoldExtractRule(r), nil
 }
 
 // Generate produces a graph and template stubs from an OAS spec.
@@ -382,14 +381,17 @@ func collectArrayOutput(operationId string, schema *base.Schema) []graph.Output 
 	return []graph.Output{out}
 }
 
-// collectObjectOutputs builds outputs from an object schema's properties.
+// collectObjectOutputs builds outputs from an object schema's properties. A
+// property the schema does not list as required becomes an optional output, so
+// a response that omits it does not fail extraction.
 func collectObjectOutputs(schema *base.Schema) []graph.Output {
 	var outputs []graph.Output
 
 	for _, prop := range resolveSchemaProperties(schema) {
 		propName, propProxy := prop.name, prop.proxy
 		out := graph.Output{
-			Name: propName,
+			Name:     propName,
+			Optional: !slices.Contains(schema.Required, propName),
 		}
 		if propProxy != nil {
 			out.Type = mapSchemaType(propProxy.Schema())
@@ -642,7 +644,7 @@ func buildExtractMap(outputs []graph.Output, rootArray bool) map[string]Scaffold
 			}
 			extract[out.Name] = rule
 		} else {
-			extract[out.Name] = ScaffoldExtractRule{Path: out.Name}
+			extract[out.Name] = ScaffoldExtractRule{Path: out.Name, Optional: out.Optional}
 		}
 	}
 	return extract

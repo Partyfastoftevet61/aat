@@ -10,6 +10,8 @@ the graph and plan formats may still change before 1.0.
 - A documentation site built from `docs/user` with Material for MkDocs (`mkdocs.yml`), deployed to GitHub
   Pages by a new Docs workflow that fails on broken links, broken anchors, and pages missing from the
   navigation. `make docs` runs the same strict build locally.
+- Run output lists each failed assertion under its step (`status: expected status 200, got 201`), and the
+  `--json` step summary includes them as `failed_assertions`.
 - `aat-sandbox`, a second binary that serves an offline e-commerce demo API (`aat-sandbox serve`:
   shop API on :8765 with OAuth2 tokens, payments API on :8766 with an API key, `us`/`eu` regions
   with their own currency, tax, tiers, and coupons, an order state machine, simulated latency, and
@@ -74,6 +76,12 @@ the graph and plan formats may still change before 1.0.
 - **BREAKING:** a manifest that exists but fails to load is an error for every command that discovers
   it; it was skipped, so commands fell back to a lower-priority project or to none. A missing manifest
   is still skipped, and a higher-priority manifest that loads still wins.
+- `aat run` progress output marks OpenAPI violations on each step (`OAS: 1 warning(s)`) and totals them
+  after the outcome, as documented; only an unused summary path printed them before.
+- `aat validate` and `aat validate workflow` show OpenAPI and workflow-compatibility warnings as a `WARN`
+  section without `--strict` instead of reporting `OK`, and counts read "1 file" rather than "1 files".
+- The sequential batch header no longer prints `mode=strict`, a leftover of the runtime modes removed in
+  0.0.2.
 - `aat web` and `aat mcp serve --http` listen on `127.0.0.1` by default instead of every interface.
   Pass `--host 0.0.0.0` (or set `AAT_HOST`) to accept connections from other machines.
 - Steps composed from workflow templates (recipes, `aat prompt`) get a default `status: 2xx`
@@ -125,6 +133,17 @@ the graph and plan formats may still change before 1.0.
   empty Airline case-study stub).
 
 ### Fixed
+- Run archives redact an API key sent under a custom `auth.headerName`, the credentials of host overrides
+  and overlay overrides (they were never collected as secrets), and the literal credentials and credential
+  headers of the plan stored in `metadata.plan` and `metadata.instantiatedPlan`. `--verbose-auth` shows at
+  most half of a short password or client secret.
+- `aat generate --oas` marks a response property the schema does not list as `required` as an optional
+  output with an optional extract rule, so a scaffolded step no longer fails when the API omits it.
+- A `select` with a `filter` and no `strategy` works like `match` instead of failing at run time with
+  `unknown selection strategy`.
+- `--manifest` naming a file that does not exist is an error instead of silently falling back to manifest
+  discovery.
+- `aat run plan` no longer prints a failed or errored run's message a second time on stderr.
 - A project's manifest no longer inherits fields it leaves out (such as `domain`, `layers`, or
   `defaultEnvironment`) from a lower-priority project named by `AAT_PROJECT` or the user config's
   `default_project`; the highest-priority manifest found describes the whole project.

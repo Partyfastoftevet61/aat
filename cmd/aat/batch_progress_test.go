@@ -21,7 +21,7 @@ func TestBatchStreamObserver_Lifecycle(t *testing.T) {
 	var buf bytes.Buffer
 	obs := NewBatchStreamObserver(&buf, "roundtrip-booking", noColorTerm, 0, 3)
 
-	obs.OnRunStart(3, "strict")
+	obs.OnRunStart(3)
 	obs.OnStepStart(0, 3, stepForNode("searchFlights"))
 	obs.OnStepComplete(0, 3, engine.StepResult{
 		Node:       "searchFlights",
@@ -53,7 +53,7 @@ func TestBatchStreamObserver_Lifecycle(t *testing.T) {
 	output := buf.String()
 
 	// Header with plan counter
-	assert.Contains(t, output, "── roundtrip-booking (3 steps, mode=strict)")
+	assert.Contains(t, output, "── roundtrip-booking (3 steps) [plan")
 	assert.Contains(t, output, "[plan 1/3]")
 
 	// Steps are indented with 4 spaces
@@ -74,7 +74,7 @@ func TestBatchStreamObserver_ErrorStep(t *testing.T) {
 	var buf bytes.Buffer
 	obs := NewBatchStreamObserver(&buf, "test-plan", noColorTerm, 0, 1)
 
-	obs.OnRunStart(1, "strict")
+	obs.OnRunStart(1)
 	obs.OnStepComplete(0, 1, engine.StepResult{
 		Node:  "failNode",
 		Error: assert.AnError,
@@ -93,7 +93,7 @@ func TestBatchStreamObserver_FailedStep(t *testing.T) {
 	var buf bytes.Buffer
 	obs := NewBatchStreamObserver(&buf, "test-plan", noColorTerm, 0, 1)
 
-	obs.OnRunStart(1, "strict")
+	obs.OnRunStart(1)
 	obs.OnStepComplete(0, 1, engine.StepResult{
 		Node:       "badNode",
 		StatusCode: 400,
@@ -113,7 +113,7 @@ func TestBatchStreamObserver_AssertionsFailed(t *testing.T) {
 	var buf bytes.Buffer
 	obs := NewBatchStreamObserver(&buf, "test-plan", noColorTerm, 0, 1)
 
-	obs.OnRunStart(1, "strict")
+	obs.OnRunStart(1)
 	obs.OnStepComplete(0, 1, engine.StepResult{
 		Node:       "verify",
 		StatusCode: 200,
@@ -130,7 +130,7 @@ func TestBatchStreamObserver_WithRetries(t *testing.T) {
 	var buf bytes.Buffer
 	obs := NewBatchStreamObserver(&buf, "test-plan", noColorTerm, 0, 1)
 
-	obs.OnRunStart(1, "strict")
+	obs.OnRunStart(1)
 	obs.OnStepComplete(0, 1, engine.StepResult{
 		Node:       "flakyNode",
 		Error:      assert.AnError,
@@ -147,7 +147,7 @@ func TestBatchStreamObserver_CleanupOutput(t *testing.T) {
 	var buf bytes.Buffer
 	obs := NewBatchStreamObserver(&buf, "test-plan", noColorTerm, 0, 1)
 
-	obs.OnRunStart(1, "strict")
+	obs.OnRunStart(1)
 	obs.OnCleanupStart(1)
 	obs.OnCleanupStepComplete(0, 1, engine.StepResult{
 		Node:       "deleteBooking",
@@ -181,7 +181,7 @@ func TestBatchStreamObserver_NoResponse(t *testing.T) {
 	var buf bytes.Buffer
 	obs := NewBatchStreamObserver(&buf, "test-plan", noColorTerm, 0, 1)
 
-	obs.OnRunStart(1, "strict")
+	obs.OnRunStart(1)
 	obs.OnStepComplete(0, 1, engine.StepResult{
 		Node: "brokenStep",
 	})
@@ -194,7 +194,7 @@ func TestBatchStreamObserver_DisplayOutputs(t *testing.T) {
 	var buf bytes.Buffer
 	obs := NewBatchStreamObserver(&buf, "test-plan", noColorTerm, 0, 1)
 
-	obs.OnRunStart(1, "strict")
+	obs.OnRunStart(1)
 	obs.OnStepComplete(0, 1, engine.StepResult{
 		Node:       "confirmItinerary",
 		StatusCode: 200,
@@ -213,7 +213,7 @@ func TestBatchStreamObserver_PlanCounter(t *testing.T) {
 	var buf bytes.Buffer
 	obs := NewBatchStreamObserver(&buf, "my-plan", noColorTerm, 4, 18)
 
-	obs.OnRunStart(3, "strict")
+	obs.OnRunStart(3)
 	obs.OnStepComplete(0, 3, engine.StepResult{
 		Node:       "step1",
 		StatusCode: 200,
@@ -237,7 +237,7 @@ func TestBatchStreamObserver_PlanCounter(t *testing.T) {
 	headerFound := false
 	footerFound := false
 	for _, line := range lines {
-		if strings.Contains(line, "──") && strings.Contains(line, "mode=strict") && strings.Contains(line, "[plan 5/18]") {
+		if strings.Contains(line, "──") && strings.Contains(line, "steps)") && strings.Contains(line, "[plan 5/18]") {
 			headerFound = true
 		}
 		if strings.Contains(line, "──") && strings.Contains(line, "PASSED") && strings.Contains(line, "[plan 5/18]") {
@@ -505,7 +505,7 @@ func TestParallelProgressObserver_OnRunStart(t *testing.T) {
 	renderer.AddPlan(state)
 
 	obs := NewParallelProgressObserver(state, renderer)
-	obs.OnRunStart(5, "lean")
+	obs.OnRunStart(5)
 
 	snap := state.Snapshot()
 	assert.Equal(t, 5, snap.TotalSteps)
@@ -756,4 +756,24 @@ func TestFormatBatchResultLine_WithColor(t *testing.T) {
 // helper to create a step for OnStepStart
 func stepForNode(node string) plan.Step {
 	return plan.Step{Node: node}
+}
+
+func TestBatchStreamObserver_ReportsFailedAssertions(t *testing.T) {
+	var buf bytes.Buffer
+	obs := NewBatchStreamObserver(&buf, "smoke", noColorTerm, 0, 1)
+
+	obs.OnRunStart(1)
+	obs.OnStepComplete(0, 1, engine.StepResult{
+		Node:       "addItem",
+		StatusCode: 201,
+		Response:   &adapter.Response{StatusCode: 201},
+		Validation: &validate.MechanicalResult{Results: []validate.AssertionResult{
+			{Type: validate.AssertFieldEquals, Passed: false, Message: `field "lineCount": expected 2, got 1`},
+		}},
+	})
+
+	output := buf.String()
+	assert.Contains(t, output, "ASSERTIONS FAILED")
+	assert.Contains(t, output, `fieldEquals: field "lineCount": expected 2, got 1`)
+	assert.NotContains(t, output, "mode=")
 }

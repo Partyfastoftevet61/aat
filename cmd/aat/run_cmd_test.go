@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/engine"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/plan"
+	"github.com/gburgyan/aat/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -226,6 +226,20 @@ func TestToStepSummary_NameIsStepID(t *testing.T) {
 	assert.Equal(t, "addItem__zero_quantity", ss.Name, "mutation siblings stay distinguishable")
 	assert.Equal(t, "addItem", ss.Node)
 	assert.Equal(t, []string{"transient"}, ss.RetriedOn)
+}
+
+func TestToStepSummary_FailedAssertions(t *testing.T) {
+	ss := toStepSummary(engine.StepResult{
+		StepID: "addItem",
+		Node:   "addItem",
+		Validation: &validate.MechanicalResult{Results: []validate.AssertionResult{
+			{Type: validate.AssertStatus, Passed: true, Message: "status code is 201"},
+			{Type: validate.AssertPredicate, Passed: false, Message: `predicate "subtotal > 0" is false`},
+		}},
+	})
+	assert.Equal(t, 1, ss.AssertionsPassed)
+	assert.Equal(t, 1, ss.AssertionsFailed)
+	assert.Equal(t, []string{`predicate: predicate "subtotal > 0" is false`}, ss.FailedAssertions)
 }
 
 func TestRunCommand_StopAfterDumpStateStdout(t *testing.T) {
@@ -688,50 +702,6 @@ func TestExecuteRun_DumpStateStdoutCarriesOnlyState(t *testing.T) {
 }
 
 // --- Display outputs tests ---
-
-func TestPrintRunSummary_DisplayOutputs(t *testing.T) {
-	result := &engine.RunResult{
-		Outcome: engine.OutcomePassed,
-		Steps: []engine.StepResult{
-			{
-				Node:       "confirmItinerary",
-				StatusCode: 200,
-				Response:   &adapter.Response{StatusCode: 200},
-				DisplayOutputs: []engine.DisplayOutput{
-					{Label: "PNR", Name: "locator", Value: "ABCDEF"},
-					{Label: "Reservation ID", Name: "reservationId", Value: "res-123"},
-				},
-			},
-		},
-	}
-
-	var buf bytes.Buffer
-	printRunSummary(result, &buf, TerminalInfo{Width: 80})
-	output := buf.String()
-
-	assert.Contains(t, output, "PNR: ABCDEF")
-	assert.Contains(t, output, "Reservation ID: res-123")
-}
-
-func TestPrintRunSummary_NoDisplayOutputs(t *testing.T) {
-	result := &engine.RunResult{
-		Outcome: engine.OutcomePassed,
-		Steps: []engine.StepResult{
-			{
-				Node:       "search",
-				StatusCode: 200,
-				Response:   &adapter.Response{StatusCode: 200},
-			},
-		},
-	}
-
-	var buf bytes.Buffer
-	printRunSummary(result, &buf, TerminalInfo{Width: 80})
-	output := buf.String()
-
-	// Should not contain any "Label: Value" display lines
-	assert.NotRegexp(t, `(?m)^ {8}\w+:`, output)
-}
 
 func TestToStepSummary_DisplayOutputs(t *testing.T) {
 	step := engine.StepResult{

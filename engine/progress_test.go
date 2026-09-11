@@ -23,14 +23,13 @@ type progressEvent struct {
 	kind   string
 	index  int
 	total  int
-	mode   string
 	node   string
 	err    error
 	result *RunResult
 }
 
-func (o *recordingObserver) OnRunStart(total int, mode string) {
-	o.events = append(o.events, progressEvent{kind: "run_start", total: total, mode: mode})
+func (o *recordingObserver) OnRunStart(total int) {
+	o.events = append(o.events, progressEvent{kind: "run_start", total: total})
 }
 
 func (o *recordingObserver) OnStepStart(index, total int, step plan.Step) {
@@ -115,7 +114,6 @@ func TestProgressObserver_SuccessfulRun(t *testing.T) {
 
 	assert.Equal(t, "run_start", obs.events[0].kind)
 	assert.Equal(t, 3, obs.events[0].total)
-	assert.Equal(t, "strict", obs.events[0].mode)
 
 	// Step 0: search
 	assert.Equal(t, "step_start", obs.events[1].kind)

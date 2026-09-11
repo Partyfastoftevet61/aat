@@ -209,7 +209,7 @@ workflows: workflows/
 	code := validateCommand(&validateArgs{ManifestPath: manifestPath}, &buf)
 	assert.Equal(t, 0, code, "output: %s", buf.String())
 	assert.Contains(t, buf.String(), "Workflows")
-	assert.Contains(t, buf.String(), "(1 files)")
+	assert.Contains(t, buf.String(), "(1 file)")
 	assert.Contains(t, buf.String(), "PASSED")
 }
 
@@ -331,9 +331,9 @@ templates: templates/
 	assert.Contains(t, output, "Manifest:")
 	assert.Contains(t, output, "(project: my-project)")
 	assert.Contains(t, output, "Graph structure:")
-	assert.Contains(t, output, "(1 nodes)")
+	assert.Contains(t, output, "(1 node)")
 	assert.Contains(t, output, "Adapter outputs:")
-	assert.Contains(t, output, "(1 templates)")
+	assert.Contains(t, output, "(1 template)")
 	assert.Contains(t, output, "Project validation: PASSED")
 }
 
@@ -893,4 +893,37 @@ func TestValidate_BrokenManifestIsReported(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, buf.String(), `line 4: unknown key "plan" in project manifest (did you mean "plans"?)`)
 	assert.NotContains(t, buf.String(), "no manifest found")
+}
+
+// TestValidate_WarningsShownWithoutStrict checks that OpenAPI warnings are
+// printed and pass without --strict, and fail with it.
+func TestValidate_WarningsShownWithoutStrict(t *testing.T) {
+	dir := t.TempDir()
+	spec, err := os.ReadFile(filepath.Join("testdata", "oas", "optional_params.yaml"))
+	require.NoError(t, err)
+	files := map[string]string{
+		"aat-project.yaml": "name: warn\ngraph: graph.yaml\ntemplates: templates/\n",
+		"spec.yaml":        string(spec),
+		"graph.yaml": "version: \"1.0.0\"\noas: spec.yaml\nnodes:\n  listWidgets:\n    adapter: listWidgets\n" +
+			"    oas: {operationId: listWidgets}\n    outputs:\n      - name: count\n        type: integer\n",
+		"templates/listWidgets.yaml": "adapter: listWidgets\nrequest:\n  method: GET\n  path: /widgets\nresponse:\n  extract:\n    count: count\n",
+	}
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	}
+	manifest := filepath.Join(dir, "aat-project.yaml")
+
+	var buf bytes.Buffer
+	code := validateCommand(&validateArgs{ManifestPath: manifest}, &buf)
+	assert.Equal(t, 0, code, buf.String())
+	assert.Regexp(t, `OAS validation:\s+WARN`, buf.String())
+	assert.Contains(t, buf.String(), `output "count" not found in OAS 2xx response schema`)
+	assert.Contains(t, buf.String(), "PASSED with warnings in 1 section (--strict fails on them)")
+
+	buf.Reset()
+	code = validateCommand(&validateArgs{ManifestPath: manifest, Strict: true}, &buf)
+	assert.Equal(t, 1, code, buf.String())
+	assert.Regexp(t, `OAS validation:\s+FAILED`, buf.String())
 }

@@ -613,6 +613,27 @@ func TestCollectSecrets_WithEnvVars(t *testing.T) {
 	assert.Len(t, secrets, 3)
 }
 
+func TestCollectSecrets_IncludesOverrideAuth(t *testing.T) {
+	env := &Environment{
+		Overrides: []HostOverride{{
+			Match: "payment*",
+			Auth: &AuthConfig{Type: "apikey", HeaderName: "X-Shop-Token", Credentials: map[string]SecretRef{
+				"key": {Source: "literal", Value: "pay-key"},
+			}},
+		}},
+	}
+	assert.True(t, env.CollectSecrets()["pay-key"])
+
+	overlay := &OverlayFile{
+		Auth: &AuthConfig{Type: "bearer", Credentials: map[string]SecretRef{"token": {Source: "literal", Value: "overlay-token"}}},
+		Overrides: []HostOverride{{
+			Match: "orders*",
+			Auth:  &AuthConfig{Type: "apikey", HeaderName: "api_key", Credentials: map[string]SecretRef{"key": {Source: "literal", Value: "orders-key"}}},
+		}},
+	}
+	assert.Equal(t, map[string]bool{"overlay-token": true, "orders-key": true}, overlay.CollectSecrets())
+}
+
 func TestCollectSecrets_EmptyEnvironment(t *testing.T) {
 	env := &Environment{}
 	secrets := env.CollectSecrets()

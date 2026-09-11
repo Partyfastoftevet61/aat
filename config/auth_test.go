@@ -32,7 +32,7 @@ func TestAuthenticate_VerboseRedactsTokens(t *testing.T) {
 		TokenURL: server.URL,
 		Credentials: map[string]SecretRef{
 			"username":     {Source: "literal", Value: "demo"},
-			"password":     {Source: "literal", Value: "demo-password"},
+			"password":     {Source: "literal", Value: "demo"},
 			"clientId":     {Source: "literal", Value: "client"},
 			"clientSecret": {Source: "literal", Value: "client-secret"},
 		},
@@ -45,6 +45,9 @@ func TestAuthenticate_VerboseRedactsTokens(t *testing.T) {
 	assert.NotContains(t, out, refreshToken)
 	assert.Contains(t, out, "shop-000...")
 	assert.Contains(t, out, "token_type")
+	assert.Contains(t, out, "password = de...", "a short password shows at most half")
+	assert.Contains(t, out, "client_secret = client...")
+	assert.NotContains(t, out, "client-secret")
 }
 
 func TestRedactTokenResponse(t *testing.T) {
