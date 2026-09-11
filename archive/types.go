@@ -17,23 +17,23 @@ type Archive struct {
 
 // ArchiveMetadata captures provenance and context for a run.
 type ArchiveMetadata struct {
-	Version          string     `json:"version"`
-	RunID            string     `json:"runId"`
+	Version          string     `json:"version" redact:"-"`
+	RunID            string     `json:"runId" redact:"-"`
 	Timestamp        time.Time  `json:"timestamp"`
 	Plan             *plan.Plan `json:"plan"`
 	InstantiatedPlan *plan.Plan `json:"instantiatedPlan,omitempty"`
-	Environment      string     `json:"environment"`
-	GraphVersion     string     `json:"graphVersion"`
-	ToolVersion      string     `json:"toolVersion"`
-	Attempt          int        `json:"attempt,omitempty"`       // 1-indexed attempt number
-	TotalAttempts    int        `json:"totalAttempts,omitempty"` // total attempts (omitted if 1)
-	Layers           []string   `json:"layers,omitempty"`        // effective layers applied to this run
+	Environment      string     `json:"environment" redact:"-"`
+	GraphVersion     string     `json:"graphVersion" redact:"-"`
+	ToolVersion      string     `json:"toolVersion" redact:"-"`
+	Attempt          int        `json:"attempt,omitempty"`           // 1-indexed attempt number
+	TotalAttempts    int        `json:"totalAttempts,omitempty"`     // total attempts (omitted if 1)
+	Layers           []string   `json:"layers,omitempty" redact:"-"` // effective layers applied to this run
 }
 
 // StepRecord captures the execution trace for a single step.
 type StepRecord struct {
-	StepID            string                   `json:"stepId,omitempty"`
-	Node              string                   `json:"node"`
+	StepID            string                   `json:"stepId,omitempty" redact:"-"`
+	Node              string                   `json:"node" redact:"-"`
 	StartTime         time.Time                `json:"startTime,omitempty"`
 	DurationMs        int64                    `json:"duration_ms"`
 	Inputs            map[string]any           `json:"inputs"`
@@ -51,13 +51,13 @@ type StepRecord struct {
 	OASValidation     *OASValidationRecord     `json:"oasValidation,omitempty"`
 	Error             string                   `json:"error,omitempty"`
 	RetryCount        int                      `json:"retryCount,omitempty"`
-	RetriedOn         []string                 `json:"retriedOn,omitempty"` // error category of each retried attempt, in order
+	RetriedOn         []string                 `json:"retriedOn,omitempty" redact:"-"` // error category of each retried attempt, in order
 }
 
 // DisplayOutputRecord captures an output value tagged for display.
 type DisplayOutputRecord struct {
-	Label string `json:"label"`
-	Name  string `json:"name"`
+	Label string `json:"label" redact:"-"`
+	Name  string `json:"name" redact:"-"`
 	Value any    `json:"value,omitempty"`
 }
 
@@ -70,16 +70,16 @@ type ExpectFailureRecord struct {
 
 // ResponseBodyErrorRecord captures an error detected in a 2xx response body.
 type ResponseBodyErrorRecord struct {
-	RulePath string `json:"rulePath"`
-	Rule     string `json:"rule"`
+	RulePath string `json:"rulePath" redact:"-"`
+	Rule     string `json:"rule" redact:"-"`
 	Message  string `json:"message,omitempty"`
 	Code     string `json:"code,omitempty"`
-	Category string `json:"category,omitempty"`
+	Category string `json:"category,omitempty" redact:"-"`
 }
 
 // OASValidationRecord captures runtime OAS schema validation for a step.
 type OASValidationRecord struct {
-	OperationID string            `json:"operationId,omitempty"`
+	OperationID string            `json:"operationId,omitempty" redact:"-"`
 	Request     *OASPayloadRecord `json:"request,omitempty"`
 	Response    *OASPayloadRecord `json:"response,omitempty"`
 	Skipped     bool              `json:"skipped,omitempty"`
@@ -95,13 +95,13 @@ type OASPayloadRecord struct {
 
 // OASSchemaError is a single OAS validation error in the archive.
 type OASSchemaError struct {
-	Path    string `json:"path"`
+	Path    string `json:"path" redact:"-"`
 	Message string `json:"message"`
 }
 
 // RequestRecord captures the outbound HTTP request.
 type RequestRecord struct {
-	Method      string            `json:"method"`
+	Method      string            `json:"method" redact:"-"`
 	URL         string            `json:"url"`
 	OriginalURL string            `json:"originalUrl,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"`
@@ -123,45 +123,45 @@ type ValidationRecord struct {
 
 // AssertionRecord captures the result of a single assertion.
 type AssertionRecord struct {
-	Type    string `json:"type"`
+	Type    string `json:"type" redact:"-"`
 	Passed  bool   `json:"passed"`
 	Skipped bool   `json:"skipped,omitempty"`
 	Message string `json:"message"`
-	Path    string `json:"path,omitempty"`
+	Path    string `json:"path,omitempty" redact:"-"`
 	Expr    string `json:"expr,omitempty"`
 	Raw     bool   `json:"raw,omitempty"`
 }
 
 // SelectionRecord captures how an array selection was resolved.
 type SelectionRecord struct {
-	InputName     string `json:"inputName"`
-	SourceNode    string `json:"sourceNode"`
-	SourceField   string `json:"sourceField"`
+	InputName     string `json:"inputName" redact:"-"`
+	SourceNode    string `json:"sourceNode" redact:"-"`
+	SourceField   string `json:"sourceField" redact:"-"`
 	SourceSize    int    `json:"sourceSize"`
 	FilterExpr    string `json:"filterExpr,omitempty"`
 	FilteredSize  int    `json:"filteredSize"`
-	Strategy      string `json:"strategy"`
+	Strategy      string `json:"strategy" redact:"-"`
 	SelectedIndex int    `json:"selectedIndex"`
-	SelectionName string `json:"selectionName,omitempty"`
+	SelectionName string `json:"selectionName,omitempty" redact:"-"`
 }
 
 // ErrorClassRecord captures the error classification for a failed step.
 type ErrorClassRecord struct {
-	Category     string `json:"category"`
+	Category     string `json:"category" redact:"-"`
 	Detail       string `json:"detail"`
-	Action       string `json:"action"`
+	Action       string `json:"action" redact:"-"`
 	RetryAttempt int    `json:"retryAttempt"`
 }
 
 // ValueResolutionRecord captures how a single input was resolved.
 type ValueResolutionRecord struct {
-	InputName    string `json:"inputName"`
-	Source       string `json:"source"`
+	InputName    string `json:"inputName" redact:"-"`
+	Source       string `json:"source" redact:"-"`
 	RawValue     any    `json:"rawValue,omitempty"`
 	FinalValue   any    `json:"finalValue,omitempty"`
-	FromStep     string `json:"fromStep,omitempty"`
-	FromOutput   string `json:"fromOutput,omitempty"`
-	FromInput    string `json:"fromInput,omitempty"`
+	FromStep     string `json:"fromStep,omitempty" redact:"-"`
+	FromOutput   string `json:"fromOutput,omitempty" redact:"-"`
+	FromInput    string `json:"fromInput,omitempty" redact:"-"`
 	Expression   string `json:"expression,omitempty"`
 	Constraint   string `json:"constraint,omitempty"`
 	ConstraintOK *bool  `json:"constraintOk,omitempty"`
@@ -189,7 +189,7 @@ type RunSummary struct {
 
 // ArchiveResult captures the overall outcome of a run.
 type ArchiveResult struct {
-	Outcome string `json:"outcome"`
+	Outcome string `json:"outcome" redact:"-"`
 	Error   string `json:"error,omitempty"`
 	// DurationMs is the run's wall-clock time, retry waits and cleanup
 	// included. Archives written before it was recorded omit it; see
@@ -206,36 +206,36 @@ type BatchArchive struct {
 
 // BatchMetadata captures provenance and context for a batch run.
 type BatchMetadata struct {
-	Version     string     `json:"version"`
-	BatchID     string     `json:"batchId"`
+	Version     string     `json:"version" redact:"-"`
+	BatchID     string     `json:"batchId" redact:"-"`
 	Timestamp   time.Time  `json:"timestamp"`
-	Source      string     `json:"source,omitempty"` // directory filter or "all"
-	ToolVersion string     `json:"toolVersion,omitempty"`
-	Layers      []string   `json:"layers,omitempty"`      // CLI layers applied at the batch level
-	LayerGroups [][]string `json:"layerGroups,omitempty"` // layer groups for permutation
+	Source      string     `json:"source,omitempty" redact:"-"` // directory filter or "all"
+	ToolVersion string     `json:"toolVersion,omitempty" redact:"-"`
+	Layers      []string   `json:"layers,omitempty" redact:"-"`      // CLI layers applied at the batch level
+	LayerGroups [][]string `json:"layerGroups,omitempty" redact:"-"` // layer groups for permutation
 }
 
 // BatchRunEntry is a summary of a single run within a batch.
 type BatchRunEntry struct {
-	PlanName    string         `json:"planName"`
-	RunID       string         `json:"runId"`
-	Outcome     string         `json:"outcome"`
+	PlanName    string         `json:"planName" redact:"-"`
+	RunID       string         `json:"runId" redact:"-"`
+	Outcome     string         `json:"outcome" redact:"-"`
 	StepCount   int            `json:"stepCount"`
 	PassedCount int            `json:"passedCount"`
 	FailedCount int            `json:"failedCount"`
 	DurationMs  int64          `json:"durationMs"`
 	Error       string         `json:"error,omitempty"`
-	Attempts    int            `json:"attempts,omitempty"`    // total attempts (omitted if 1)
-	Layers      []string       `json:"layers,omitempty"`      // effective layers for this run
-	Permutation string         `json:"permutation,omitempty"` // permutation label for grouping
-	Skipped     bool           `json:"skipped,omitempty"`     // true if this run was skipped as a duplicate
-	DuplicateOf string         `json:"duplicateOf,omitempty"` // display name of canonical run (when skipped)
+	Attempts    int            `json:"attempts,omitempty"`               // total attempts (omitted if 1)
+	Layers      []string       `json:"layers,omitempty" redact:"-"`      // effective layers for this run
+	Permutation string         `json:"permutation,omitempty" redact:"-"` // permutation label for grouping
+	Skipped     bool           `json:"skipped,omitempty"`                // true if this run was skipped as a duplicate
+	DuplicateOf string         `json:"duplicateOf,omitempty" redact:"-"` // display name of canonical run (when skipped)
 	Issues      map[string]int `json:"issues,omitempty"`
 }
 
 // BatchResult captures the aggregate outcome of a batch.
 type BatchResult struct {
-	Outcome         string `json:"outcome"` // passed, failed, error, aborted
+	Outcome         string `json:"outcome" redact:"-"` // passed, failed, error, aborted
 	TotalRuns       int    `json:"totalRuns"`
 	PassedRuns      int    `json:"passedRuns"`
 	FailedRuns      int    `json:"failedRuns"`

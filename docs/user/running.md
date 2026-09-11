@@ -324,7 +324,7 @@ A two-second delay separates attempts to avoid hammering the API.
 
 ## Archives
 
-Every run writes `archive.json` and `summary.json` into its own `run-…` directory under the archive directory (`--output`, else the manifest's `archives`, else `_output/runs`); a batch writes `batch.json` and one run directory per plan into a `batch-…` directory. Archives redact credential headers and every configured credential's value, but store request and response bodies and outputs as they were, so review them before sharing.
+Every run writes `archive.json` and `summary.json` into its own `run-…` directory under the archive directory (`--output`, else the manifest's `archives`, else `_output/runs`); a batch writes `batch.json` and one run directory per plan into a `batch-…` directory. Archives redact credential headers and every configured secret credential's value, bodies and URLs included, but not tokens the API issues at run time or data it returns, so review them before sharing.
 
 See [Archives](archives.md) for the layout, what is and is not redacted, exporting and importing `.aar`/`.aab` files, naming runs, `aat run clean`, and `aat run rebuild-summaries`, and [Web UI](web-ui.md) for browsing them.
 

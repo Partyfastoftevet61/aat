@@ -111,9 +111,10 @@ type runResult struct {
 	summary     *RunSummary
 	archivePath string
 	err         error
-	setupErr    bool     // true when error occurred before engine execution
-	attempts    int      // total attempts (1 = no retries)
-	layers      []string // effective layers applied to this run
+	setupErr    bool            // true when error occurred before engine execution
+	attempts    int             // total attempts (1 = no retries)
+	layers      []string        // effective layers applied to this run
+	secrets     map[string]bool // the run's known secrets, for redacting what a batch archives about it
 }
 
 // exitCodeInfra is the exit code for infrastructure/config errors.
@@ -353,26 +354,10 @@ func addHostOverrides(ctx context.Context, router *engine.ExecutorRouter, apiBas
 }
 
 // writeRunArchive creates a run archive in the output directory and returns
-// the archive path. It collects secrets from the environment, the plan, and
-// any overlays the run used (nil entries are skipped) for redaction.
+// the archive path. The secrets of the environment, the plan, and any overlays
+// the run used (nil entries are skipped) are redacted.
 func writeRunArchive(result *engine.RunResult, p *plan.Plan, env *config.Environment, g *graph.Graph, outputDir string, layers []string, overlays ...*config.OverlayFile) (string, error) {
-	secrets := env.CollectSecrets()
-	for k, v := range config.CollectAuthSecrets(p.Auth) {
-		secrets[k] = v
-	}
-	for _, overlay := range overlays {
-		if overlay == nil {
-			continue
-		}
-		for k, v := range overlay.CollectSecrets() {
-			secrets[k] = v
-		}
-	}
-	return writeRunArchiveWithSecrets(result, p, env, g, outputDir, secrets, layers)
-}
-
-// writeRunArchiveWithSecrets creates a run archive using a pre-built secrets set.
-func writeRunArchiveWithSecrets(result *engine.RunResult, p *plan.Plan, env *config.Environment, g *graph.Graph, outputDir string, secrets map[string]bool, layers []string) (string, error) {
+	secrets := config.RunSecrets(env, p.Auth, overlays...)
 	runID := archive.GenerateRunID()
 	meta := archive.ArchiveMetadata{
 		Version:      "1.0.0",
@@ -424,22 +409,6 @@ func loadAndRunPlanWithRetries(ctx context.Context, rctx *runContext, planPath, 
 	runID := archive.GenerateRunID()
 	runDir := filepath.Join(outputDir, runID)
 	totalPossible := maxRetries + 1
-
-	// Collect secrets once for all archive writes
-	secrets := make(map[string]bool)
-	for k, v := range rctx.Secrets {
-		secrets[k] = v
-	}
-
-	// Parse plan once to collect plan-level auth secrets
-	parsed, err := plan.ParseAnyFile(planPath)
-	if err == nil {
-		if p, ok := parsed.(*plan.Plan); ok && p.Auth != nil {
-			for k, v := range config.CollectAuthSecrets(p.Auth) {
-				secrets[k] = v
-			}
-		}
-	}
 
 	var lastRes *runResult
 	for attempt := 1; attempt <= totalPossible; attempt++ {
@@ -616,8 +585,7 @@ type runContext struct {
 	Graph        *graph.Graph
 	Registry     *adapter.Registry
 	KB           *domain.KnowledgeBase
-	GraphDir     string // for recipe reconstitution
-	Secrets      map[string]bool
+	GraphDir     string               // for recipe reconstitution
 	AuthProvider *config.AuthProvider // cached default auth
 
 	// Override configuration (from env-file, auto-overrides, overlay, CLI flags)
@@ -702,7 +670,6 @@ func loadRunContext(ctx context.Context, args *runArgs, logf func(string, ...any
 		Registry:          registry,
 		KB:                kb,
 		GraphDir:          filepath.Dir(args.GraphPath),
-		Secrets:           env.CollectSecrets(),
 		AuthProvider:      config.NewAuthProvider(env.Auth),
 		Overrides:         args.Overrides,
 		EnvOverlay:        args.EnvOverlay,
@@ -945,23 +912,7 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 	result := eng.Run(ctx, p)
 
 	// 8. Write archive
-	secrets := make(map[string]bool)
-	for k, v := range rctx.Secrets {
-		secrets[k] = v
-	}
-	if p.Auth != nil {
-		for k, v := range config.CollectAuthSecrets(p.Auth) {
-			secrets[k] = v
-		}
-	}
-	for _, overlay := range []*config.OverlayFile{autoOverlay, envOverlayFile} {
-		if overlay == nil {
-			continue
-		}
-		for k, v := range overlay.CollectSecrets() {
-			secrets[k] = v
-		}
-	}
+	secrets := config.RunSecrets(rctx.Env, p.Auth, autoOverlay, envOverlayFile)
 
 	meta := archive.ArchiveMetadata{
 		Version:       "1.0.0",
@@ -1011,6 +962,7 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 		archivePath: archivePath,
 		err:         result.Error,
 		layers:      effectiveLayers,
+		secrets:     secrets,
 	}
 }
 

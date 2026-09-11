@@ -150,6 +150,16 @@ the graph and plan formats may still change before 1.0.
   empty Airline case-study stub).
 
 ### Fixed
+- Run archives redact known secrets from every string they hold: request URLs and query parameters,
+  request and response bodies, outputs and display outputs, error, assertion, and OpenAPI messages,
+  and plan step values, as well as headers, inputs, and resolved values; `batch.json` entries too. In
+  JSON bodies only string values change. Before, a credential used as an input was redacted in `inputs`
+  but kept in the body of the same request.
+- Archive redaction no longer mangles ordinary data: the oauth2 `username` and `clientId` are not
+  treated as secrets, and a secret shorter than eight characters is redacted only where a whole value
+  equals it. The shop sandbox's `demo` credentials had turned `demo@example.com` into
+  `[REDACTED]@example.com` in inputs. Overlapping secrets are redacted completely; map order could
+  leave part of one visible.
 - Run archives redact an API key sent under a custom `auth.headerName`, the credentials of host overrides
   and overlay overrides (they were never collected as secrets), and the literal credentials and credential
   headers of the plan stored in `metadata.plan` and `metadata.instantiatedPlan`; `aat prompt` archives also

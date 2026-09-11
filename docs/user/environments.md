@@ -441,7 +441,7 @@ The value is stored directly in the YAML file. Use this only for local developme
 
 ### Redaction
 
-Run archives redact request and response headers by name: `Authorization`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`, `Cookie`, and `Set-Cookie` values become `[REDACTED]`. AAT also collects the resolved values of every credential that can apply to a run — the environment's and its host overrides' auth, the plan's auth, overlay auth, and the LLM API key — and scrubs them from every archived header (so an API key under a custom `headerName` is redacted), from step inputs and value resolutions, and from the plan's literal credentials. Request and response bodies and step outputs are stored as-is, so review an archive before sharing it. See [Archives](archives.md).
+Run archives redact request and response headers by name: `Authorization`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`, `Cookie`, and `Set-Cookie` values become `[REDACTED]`. AAT also collects the resolved values of every secret credential that can apply to a run — the environment's and its host overrides' auth, the plan's auth, overlay auth, and the LLM API key; not the oauth2 `username` or `clientId` — and redacts them from every string in the archive, bodies and URLs included. A secret shorter than eight characters is redacted only where a whole value equals it. Tokens an API issues at run time are not known secrets outside credential headers, so review an archive before sharing it. See [Archives: What Is Redacted, and What Is Not](archives.md#what-is-redacted-and-what-is-not).
 
 ## LLM Configuration
 

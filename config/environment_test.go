@@ -607,10 +607,10 @@ func TestCollectSecrets_WithEnvVars(t *testing.T) {
 	}
 
 	secrets := env.CollectSecrets()
-	assert.True(t, secrets["secret-value-1"])
+	assert.False(t, secrets["secret-value-1"], "a client ID identifies, it is not a secret")
 	assert.True(t, secrets["secret-value-2"])
 	assert.True(t, secrets["literal-key"])
-	assert.Len(t, secrets, 3)
+	assert.Len(t, secrets, 2)
 }
 
 func TestCollectSecrets_IncludesOverrideAuth(t *testing.T) {
@@ -1155,9 +1155,50 @@ func TestCollectAuthSecrets(t *testing.T) {
 	}
 
 	secrets := CollectAuthSecrets(auth)
-	assert.True(t, secrets["user-val"])
+	assert.False(t, secrets["user-val"], "a username identifies, it is not a secret")
 	assert.True(t, secrets["pass-val"])
-	assert.Len(t, secrets, 2)
+	assert.Len(t, secrets, 1)
+}
+
+// TestCollectAuthSecrets_OnlySecretCredentials checks which credentials of each
+// auth type count as secrets: everything except the oauth2 username and
+// clientId, including a credential name AAT does not know.
+func TestCollectAuthSecrets_OnlySecretCredentials(t *testing.T) {
+	auth := &AuthConfig{Credentials: map[string]SecretRef{
+		"username":     {Source: "literal", Value: "demo-user"},
+		"clientId":     {Source: "literal", Value: "aat-shop"},
+		"password":     {Source: "literal", Value: "demo"},
+		"clientSecret": {Source: "literal", Value: "aat-shop-secret"},
+		"key":          {Source: "literal", Value: "pay-demo-key"},
+		"token":        {Source: "literal", Value: "tok-123"},
+		"custom":       {Source: "literal", Value: "custom-value"},
+	}}
+	assert.Equal(t, map[string]bool{
+		"demo": true, "aat-shop-secret": true, "pay-demo-key": true, "tok-123": true, "custom-value": true,
+	}, CollectAuthSecrets(auth))
+}
+
+func TestRunSecrets(t *testing.T) {
+	env := &Environment{
+		Auth: AuthConfig{Credentials: map[string]SecretRef{"password": {Source: "literal", Value: "env-pass"}}},
+		Overrides: []HostOverride{{Match: "payment*", Auth: &AuthConfig{Credentials: map[string]SecretRef{
+			"key": {Source: "literal", Value: "override-key"},
+		}}}},
+		LLM: LLMConfig{APIKey: SecretRef{Source: "literal", Value: "llm-key"}},
+	}
+	planAuth := &AuthConfig{Credentials: map[string]SecretRef{"token": {Source: "literal", Value: "plan-token"}}}
+	overlay := &OverlayFile{
+		Auth: &AuthConfig{Credentials: map[string]SecretRef{"token": {Source: "literal", Value: "overlay-token"}}},
+		Overrides: []HostOverride{{Match: "ship*", Auth: &AuthConfig{Credentials: map[string]SecretRef{
+			"key": {Source: "literal", Value: "overlay-override-key"},
+		}}}},
+	}
+
+	assert.Equal(t, map[string]bool{
+		"env-pass": true, "override-key": true, "llm-key": true, "plan-token": true,
+		"overlay-token": true, "overlay-override-key": true,
+	}, RunSecrets(env, planAuth, nil, overlay))
+	assert.Equal(t, map[string]bool{"env-pass": true, "override-key": true, "llm-key": true}, RunSecrets(env, nil))
 }
 
 func TestCollectAuthSecrets_Nil(t *testing.T) {

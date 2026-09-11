@@ -71,21 +71,22 @@ Each step record holds:
 
 ## What Is Redacted, and What Is Not
 
-Archives are not scrubbed clean of sensitive data, so an archive, an exported `.aar`/`.aab`, or a CI artifact is not automatically safe to commit or share. Before you attach one to a ticket, check what it holds.
+Archives redact the credentials AAT knows about, not every piece of sensitive data, so an archive, an exported `.aar`/`.aab`, or a CI artifact is not automatically safe to commit or share. Before you attach one to a ticket, check what it holds.
 
 Redacted:
 
 - **Credential headers, by name.** In requests and responses, the values of `Authorization`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`, `Cookie`, and `Set-Cookie` (any capitalization) are replaced with `[REDACTED]`. The header name stays.
-- **Known secret values in headers, `inputs`, and `resolutions`.** AAT collects the resolved credentials of every `auth` block that can apply to the run — the environment's, its host overrides' (such as the shop's payments key), the plan's, and those of overlays and their overrides — plus the LLM API key. Where one of those values appears in any header, input, or resolution, alone or inside a longer string, it is replaced with `[REDACTED]`, so an API key sent under a custom `auth.headerName` is redacted too.
-- **Plan credentials.** In `metadata.plan` and `metadata.instantiatedPlan`, the value of every `source: literal` credential in the plan's `auth` block and the plan's credential headers are replaced with `[REDACTED]`. `source: env` references keep their variable names.
+- **Known secrets, everywhere.** AAT collects the resolved secret credentials of every `auth` block that can apply to the run — the environment's, its host overrides' (such as the shop's payments key), the plan's, and those of overlays and their overrides — plus the LLM API key. A secret credential is any credential except the oauth2 `username` and `clientId`, which identify an account rather than prove it. Each secret is redacted from every string in the archive: URLs and query parameters, headers under any name, request and response bodies, inputs and resolved values, outputs and display outputs, error and assertion messages, and the archived plan. In a JSON body only string values change; keys, numbers, and layout are kept. `batch.json` is redacted the same way.
+- **How a secret matches.** A string that equals a secret is always replaced. A secret of at least eight characters is also replaced inside longer strings, including its URL-escaped forms. A shorter secret is not, because it is an ordinary word in data too: with the shop sandbox's `demo` password, `"password": "demo"` is redacted but `demo@example.com` is kept.
+- **Plan credentials.** In `metadata.plan` and `metadata.instantiatedPlan`, the value of every `source: literal` credential in the plan's `auth` block and the plan's credential headers are replaced with `[REDACTED]`, whatever their length. `source: env` references keep their variable names.
 
 Stored as-is:
 
-- Request and response **bodies**, including tokens or personal data an API returns.
-- **Outputs** and display outputs.
-- **URLs**, including query parameters.
 - **Tokens AAT obtains at run time** anywhere other than a credential header, such as an OAuth2 access token an API echoes in a body.
-- **The rest of the plan**, including step values. A secret written as a literal step value is not a credential AAT knows about.
+- **Other sensitive data** an API returns or a plan sends, such as personal data, and a secret written as a literal step value, which is not a credential AAT knows about.
+- **A short secret inside a longer string**, as described above.
+
+Terminal output and the `--json` summary are not redacted: they are the live view of the run, like the requests themselves.
 
 `summary.json` holds no request data. The live-state dump written by `--dump-state` redacts nothing at all; see [Checkpoints: Security](checkpoints.md#security).
 

@@ -153,12 +153,7 @@ func (s *Server) handleExecutePlan(ctx context.Context, req mcp.CallToolRequest)
 		GraphVersion: s.ctx.Graph.Version,
 		ToolVersion:  version.Effective(),
 	}
-	secrets := s.ctx.Environment.CollectSecrets()
-	if p.Auth != nil {
-		for k, v := range config.CollectAuthSecrets(p.Auth) {
-			secrets[k] = v
-		}
-	}
+	secrets := config.RunSecrets(s.ctx.Environment, p.Auth)
 	arc := engine.ToArchive(result, meta, s.ctx.Environment.APIBaseURL, secrets)
 	archivePath := filepath.Join(s.ctx.ArchiveDir, runID, "archive.json")
 	if err := archive.Write(arc, archivePath); err != nil {

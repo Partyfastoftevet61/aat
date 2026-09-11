@@ -14,11 +14,11 @@ import (
 
 // ToArchive converts an engine RunResult into a serializable Archive.
 // The baseURL is prepended to request paths to produce full URLs.
-// Credential headers are always redacted. If secrets is non-nil, values
-// containing a secret are redacted in inputs, resolutions, and headers, and
-// the archived plans lose their literal credentials.
+// Credential headers and the archived plans' literal credentials are always
+// redacted. Every known secret in secrets is then redacted wherever it appears
+// (see archive.Redact); the result shares nothing with the run result.
 func ToArchive(result *RunResult, meta archive.ArchiveMetadata, baseURL string, secrets map[string]bool) *archive.Archive {
-	meta.Plan = redactPlan(meta.Plan, secrets)
+	meta.Plan = redactPlan(meta.Plan)
 	a := &archive.Archive{
 		Metadata: meta,
 		Result: archive.ArchiveResult{
@@ -28,31 +28,36 @@ func ToArchive(result *RunResult, meta archive.ArchiveMetadata, baseURL string, 
 		},
 	}
 
-	a.Steps = convertStepResults(result.Steps, baseURL, secrets)
-	a.Cleanup = convertStepResults(result.CleanupResults, baseURL, secrets)
-	a.Metadata.InstantiatedPlan = redactPlan(result.InstantiatedPlan, secrets)
+	a.Steps = convertStepResults(result.Steps, baseURL)
+	a.Cleanup = convertStepResults(result.CleanupResults, baseURL)
+	a.Metadata.InstantiatedPlan = redactPlan(result.InstantiatedPlan)
 
+	// Redact only fails on a value encoding/json cannot marshal, in which
+	// case archive.Write fails the same way and nothing is written.
+	if redacted, err := archive.Redact(a, secrets); err == nil {
+		a = redacted
+	}
 	return a
 }
 
-func convertStepResults(steps []StepResult, baseURL string, secrets map[string]bool) []archive.StepRecord {
+func convertStepResults(steps []StepResult, baseURL string) []archive.StepRecord {
 	if len(steps) == 0 {
 		return nil
 	}
 	records := make([]archive.StepRecord, len(steps))
 	for i, s := range steps {
-		records[i] = convertStepResult(s, baseURL, secrets)
+		records[i] = convertStepResult(s, baseURL)
 	}
 	return records
 }
 
-func convertStepResult(s StepResult, baseURL string, secrets map[string]bool) archive.StepRecord {
+func convertStepResult(s StepResult, baseURL string) archive.StepRecord {
 	rec := archive.StepRecord{
 		StepID:          s.StepID,
 		Node:            s.Node,
 		StartTime:       s.StartTime,
 		DurationMs:      s.Duration.Milliseconds(),
-		Inputs:          archive.RedactMap(s.Inputs, secrets),
+		Inputs:          s.Inputs,
 		Outputs:         s.Outputs,
 		TransformScript: s.TransformScript,
 		Error:           errString(s.Error),
@@ -63,10 +68,10 @@ func convertStepResult(s StepResult, baseURL string, secrets map[string]bool) ar
 	}
 
 	if s.Request != nil {
-		rec.Request = convertRequest(s.Request, s.ActualBaseURL, baseURL, s.OriginalPath, secrets)
+		rec.Request = convertRequest(s.Request, s.ActualBaseURL, baseURL, s.OriginalPath)
 	}
 	if s.Response != nil {
-		rec.Response = convertResponse(s.Response, secrets)
+		rec.Response = convertResponse(s.Response)
 	}
 	if s.Validation != nil {
 		rec.Validation = convertValidation(s.Validation)
@@ -75,7 +80,7 @@ func convertStepResult(s StepResult, baseURL string, secrets map[string]bool) ar
 		rec.Selections = convertSelections(s.Selections)
 	}
 	if len(s.Resolutions) > 0 {
-		rec.Resolutions = convertResolutions(s.Resolutions, secrets)
+		rec.Resolutions = convertResolutions(s.Resolutions)
 	}
 	if s.ErrorClass != nil {
 		rec.ErrorClass = convertErrorClass(s.ErrorClass)
@@ -113,7 +118,7 @@ func convertStepResult(s StepResult, baseURL string, secrets map[string]bool) ar
 	return rec
 }
 
-func convertRequest(req *adapter.Request, actualBaseURL, defaultBaseURL, originalPath string, secrets map[string]bool) *archive.RequestRecord {
+func convertRequest(req *adapter.Request, actualBaseURL, defaultBaseURL, originalPath string) *archive.RequestRecord {
 	// Use the actual executor base URL if available, fall back to default
 	effectiveBase := actualBaseURL
 	if effectiveBase == "" {
@@ -124,7 +129,7 @@ func convertRequest(req *adapter.Request, actualBaseURL, defaultBaseURL, origina
 	rec := &archive.RequestRecord{
 		Method:  req.Method,
 		URL:     actualURL,
-		Headers: archive.RedactHeaders(req.Headers, secrets),
+		Headers: archive.RedactHeaders(req.Headers),
 		Body:    toRawMessage(req.Body),
 	}
 
@@ -141,19 +146,19 @@ func convertRequest(req *adapter.Request, actualBaseURL, defaultBaseURL, origina
 	return rec
 }
 
-func convertResponse(resp *adapter.Response, secrets map[string]bool) *archive.ResponseRecord {
+func convertResponse(resp *adapter.Response) *archive.ResponseRecord {
 	return &archive.ResponseRecord{
 		Status:  resp.StatusCode,
-		Headers: archive.RedactHeaders(flattenHeaders(resp.Headers), secrets),
+		Headers: archive.RedactHeaders(flattenHeaders(resp.Headers)),
 		Body:    toRawMessage(resp.Body),
 	}
 }
 
 // redactPlan returns p with its auth credentials' literal values and its
-// headers redacted, copying what it changes so the caller's plan is untouched.
-// Environment-variable references keep their variable names, which are not
-// secret.
-func redactPlan(p *plan.Plan, secrets map[string]bool) *plan.Plan {
+// credential headers redacted, copying what it changes so the caller's plan is
+// untouched. Environment-variable references keep their variable names, which
+// are not secret.
+func redactPlan(p *plan.Plan) *plan.Plan {
 	if p == nil || (p.Auth == nil && len(p.Headers) == 0) {
 		return p
 	}
@@ -163,13 +168,13 @@ func redactPlan(p *plan.Plan, secrets map[string]bool) *plan.Plan {
 		auth.Credentials = make(map[string]config.SecretRef, len(p.Auth.Credentials))
 		for name, ref := range p.Auth.Credentials {
 			if ref.Value != "" {
-				ref.Value = "[REDACTED]"
+				ref.Value = archive.Redacted
 			}
 			auth.Credentials[name] = ref
 		}
 		cp.Auth = &auth
 	}
-	cp.Headers = archive.RedactHeaders(p.Headers, secrets)
+	cp.Headers = archive.RedactHeaders(p.Headers)
 	return &cp
 }
 
@@ -218,14 +223,14 @@ func convertErrorClass(ec *ErrorClassification) *archive.ErrorClassRecord {
 	}
 }
 
-func convertResolutions(resolutions []ValueResolution, secrets map[string]bool) []archive.ValueResolutionRecord {
+func convertResolutions(resolutions []ValueResolution) []archive.ValueResolutionRecord {
 	records := make([]archive.ValueResolutionRecord, len(resolutions))
 	for i, r := range resolutions {
 		rec := archive.ValueResolutionRecord{
 			InputName:  r.InputName,
 			Source:     r.Source,
-			RawValue:   archive.RedactValue(r.RawValue, secrets),
-			FinalValue: archive.RedactValue(r.FinalValue, secrets),
+			RawValue:   r.RawValue,
+			FinalValue: r.FinalValue,
 			FromStep:   r.FromStep,
 			FromOutput: r.FromOutput,
 			FromInput:  r.FromInput,
@@ -233,7 +238,7 @@ func convertResolutions(resolutions []ValueResolution, secrets map[string]bool) 
 			Constraint: r.Constraint,
 			PoolIndex:  r.PoolIndex,
 			PoolSize:   r.PoolSize,
-			Tried:      archive.RedactSlice(r.Tried, secrets),
+			Tried:      r.Tried,
 		}
 		if r.Constraint != "" {
 			ok := r.ConstraintOK

@@ -260,17 +260,47 @@ func (env *Environment) CollectSecrets() map[string]bool {
 	return secrets
 }
 
-// CollectAuthSecrets resolves all SecretRef values from an AuthConfig and returns
-// them as a set. This is used to merge plan-level auth secrets for redaction.
-// Resolution errors are silently ignored.
+// CollectAuthSecrets resolves the secret credentials of an AuthConfig and
+// returns them as a set, for redaction in archives. The oauth2 username and
+// clientId identify an account rather than prove it, so they are left out:
+// redacting them would mangle ordinary data, such as the shop sandbox's "demo"
+// user in demo@example.com. Every other credential counts. Resolution errors
+// are silently ignored.
 func CollectAuthSecrets(auth *AuthConfig) map[string]bool {
 	secrets := make(map[string]bool)
 	if auth == nil {
 		return secrets
 	}
-	for _, ref := range auth.Credentials {
+	for name, ref := range auth.Credentials {
+		if identifierCredentials[name] {
+			continue
+		}
 		if val, err := ref.Resolve(); err == nil && val != "" {
 			secrets[val] = true
+		}
+	}
+	return secrets
+}
+
+// identifierCredentials names the credentials that identify rather than
+// authenticate; see CollectAuthSecrets.
+var identifierCredentials = map[string]bool{"username": true, "clientId": true}
+
+// RunSecrets collects every secret a run can send, for redaction in its
+// archive: the environment's (its auth, its host overrides' auth, and the LLM
+// API key), the plan's auth, and those of the overlays the run used. Nil
+// overlays are skipped.
+func RunSecrets(env *Environment, planAuth *AuthConfig, overlays ...*OverlayFile) map[string]bool {
+	secrets := env.CollectSecrets()
+	for k := range CollectAuthSecrets(planAuth) {
+		secrets[k] = true
+	}
+	for _, overlay := range overlays {
+		if overlay == nil {
+			continue
+		}
+		for k := range overlay.CollectSecrets() {
+			secrets[k] = true
 		}
 	}
 	return secrets

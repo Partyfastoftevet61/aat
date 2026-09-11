@@ -769,7 +769,7 @@ The archive is the primary debugging artifact. Read it to understand what happen
 
 Fields with no value are omitted. `errorClassification.category` uses the same names as a step's `retry.on` and `retry.failOn` lists; `responseBodyError` records the graph `errorDetection` rule that failed a successful response.
 
-Sensitive headers (`Authorization`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`, `Cookie`, `Set-Cookie`) are redacted to `"[REDACTED]"`, and known secret values (every credential configured for the run) are scrubbed from all headers, `inputs`, `resolutions`, and the plan's literal credentials. See [Archives](archives.md). Request and response bodies and outputs are stored as-is. A JSON body is embedded as JSON; any other body is stored as a JSON string.
+Sensitive headers (`Authorization`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`, `Cookie`, `Set-Cookie`) are redacted to `"[REDACTED]"`, and known secret values (every secret credential configured for the run) are redacted from every string in the archive, bodies and URLs included; a secret shorter than eight characters only where a whole value equals it. See [Archives](archives.md). A JSON body is embedded as JSON; any other body is stored as a JSON string.
 
 Mutation-expanded steps use the id format `<parentId>--<mutationName>` (e.g.,
 `createBooking--empty-lastName`). Each mutation sibling appears as a separate

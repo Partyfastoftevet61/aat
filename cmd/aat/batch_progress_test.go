@@ -741,6 +741,20 @@ func TestBuildPlanResult_WithError(t *testing.T) {
 	assert.Equal(t, "error", be.Outcome)
 }
 
+// TestBuildPlanResult_RedactsRunSecrets checks that batch.json, an archive
+// too, does not repeat a run's secret that its error message quotes.
+func TestBuildPlanResult_RedactsRunSecrets(t *testing.T) {
+	res := &runResult{
+		summary: &RunSummary{Outcome: "error", Error: "executing request: GET /orders?key=pay-demo-key-9: timeout"},
+		secrets: map[string]bool{"pay-demo-key-9": true},
+	}
+
+	br, be := buildPlanResult("smoke", "(base)", res)
+	assert.Equal(t, "executing request: GET /orders?key=[REDACTED]: timeout", be.Error)
+	assert.Equal(t, "smoke", be.PlanName)
+	assert.Contains(t, br.Error, "pay-demo-key-9", "the live batch summary, like terminal output, is not redacted")
+}
+
 func TestBuildPlanResult_NilSummary(t *testing.T) {
 	res := &runResult{}
 

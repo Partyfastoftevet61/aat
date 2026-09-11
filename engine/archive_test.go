@@ -961,3 +961,60 @@ func TestToArchive_RedactsCredentialsEverywhere(t *testing.T) {
 	assert.NotContains(t, string(body), "plan-token-456")
 	assert.Equal(t, "plan-token-456", p.Auth.Credentials["token"].Value, "the run's plan is not modified")
 }
+
+// TestToArchive_RedactsSecretsFromRequestData checks that a known secret is
+// redacted wherever run data carries it — the URL, request and response
+// bodies, outputs, errors, assertion and OpenAPI messages, and the plan — while
+// a short secret is redacted only as a whole value, and the run result itself
+// is not modified.
+func TestToArchive_RedactsSecretsFromRequestData(t *testing.T) {
+	const key = "shop-key-123456"
+	secrets := map[string]bool{key: true, "demo": true}
+	p := &plan.Plan{Execution: plan.Execution{Steps: []plan.Step{{
+		Node:   "checkout",
+		Values: map[string]plan.StepValue{"note": {Default: "sent with " + key}},
+	}}}}
+	outputs := map[string]any{"receipt": "RCPT for " + key, "total": 10340, "customer": "demo@example.com"}
+	result := &RunResult{
+		Outcome:          OutcomeFailed,
+		Error:            fmt.Errorf("step %q returned status 402 for key %s", "checkout", key),
+		InstantiatedPlan: p,
+		Steps: []StepResult{{
+			StepID: "checkout",
+			Node:   "checkout",
+			Inputs: map[string]any{"password": "demo", "email": "demo@example.com"},
+			Request: &adapter.Request{
+				Method: "POST",
+				Path:   "/carts/" + key + "/checkout?apiKey=" + key,
+				Body:   []byte(`{"apiKey":"` + key + `","quantity":2,"email":"demo@example.com"}`),
+			},
+			Response: &adapter.Response{StatusCode: 402, Body: []byte("payment refused for " + key)},
+			Outputs:  outputs,
+			DisplayOutputs: []DisplayOutput{
+				{Label: "Receipt", Name: "receipt", Value: "RCPT for " + key},
+			},
+			Error: errors.New("request with " + key + " failed"),
+			Validation: &validate.MechanicalResult{Results: []validate.AssertionResult{
+				{Type: validate.AssertFieldEquals, Message: "field apiKey: expected x, got " + key},
+			}},
+		}},
+	}
+
+	a := ToArchive(result, archive.ArchiveMetadata{Version: "1", RunID: "run-data", Plan: p}, "https://api.example.com", secrets)
+
+	data, err := json.Marshal(a)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), key)
+	step := a.Steps[0]
+	assert.Equal(t, "https://api.example.com/carts/[REDACTED]/checkout?apiKey=[REDACTED]", step.Request.URL)
+	assert.JSONEq(t, `{"apiKey":"[REDACTED]","quantity":2,"email":"demo@example.com"}`, string(step.Request.Body))
+	assert.Equal(t, `"payment refused for [REDACTED]"`, string(step.Response.Body))
+	assert.Equal(t, "[REDACTED]", step.Inputs["password"], "a short secret is redacted as a whole value")
+	assert.Equal(t, "demo@example.com", step.Inputs["email"], "but not inside other data")
+	assert.Equal(t, "demo@example.com", step.Outputs["customer"])
+	assert.Equal(t, "RCPT for [REDACTED]", step.Outputs["receipt"])
+	assert.Equal(t, "checkout", step.StepID)
+
+	assert.Equal(t, "RCPT for "+key, outputs["receipt"], "the run result is not modified")
+	assert.Equal(t, "sent with "+key, p.Execution.Steps[0].Values["note"].Default)
+}

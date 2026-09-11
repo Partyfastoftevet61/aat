@@ -395,7 +395,7 @@ aat run batch --json --output _output/runs
 - Batch: `batch-YYYYMMDD-HHMMSS-XXXXXXXX/batch.json` + per-plan subdirectories
 - Retries: `attempt-01.json`, `attempt-02.json` alongside `archive.json`
 
-Upload the entire output directory as a CI artifact. Archives redact credential headers (`Authorization`, `X-API-Key`, `Cookie`, and similar) and scrub every configured credential's value from headers, step inputs, resolved values, and the plan, but request and response bodies and extracted outputs are stored as-is. If an API returns tokens or personal data in a body, treat the archives as sensitive and restrict who can download the artifact.
+Upload the entire output directory as a CI artifact. Archives redact credential headers (`Authorization`, `X-API-Key`, `Cookie`, and similar) and every configured secret credential's value wherever it appears, bodies and URLs included, but not tokens the API issues at run time or personal data it returns. If an API returns either in a body, treat the archives as sensitive and restrict who can download the artifact. The `--json` output is not redacted.
 
 See [Archives](archives.md) for the archive layout and redaction, and for browsing archives locally after downloading CI artifacts.
 

@@ -91,6 +91,25 @@ func TestShopExample(t *testing.T) {
 		assert.Equal(t, 402, stepByNode(t, res.summary, "paymentCharge").Status)
 	})
 
+	t.Run("archive redaction", func(t *testing.T) {
+		t.Parallel()
+		p := newShopProject(t)
+
+		args := p.runArgs(t, "us")
+		args.PlanPath = p.plan("full-lifecycle")
+		res := runCommand(context.Background(), &args, io.Discard, TerminalInfo{})
+		require.NoError(t, res.err)
+		require.NotEmpty(t, res.archivePath)
+		data, err := os.ReadFile(res.archivePath)
+		require.NoError(t, err)
+
+		archived := string(data)
+		assert.NotContains(t, archived, "pay-demo-key", "the payments API key is a secret")
+		assert.NotContains(t, archived, "aat-shop-secret", "the OAuth2 client secret is a secret")
+		assert.Contains(t, archived, "demo@example.com", "the short demo password does not mangle the email")
+		assert.Contains(t, archived, `"Authorization": "[REDACTED]"`)
+	})
+
 	t.Run("resilience retries", func(t *testing.T) {
 		t.Parallel()
 		p := newShopProject(t)
