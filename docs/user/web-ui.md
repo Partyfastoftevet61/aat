@@ -91,8 +91,10 @@ Clicking a run opens the detail view:
 
 - **Header**: outcome, plan name, **Save**/**Export** controls, a link to the batch the run belongs to, and the run's error
 - **Metadata**: duration, when it ran, step counts, environment, AAT version, and layers applied
-- **Step timeline**: each step's ID, node, status, duration, assertion count, retry and OAS badges, display outputs, and a duration bar placed on the run's time span, so slow steps and ordering stand out; cleanup steps follow in their own section. A step that retried carries a badge naming why, as run output does (`retried 2x: transient`), and its bar covers every attempt
+- **Step timeline**: each step's ID (with its node when the two differ), status, duration, assertion count, retry and OAS badges, display outputs, and a duration bar placed on the run's time span, so slow steps and ordering stand out; cleanup steps follow in their own section. A step that retried carries a badge naming why, as run output does (`retried 2x: transient`), and its bar covers every attempt
 - **Prior attempts**: for a run retried with `--retries`, a table of the failed attempts, each opening that attempt's archive
+
+![The shop's full-lifecycle run in the web UI: the header with outcome, duration, and environment, then the step timeline with status codes, retry badges, display outputs, and duration bars for the payment, shipment, and retried steps](assets/ui-run-gantt.png)
 
 ### Step Detail
 
@@ -112,6 +114,8 @@ Clicking a step opens the step detail. Tabs appear only when the step has that d
 | Plan, Instantiated | The step as written in the plan, and after graph defaults and layers were merged in |
 
 **Copy as cURL** builds a `curl -X <method> '<url>' -H ... --data '...'` command from the request exactly as the archive recorded it and copies it to the clipboard, so a failing call can be replayed from a terminal or pasted into a bug report. Because archives redact auth headers and known secrets, an `Authorization` header or an API key comes through as `[REDACTED]`; substitute a live value before running it. Data the API returned, such as personal data, is copied as recorded, so check the command before pasting it anywhere public (see [Archives: What Is Redacted, and What Is Not](archives.md#what-is-redacted-and-what-is-not)). If the step was routed by an override, the URL is the one actually called, marked **OVERRIDE**, with the original shown beneath it.
+
+![The shop's checkout step in the web UI: node, status, and display outputs, the Request tab with the method and URL, the Copy as cURL button, the headers with Authorization redacted, and the JSON body](assets/ui-step-request-curl.png)
 
 ### Visualizer Tabs
 

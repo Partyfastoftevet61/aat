@@ -10,6 +10,8 @@ aat-sandbox serve &
 aat run plan full-lifecycle
 ```
 
+![aat run plan full-lifecycle against the shop sandbox: fifteen steps stream in with their status codes and durations, two steps retry, cleanup deletes the order and the cart, and the run passes](assets/demo-plan.gif)
+
 ## Start Here
 
 - **[Shop example](examples/shop.md)** — watch AAT drive a realistic API in a minute, offline: an order through every state, a layer matrix, two regions, negative tests

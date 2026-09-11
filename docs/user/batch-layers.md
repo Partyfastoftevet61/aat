@@ -204,6 +204,10 @@ aat run batch --layer-group "us,eu" --parallel 4
 
 Runs up to 4 plans concurrently. Combine with `--shuffle` to avoid correlated timing patterns. In parallel mode, AAT replaces the step-by-step output with a live-updating progress display — each active plan gets its own progress bar showing completed steps, the current step ID, and retry status, with a status line tracking overall batch completion. Completed plans scroll up as permanent result lines while active plans continue updating in place.
 
+The [shop example](examples/shop.md)'s seven plans across two layer groups, four at a time:
+
+![aat run batch with two layer groups and --parallel 4 on the shop example: the dedup list, four progress bars updating in place, result lines scrolling up, and Batch: 27/63 PASSED, 36 SKIPPED](assets/demo-batch.gif)
+
 ## Reading the Output
 
 The samples in this section come from the [shop example](examples/shop.md), running its seven plans across two layer groups of two shipping tiers and two baskets.
@@ -357,6 +361,8 @@ See [Archives](archives.md) for what an archive contains and [Web UI](web-ui.md)
 ### Reading the matrix in the web UI
 
 `aat web` renders the same batch as a permutation matrix. Open the batch (from the run list, or `aat web view batch-...`) and use the **By Layers** / **By Test** toggle at the top of the batch detail page:
+
+![The shop batch in the web UI's By Test view: one row per plan, one column per layer permutation, an Overall column, and a drop-down filter for each layer group](assets/ui-batch-matrix.png)
 
 - **By Layers** groups runs by permutation — one block per layer combination — which is the quickest way to see whether a whole configuration is broken.
 - **By Test** pivots to one row per plan and one column per permutation, with an **Overall** column, so a single test can be scanned across every configuration. The per-dimension drop-downs above the table pin any layer group to **All**, **(none)**, or one value, and the counter shows how many permutations remain.

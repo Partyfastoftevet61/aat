@@ -6,6 +6,8 @@ AAT is a Go CLI that models an API as a graph and executes long, multi-step test
 
 `github.com/gburgyan/aat` — Go 1.25+
 
+`docs/go.mod` declares an empty module so the docs site's images (`docs/user/assets`, from `make demos`) stay out of the module zip that `go install` downloads. Keep Go code out of `docs/`.
+
 ## Build System
 
 The project uses a Makefile for builds:
