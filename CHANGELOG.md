@@ -125,6 +125,9 @@ the graph and plan formats may still change before 1.0.
   empty Airline case-study stub).
 
 ### Fixed
+- A project's manifest no longer inherits fields it leaves out (such as `domain`, `layers`, or
+  `defaultEnvironment`) from a lower-priority project named by `AAT_PROJECT` or the user config's
+  `default_project`; the highest-priority manifest found describes the whole project.
 - An override entry that sets only `values:` or `expectFailure:` no longer reroutes its node to the
   top-level base URL and auth; it keeps the route a broader match gives it.
 - In multi-environment files, a child environment's overrides (`extends`, `include`) take precedence

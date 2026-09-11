@@ -28,7 +28,8 @@ type ProjectPaths struct {
 }
 
 // ResolveProjectPaths resolves project artifact paths using a 4-level priority
-// chain (ascending — later overwrites earlier):
+// chain (ascending — a later manifest replaces an earlier one as a whole, so a
+// field it leaves out is not filled in from another project):
 //  1. User home config (default_project path)
 //  2. AAT_PROJECT env var (directory or .yaml file path)
 //  3. CWD manifest discovery (walk up from cwd for aat-project.yaml)
@@ -117,10 +118,10 @@ func ResolveProjectPaths(overrides ProjectPaths) (*ProjectPaths, error) {
 	return result, nil
 }
 
-// applyManifest loads a manifest from pathOrDir and applies its paths to result.
-// pathOrDir may be a directory (looks for aat-project.yaml inside) or a direct
-// .yaml file path. It reports whether a manifest was applied; a manifest that
-// does not exist is not an error.
+// applyManifest loads a manifest from pathOrDir and replaces result with its
+// paths. pathOrDir may be a directory (looks for aat-project.yaml inside) or a
+// direct .yaml file path. It reports whether a manifest was applied; a manifest
+// that does not exist is not an error.
 func applyManifest(result *ProjectPaths, pathOrDir string) (bool, error) {
 	manifestPath := resolveManifestPath(pathOrDir)
 	if manifestPath == "" {
@@ -135,6 +136,10 @@ func applyManifest(result *ProjectPaths, pathOrDir string) (bool, error) {
 		return false, err
 	}
 
+	// A manifest describes one project: nothing carries over from a
+	// lower-priority project's manifest, such as its domain file or default
+	// environment.
+	*result = ProjectPaths{}
 	result.ManifestPath = manifestPath
 	if m.GraphPath != "" {
 		result.GraphPath = m.GraphPath

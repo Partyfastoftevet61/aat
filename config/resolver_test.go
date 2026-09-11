@@ -317,3 +317,34 @@ func TestResolveProjectPaths_NothingFound(t *testing.T) {
 	assert.Empty(t, result.EnvPath)
 	assert.Empty(t, result.ManifestPath)
 }
+
+// TestResolveProjectPaths_HigherManifestReplacesLower checks that fields a
+// higher-priority manifest leaves out do not leak in from another project.
+func TestResolveProjectPaths_HigherManifestReplacesLower(t *testing.T) {
+	isolateUserConfig(t)
+
+	other := t.TempDir()
+	writeTestFile(t, filepath.Join(other, "aat-project.yaml"), `name: other
+graph: graph.yaml
+templates: templates/
+domain: domain.yaml
+workflows: workflows/
+layers: layers/
+visualizers: visualizers/
+defaultEnvironment: pp
+`)
+	project := t.TempDir()
+	writeTestFile(t, filepath.Join(project, "aat-project.yaml"), "name: petstore\ngraph: graph.yaml\ntemplates: templates/\n")
+
+	t.Setenv("AAT_PROJECT", other)
+	t.Chdir(project)
+
+	result, err := ResolveProjectPaths(ProjectPaths{})
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Base(project), filepath.Base(filepath.Dir(result.GraphPath)), "the CWD project wins")
+	assert.Empty(t, result.DomainPath)
+	assert.Empty(t, result.WorkflowsDir)
+	assert.Empty(t, result.LayersDir)
+	assert.Empty(t, result.VisualizersDir)
+	assert.Empty(t, result.DefaultEnvName)
+}
