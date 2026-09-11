@@ -102,6 +102,7 @@ func (o *CLIProgressObserver) OnRunComplete(result *engine.RunResult) {
 	color := o.term.IsTTY
 	_, _ = fmt.Fprintln(o.out)
 	total := len(result.Steps)
+	planned := max(o.total, total) // steps the run meant to execute, for ABORTED and STOPPED
 	switch result.Outcome {
 	case engine.OutcomePassed:
 		_, _ = fmt.Fprintf(o.out, "%s (%d/%d steps, %s)\n", colorOutcome("PASSED", color), total, total, observerTotalDuration(result))
@@ -110,9 +111,9 @@ func (o *CLIProgressObserver) OnRunComplete(result *engine.RunResult) {
 	case engine.OutcomeError:
 		_, _ = fmt.Fprintf(o.out, "%s: %s\n", colorOutcome("ERROR", color), outcomeMessage(result))
 	case engine.OutcomeAborted:
-		_, _ = fmt.Fprintf(o.out, "%s (%d/%d steps, %s)\n", colorOutcome("ABORTED", color), len(result.Steps), total, observerTotalDuration(result))
+		_, _ = fmt.Fprintf(o.out, "%s (%d/%d steps, %s)\n", colorOutcome("ABORTED", color), total, planned, observerTotalDuration(result))
 	case engine.OutcomeStopped:
-		_, _ = fmt.Fprintf(o.out, "%s at %q (%d/%d steps, %s)\n", colorOutcome("STOPPED", color), result.StoppedAt, len(result.Steps), total, observerTotalDuration(result))
+		_, _ = fmt.Fprintf(o.out, "%s at %q (%d/%d steps, %s)\n", colorOutcome("STOPPED", color), result.StoppedAt, total, planned, observerTotalDuration(result))
 	}
 	if n := oasWarningCount(result.Steps); n > 0 {
 		_, _ = fmt.Fprintf(o.out, "OAS: %s\n", colorize(fmt.Sprintf("%d warning(s)", n), colorYellow, color))

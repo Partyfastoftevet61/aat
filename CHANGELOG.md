@@ -114,7 +114,7 @@ the graph and plan formats may still change before 1.0.
   documented. Exact names still beat globs.
 - Cleanup input matching scans earlier steps in execution order (it was map order).
 - CLI description and `--help` text describe AAT as graph-based API workflow testing; the LLM is
-  optional and authoring-time only.
+  optional and authoring-time only, and execution never calls one.
 - Documentation: renamed flags (`--env`, `--env-config`, `--overlay`) corrected throughout; undocumented
   features documented (Ctrl+C `aborted` outcome, `--oas-validate`, batch matrix view, Copy as cURL,
   archive import/export, `aat run clean`, `aat run rebuild-summaries`).
@@ -135,8 +135,11 @@ the graph and plan formats may still change before 1.0.
 ### Fixed
 - Run archives redact an API key sent under a custom `auth.headerName`, the credentials of host overrides
   and overlay overrides (they were never collected as secrets), and the literal credentials and credential
-  headers of the plan stored in `metadata.plan` and `metadata.instantiatedPlan`. `--verbose-auth` shows at
-  most half of a short password or client secret.
+  headers of the plan stored in `metadata.plan` and `metadata.instantiatedPlan`; `aat prompt` archives also
+  collect the credentials of `.aat-overrides.yaml`. `--verbose-auth` shows at most half of a short password
+  or client secret.
+- The `ABORTED` and `STOPPED` lines count the steps the plan meant to run (`ABORTED (2/5 steps, …)`);
+  both numbers were the steps that ran.
 - `aat generate --oas` marks a response property the schema does not list as `required` as an optional
   output with an optional extract rule, so a scaffolded step no longer fails when the API omits it.
 - A `select` with a `filter` and no `strategy` works like `match` instead of failing at run time with

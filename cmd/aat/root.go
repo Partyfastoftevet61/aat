@@ -30,7 +30,8 @@ var rootCmd = &cobra.Command{
 	Long: `Model your API as a graph once. Get long-chain integration tests, layer × environment
 matrices, CI-ready runs, and an MCP server for AI coding tools — all from the same YAML.
 
-Execution is deterministic; LLMs are optional and only used to draft plans (aat prompt).`,
+Execution never calls an LLM. AI coding tools author plans through the MCP server;
+aat prompt can draft one.`,
 	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version.Effective(), version.GitCommit, version.BuildDate),
 }
 

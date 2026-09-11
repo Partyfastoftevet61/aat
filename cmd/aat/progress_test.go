@@ -296,3 +296,11 @@ func TestCLIProgressObserver_ReportsWhyAStepFailed(t *testing.T) {
 	assert.NotContains(t, output, "cartId", "passed and skipped assertions are not listed")
 	assert.Contains(t, output, "\nOAS: 1 warning(s)\n")
 }
+
+func TestCLIProgressObserver_AbortedCountsPlannedSteps(t *testing.T) {
+	var buf bytes.Buffer
+	obs := &CLIProgressObserver{out: &buf, term: noColorTerm}
+	obs.OnRunStart(5)
+	obs.OnRunComplete(&engine.RunResult{Outcome: engine.OutcomeAborted, Steps: []engine.StepResult{{Node: "a"}, {Node: "b"}}})
+	assert.Contains(t, buf.String(), "ABORTED (2/5 steps")
+}

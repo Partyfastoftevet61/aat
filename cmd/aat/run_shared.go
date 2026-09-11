@@ -369,11 +369,18 @@ func addHostOverrides(ctx context.Context, router *engine.ExecutorRouter, apiBas
 }
 
 // writeRunArchive creates a run archive in the output directory and returns
-// the archive path. It collects secrets from the environment for redaction.
-func writeRunArchive(result *engine.RunResult, p *plan.Plan, env *config.Environment, g *graph.Graph, outputDir string, layers []string) (string, error) {
+// the archive path. It collects secrets from the environment, the plan, and
+// any overlays the run used (nil entries are skipped) for redaction.
+func writeRunArchive(result *engine.RunResult, p *plan.Plan, env *config.Environment, g *graph.Graph, outputDir string, layers []string, overlays ...*config.OverlayFile) (string, error) {
 	secrets := env.CollectSecrets()
-	if p.Auth != nil {
-		for k, v := range config.CollectAuthSecrets(p.Auth) {
+	for k, v := range config.CollectAuthSecrets(p.Auth) {
+		secrets[k] = v
+	}
+	for _, overlay := range overlays {
+		if overlay == nil {
+			continue
+		}
+		for k, v := range overlay.CollectSecrets() {
 			secrets[k] = v
 		}
 	}
