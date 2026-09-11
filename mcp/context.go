@@ -152,7 +152,8 @@ func (ctx *ServerContext) loadOASSpecs() error {
 }
 
 // collectSpecPaths returns the unique set of OAS spec file paths referenced
-// by the manifest and graph, resolved relative to graphDir.
+// by the manifest and graph. Graph references resolve against graphDir;
+// manifest paths arrive resolved against the manifest's directory.
 func collectSpecPaths(g *graph.Graph, graphDir string, manifest *config.ProjectManifest) []string {
 	seen := make(map[string]bool)
 	var paths []string
@@ -171,10 +172,13 @@ func collectSpecPaths(g *graph.Graph, graphDir string, manifest *config.ProjectM
 		}
 	}
 
-	// Manifest-declared OAS paths (already resolved by LoadManifest)
+	// Manifest-declared OAS paths, already resolved against the manifest's
+	// directory by LoadManifest. Joining them onto graphDir again doubled a
+	// relative prefix (examples/shop/examples/shop/openapi.yaml) when the
+	// manifest was loaded through a relative path.
 	if manifest != nil {
 		for _, p := range manifest.OASPaths {
-			addPath(p, graphDir)
+			addPath(p, "")
 		}
 	}
 

@@ -5,10 +5,63 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/graph"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// testSpec is a minimal OpenAPI document for the getUser operation.
+const testSpec = `openapi: 3.0.3
+info:
+  title: Users
+  version: "1"
+paths:
+  /users/{userId}:
+    get:
+      operationId: getUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The user
+`
+
+// TestBuildServerContext_RelativeManifestOAS checks that a manifest loaded
+// through a relative path, with its graph in a subdirectory, finds the spec its
+// oas key names. LoadManifest resolves the path once; joining it onto the graph
+// directory again doubled the prefix, and the server did not start.
+func TestBuildServerContext_RelativeManifestOAS(t *testing.T) {
+	root := t.TempDir()
+	api := filepath.Join(root, "project", "api")
+	require.NoError(t, os.MkdirAll(filepath.Join(api, "templates"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(api, "graph.yaml"), []byte(testGraph), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(api, "templates", "get_user.yaml"), []byte(testTemplate), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(api, "openapi.yaml"), []byte(testSpec), 0644))
+	manifest := "name: relative\ngraph: api/graph.yaml\ntemplates: api/templates/\noas: api/openapi.yaml\n"
+	require.NoError(t, os.WriteFile(filepath.Join(root, "project", "aat-project.yaml"), []byte(manifest), 0644))
+
+	t.Chdir(root)
+	m, err := config.LoadManifest(filepath.Join("project", "aat-project.yaml"))
+	require.NoError(t, err)
+	ctx, err := BuildServerContext(m)
+	require.NoError(t, err)
+	assert.Len(t, ctx.OASSpecs, 1)
+}
+
+// TestCollectSpecPaths_RelativeManifestPath checks that a manifest OAS path,
+// which arrives resolved, is not joined onto the graph directory again.
+func TestCollectSpecPaths_RelativeManifestPath(t *testing.T) {
+	g := &graph.Graph{Nodes: map[string]*graph.Node{"a": {Name: "a"}}}
+	manifest := &ProjectManifest{OASPaths: []string{"project/api/openapi.yaml"}}
+
+	paths := collectSpecPaths(g, "project/api", manifest)
+	assert.Equal(t, []string{"project/api/openapi.yaml"}, paths)
+}
 
 // testGraph is a minimal valid graph YAML for testing context building.
 const testGraph = `

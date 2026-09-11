@@ -156,6 +156,14 @@ the graph and plan formats may still change before 1.0.
   empty Airline case-study stub).
 
 ### Fixed
+- `aat mcp serve` starts when a relative `--manifest` names an `oas:` spec. The spec path was joined onto
+  the graph's directory a second time (`examples/shop/examples/shop/openapi.yaml`), so a project loaded
+  from another directory failed with "no such file or directory".
+- The MCP `get_sample_response` tool returns the newest successful response for an operation, and a
+  failed one, marked as such, only when no run succeeded. It took the newest response of any status, so a
+  negative test's `409` could pass for the sample. It also searches the runs inside batch directories,
+  and a manifest without `archives` gets the expected output shape instead of an error. The archive tools
+  accept the ID of a run inside a batch.
 - A run archive that cannot be redacted is not written. `aat run`, batch runs, and the MCP `execute_plan`
   tool report the error; before, the error was ignored and the archive was written with its secrets in
   place. Redaction fails only on a value JSON cannot hold, such as a NaN from a Lua transform.

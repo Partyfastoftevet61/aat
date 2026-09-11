@@ -273,7 +273,7 @@ func (s *Server) handleListRecentFailures(_ context.Context, req mcp.CallToolReq
 func (s *Server) registerSampleResponseTool() {
 	s.mcp.AddTool(
 		mcp.NewTool("get_sample_response",
-			mcp.WithDescription("Get a sample API response for an operation from run archives. Shows the response body, status code, and source archive. Useful for understanding response shapes and extract rules."),
+			mcp.WithDescription("Get a sample API response for an operation from run archives: the newest successful response, or the newest failed one when no run succeeded. Shows the response body, status code, and source run. Useful for understanding response shapes and extract rules."),
 			mcp.WithString("node",
 				mcp.Description("Operation/node name to get a sample response for"),
 				mcp.Required(),
@@ -294,16 +294,22 @@ func (s *Server) handleGetSampleResponse(_ context.Context, req mcp.CallToolRequ
 		return mcp.NewToolResultError("missing required parameter: node"), nil
 	}
 
-	if s.ctx.ArchiveDir == "" {
-		return mcp.NewToolResultError("archive directory not configured — set the `archives` field in aat-project.yaml"), nil
-	}
-
 	// Verify node exists in graph.
 	if s.ctx.Graph.Nodes[nodeName] == nil {
 		return mcp.NewToolResultError(fmt.Sprintf("unknown node %q — if this is a workflow step ID, check the workflow detail for the underlying operation name", nodeName)), nil
 	}
 
 	runID, _ := req.RequireString("run_id")
+	node := s.ctx.Graph.Nodes[nodeName]
+
+	// Without an archive directory a specific run cannot be found, but the
+	// expected output shape still helps.
+	if s.ctx.ArchiveDir == "" {
+		if runID != "" {
+			return mcp.NewToolResultError("archive directory not configured — set the `archives` field in aat-project.yaml"), nil
+		}
+		return mcp.NewToolResultText(s.formatNoArchiveFallback(nodeName, node)), nil
+	}
 
 	step, sourceRunID, err := findSampleResponse(s.ctx.ArchiveDir, nodeName, runID)
 	if err != nil {
@@ -312,64 +318,122 @@ func (s *Server) handleGetSampleResponse(_ context.Context, req mcp.CallToolRequ
 		if runID != "" {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		node := s.ctx.Graph.Nodes[nodeName]
 		return mcp.NewToolResultText(s.formatNoArchiveFallback(nodeName, node)), nil
 	}
 
 	return mcp.NewToolResultText(formatSampleResponse(step, nodeName, sourceRunID)), nil
 }
 
-// findSampleResponse searches archives for a successful step matching nodeName.
-// If runID is provided, searches only that archive. Otherwise scans recent archives
-// newest first.
+// findSampleResponse finds an archived response for nodeName, preferring a
+// successful (2xx) one. With runID it searches that run, which may belong to a
+// batch. Otherwise it scans every run, runs inside batches included, newest
+// first, and returns the newest successful response, or the newest response of
+// any status when none succeeded.
 func findSampleResponse(archiveDir, nodeName, runID string) (*archive.StepRecord, string, error) {
 	if runID != "" {
 		a, err := loadArchive(archiveDir, runID)
 		if err != nil {
 			return nil, "", err
 		}
-		for i := range a.Steps {
-			if a.Steps[i].Node == nodeName && a.Steps[i].Response != nil {
-				return &a.Steps[i], runID, nil
-			}
+		if step := sampleStep(a, nodeName); step != nil {
+			return step, runID, nil
 		}
 		return nil, "", fmt.Errorf("node %q not found in archive %q", nodeName, runID)
 	}
 
-	// Scan recent archives (newest first).
-	entries, err := os.ReadDir(archiveDir)
+	runs, err := listRunArchives(archiveDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, "", fmt.Errorf("no archives found — run the integration first")
-		}
-		return nil, "", fmt.Errorf("reading archive directory: %v", err)
+		return nil, "", err
 	}
 
-	// Filter and sort run directories newest first.
-	var runDirs []os.DirEntry
-	for _, e := range entries {
-		if e.IsDir() && strings.HasPrefix(e.Name(), "run-") {
-			runDirs = append(runDirs, e)
-		}
-	}
-	sort.Slice(runDirs, func(i, j int) bool {
-		return runDirs[i].Name() > runDirs[j].Name()
-	})
-
-	for _, dir := range runDirs {
-		archivePath := filepath.Join(archiveDir, dir.Name(), "archive.json")
-		a, err := archive.Read(archivePath)
+	var fallback *archive.StepRecord
+	var fallbackRunID string
+	for _, run := range runs {
+		a, err := archive.Read(run.path)
 		if err != nil {
 			continue
 		}
-		for i := range a.Steps {
-			if a.Steps[i].Node == nodeName && a.Steps[i].Response != nil {
-				return &a.Steps[i], dir.Name(), nil
+		step := sampleStep(a, nodeName)
+		switch {
+		case step == nil:
+		case isSuccessStatus(step.Response.Status):
+			return step, run.id, nil
+		case fallback == nil:
+			fallback, fallbackRunID = step, run.id
+		}
+	}
+	if fallback != nil {
+		return fallback, fallbackRunID, nil
+	}
+	return nil, "", fmt.Errorf("no sample response found for node %q in any archive — run the integration first", nodeName)
+}
+
+// sampleStep returns the step of a that best shows nodeName's response: its
+// first successful one, else its first with any response, else nil.
+func sampleStep(a *archive.Archive, nodeName string) *archive.StepRecord {
+	var first *archive.StepRecord
+	for i := range a.Steps {
+		step := &a.Steps[i]
+		if step.Node != nodeName || step.Response == nil {
+			continue
+		}
+		if isSuccessStatus(step.Response.Status) {
+			return step
+		}
+		if first == nil {
+			first = step
+		}
+	}
+	return first
+}
+
+// isSuccessStatus reports whether an HTTP status is 2xx.
+func isSuccessStatus(status int) bool {
+	return status >= 200 && status < 300
+}
+
+// runArchive locates one run's archive.json.
+type runArchive struct {
+	id, path string
+}
+
+// listRunArchives returns every run under archiveDir, including the runs inside
+// batch directories, newest first by run ID.
+func listRunArchives(archiveDir string) ([]runArchive, error) {
+	entries, err := os.ReadDir(archiveDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("no archives found — run the integration first")
+		}
+		return nil, fmt.Errorf("reading archive directory: %v", err)
+	}
+
+	var runs []runArchive
+	addRun := func(dir, name string) {
+		runs = append(runs, runArchive{id: name, path: filepath.Join(dir, name, "archive.json")})
+	}
+	for _, e := range entries {
+		switch {
+		case !e.IsDir():
+		case strings.HasPrefix(e.Name(), "run-"):
+			addRun(archiveDir, e.Name())
+		case strings.HasPrefix(e.Name(), "batch-"):
+			batchDir := filepath.Join(archiveDir, e.Name())
+			children, err := os.ReadDir(batchDir)
+			if err != nil {
+				continue
+			}
+			for _, c := range children {
+				if c.IsDir() && strings.HasPrefix(c.Name(), "run-") {
+					addRun(batchDir, c.Name())
+				}
 			}
 		}
 	}
-
-	return nil, "", fmt.Errorf("no sample response found for node %q in any archive — run the integration first", nodeName)
+	sort.Slice(runs, func(i, j int) bool {
+		return runs[i].id > runs[j].id
+	})
+	return runs, nil
 }
 
 // formatSampleResponse renders a sample response as Markdown.
@@ -380,6 +444,9 @@ func formatSampleResponse(step *archive.StepRecord, nodeName, runID string) stri
 	fmt.Fprintf(&b, "**Source:** %s\n", runID)
 	fmt.Fprintf(&b, "**Status:** %d\n", step.Response.Status)
 	fmt.Fprintf(&b, "**Duration:** %s\n", formatDurationMs(step.DurationMs))
+	if !isSuccessStatus(step.Response.Status) {
+		b.WriteString("\n**Note:** no successful response was found; this one failed. Run a plan that calls this operation successfully for a representative sample.\n")
+	}
 
 	if len(step.Response.Body) > 0 {
 		b.WriteString("\n## Response Body\n\n```json\n")
@@ -461,6 +528,12 @@ func (s *Server) formatNoArchiveFallback(nodeName string, node *graph.Node) stri
 // loadArchive loads an archive from the archive directory by run ID.
 func loadArchive(archiveDir, runID string) (*archive.Archive, error) {
 	archivePath := filepath.Join(archiveDir, runID, "archive.json")
+	// A run inside a batch lives at batch-*/<runID>/archive.json.
+	if _, err := os.Stat(archivePath); errors.Is(err, os.ErrNotExist) && !strings.ContainsAny(runID, `/\*?[`) {
+		if matches, _ := filepath.Glob(filepath.Join(archiveDir, "batch-*", runID, "archive.json")); len(matches) > 0 {
+			archivePath = matches[0]
+		}
+	}
 	a, err := archive.Read(archivePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

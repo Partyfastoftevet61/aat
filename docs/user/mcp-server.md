@@ -254,9 +254,11 @@ The API persona registers 24 tools focused on understanding and integrating with
 |------|-------------|
 | `get_sample_response` | Get a sample API response for an operation from run archives, showing response body, status code, and extracted outputs |
 
+`get_sample_response` searches the `archives` directory, including the runs inside batches, and returns the newest successful (2xx) response for the operation. It returns a failed response, marked as one, only when no run succeeded, so a negative test's error response does not pass for a sample. With `run_id` it searches that run alone. When the manifest sets no `archives`, or no run has called the operation, it describes the expected output shape and extract rules instead.
+
 ## Tools — Test Persona
 
-The test persona registers 26 tools focused on test plan lifecycle, execution, and debugging. This is the only persona that can execute plans; `execute_plan` runs a saved plan against the environment loaded at startup (select it with `--env`).
+The test persona registers 26 tools focused on test plan lifecycle, execution, and debugging. It is the only persona that can execute plans (a server started without `--persona` can too); `execute_plan` runs a saved plan against the environment loaded at startup (select it with `--env`).
 
 ### Graph Exploration (4 tools)
 
@@ -471,8 +473,9 @@ When the MCP server starts, it loads and caches the project context:
 | Environment | no | `environment` field in manifest (`--env`, `AAT_ENV_NAME`, or `defaultEnvironment` picks the environment) |
 | Node docs | no | `docs` field in manifest |
 | Workflows | no | `workflows` field in manifest |
+| Layers | no | `layers` field in manifest (recipes that name layers need it) |
 | Saved plans | no | `plans` field in manifest |
-| Archives | no | `archives` field in manifest |
+| Archives | no | `archives` field in manifest (also where `get_sample_response` looks) |
 | README | no | `README.md` in the graph file's directory |
 
 The graph and templates are required. Everything else is optional and adds capabilities — domain knowledge improves plan generation, OAS specs enable schema validation tools, node docs enrich documentation queries.

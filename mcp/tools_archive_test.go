@@ -507,13 +507,70 @@ func TestHandleGetSampleResponse_FallbackMinimalNode(t *testing.T) {
 	assert.NotContains(t, text, "Expected Output Shape")
 }
 
-func TestHandleGetSampleResponse_NoArchiveDir(t *testing.T) {
+func TestHandleGetSampleResponse_NoArchiveDir_Fallback(t *testing.T) {
 	g := twoNodeGraph()
 	srv := newTestServerWithArchives(g, "")
 
+	// A manifest without archives still gets the expected output shape.
 	result := callTool(t, srv.handleGetSampleResponse, map[string]any{"node": "search"})
+	assert.False(t, result.IsError)
+	assert.Contains(t, resultText(t, result), "No Sample Response Yet")
+}
+
+func TestHandleGetSampleResponse_NoArchiveDir_RunID(t *testing.T) {
+	g := twoNodeGraph()
+	srv := newTestServerWithArchives(g, "")
+
+	result := callTool(t, srv.handleGetSampleResponse, map[string]any{
+		"node":   "search",
+		"run_id": "run-20260210-140000-aaaa0001",
+	})
 	assert.True(t, result.IsError)
 	assert.Contains(t, resultText(t, result), "not configured")
+}
+
+// TestHandleGetSampleResponse_PrefersSuccess checks that a newer failed
+// response, such as a negative test's, does not hide an older successful one.
+func TestHandleGetSampleResponse_PrefersSuccess(t *testing.T) {
+	dir := t.TempDir()
+	srv := newTestServerWithArchives(twoNodeGraph(), dir)
+
+	writeTestArchive(t, dir, "run-20260210-140000-aaaa0001", testArchive("passed", testStep("search", 200, 100)))
+	writeTestArchive(t, dir, "run-20260210-150000-aaaa0002", testArchive("passed", testStep("search", 409, 100)))
+
+	text := resultText(t, callTool(t, srv.handleGetSampleResponse, map[string]any{"node": "search"}))
+	assert.Contains(t, text, "run-20260210-140000-aaaa0001")
+	assert.Contains(t, text, "**Status:** 200")
+	assert.NotContains(t, text, "no successful response")
+}
+
+// TestHandleGetSampleResponse_OnlyFailures checks that when no run succeeded,
+// the newest failed response is shown and marked as a failure.
+func TestHandleGetSampleResponse_OnlyFailures(t *testing.T) {
+	dir := t.TempDir()
+	srv := newTestServerWithArchives(twoNodeGraph(), dir)
+
+	writeTestArchive(t, dir, "run-20260210-140000-aaaa0001", testArchive("failed", testStep("search", 500, 100)))
+	writeTestArchive(t, dir, "run-20260210-150000-aaaa0002", testArchive("passed", testStep("search", 409, 100)))
+
+	text := resultText(t, callTool(t, srv.handleGetSampleResponse, map[string]any{"node": "search"}))
+	assert.Contains(t, text, "run-20260210-150000-aaaa0002", "the newest failure")
+	assert.Contains(t, text, "**Status:** 409")
+	assert.Contains(t, text, "no successful response")
+}
+
+// TestHandleGetSampleResponse_BatchRuns checks that the runs inside a batch
+// directory are searched too.
+func TestHandleGetSampleResponse_BatchRuns(t *testing.T) {
+	dir := t.TempDir()
+	srv := newTestServerWithArchives(twoNodeGraph(), dir)
+
+	runID := "run-20260210-150001-aaaa0003"
+	writeTestArchive(t, dir, filepath.Join("batch-20260210-150000-bbbb0001", runID), testArchive("passed", testStep("search", 200, 100)))
+
+	text := resultText(t, callTool(t, srv.handleGetSampleResponse, map[string]any{"node": "search"}))
+	assert.Contains(t, text, runID)
+	assert.Contains(t, text, "**Status:** 200")
 }
 
 func TestHandleGetSampleResponse_UnknownNode(t *testing.T) {
@@ -571,6 +628,18 @@ func TestLoadArchive_NotFound(t *testing.T) {
 	_, err := loadArchive(dir, "run-nonexistent")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
+}
+
+// TestLoadArchive_BatchRun checks that the ID of a run inside a batch directory
+// resolves, as the ID get_sample_response reports for such a run.
+func TestLoadArchive_BatchRun(t *testing.T) {
+	dir := t.TempDir()
+	runID := "run-20260210-150001-aaaa0003"
+	writeTestArchive(t, dir, filepath.Join("batch-20260210-150000-bbbb0001", runID), testArchive("failed"))
+
+	loaded, err := loadArchive(dir, runID)
+	require.NoError(t, err)
+	assert.Equal(t, "failed", loaded.Result.Outcome)
 }
 
 func TestLoadArchive_Corrupt(t *testing.T) {
