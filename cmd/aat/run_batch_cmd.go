@@ -46,7 +46,7 @@ With an absolute path, treats it as a standalone plan directory.`,
 		overrides := buildProjectOverrides(changed, getString)
 		resolved, err := config.ResolveProjectPaths(overrides)
 		if err != nil {
-			return err
+			return &exitError{Code: exitCodeInfra, Err: err}
 		}
 
 		var filterPath string
@@ -80,7 +80,7 @@ With an absolute path, treats it as a standalone plan directory.`,
 		if envName == "" {
 			overlayEnv, overlaySrc, err := resolveOverlayEnvName(envOverlay, noAutoOverrides)
 			if err != nil {
-				return fmt.Errorf("resolving overlay environment: %w", err)
+				return &exitError{Code: exitCodeInfra, Err: fmt.Errorf("resolving overlay environment: %w", err)}
 			}
 			if overlayEnv != "" {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "aat: using environment %q from overlay %s\n", overlayEnv, overlaySrc)

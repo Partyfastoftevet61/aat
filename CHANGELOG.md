@@ -190,6 +190,11 @@ the graph and plan formats may still change before 1.0.
   first step with an output of that name: two `createCart` steps with their own IDs deleted the first cart
   twice and left the second. Cleanup now reads the registering step's outputs, then the most recent step
   with a matching output.
+- `aat run plan` and `aat run batch` exit with code 2 when the project manifest cannot be found or loaded,
+  or an overlay's environment cannot be resolved. They exited 1, the code for a failed test, so CI read a
+  broken manifest as a test failure.
+- A request that fails before any response reports `executing HTTP request: …` once, not
+  `executing request: executing HTTP request: …`.
 - `aat mcp serve` starts when a relative `--manifest` names an `oas:` spec. The spec path was joined onto
   the graph's directory a second time (`examples/shop/examples/shop/openapi.yaml`), so a project loaded
   from another directory failed with "no such file or directory".

@@ -260,7 +260,7 @@ $ aat run plan full-lifecycle
 ...
   [ 9/15] paymentCharge        201  352ms
           Charged: $130.66
-  [10/15] shipOrder            ERROR: executing request: executing HTTP request: Post "http://localhost:8765/us/v1/orders/ord_0003/ship": interrupt signal received
+  [10/15] shipOrder            ERROR: executing HTTP request: Post "http://localhost:8765/us/v1/orders/ord_0003/ship": interrupt signal received
 
   cleanup:
     deleteOrder            204  1ms

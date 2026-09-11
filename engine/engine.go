@@ -715,7 +715,7 @@ func (e *Engine) executeStep(ctx context.Context, step plan.Step, node *graph.No
 			Node:          step.Node,
 			Inputs:        inputs,
 			Request:       req,
-			Error:         fmt.Errorf("executing request: %w", err),
+			Error:         err,
 			StartTime:     start,
 			Duration:      time.Since(start),
 			ActualBaseURL: actualBaseURL,

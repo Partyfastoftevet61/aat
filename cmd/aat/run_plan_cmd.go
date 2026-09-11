@@ -29,7 +29,7 @@ var runPlanCmd = &cobra.Command{
 		overrides := buildProjectOverrides(changed, getString)
 		resolved, err := config.ResolveProjectPaths(overrides)
 		if err != nil {
-			return err
+			return &exitError{Code: exitCodeInfra, Err: err}
 		}
 
 		planPath := resolvePlanPath(args[0], resolved.PlanDirs)
@@ -56,7 +56,7 @@ var runPlanCmd = &cobra.Command{
 		if envName == "" {
 			overlayEnv, overlaySrc, err := resolveOverlayEnvName(envOverlay, noAutoOverrides)
 			if err != nil {
-				return fmt.Errorf("resolving overlay environment: %w", err)
+				return &exitError{Code: exitCodeInfra, Err: fmt.Errorf("resolving overlay environment: %w", err)}
 			}
 			if overlayEnv != "" {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "aat: using environment %q from overlay %s\n", overlayEnv, overlaySrc)

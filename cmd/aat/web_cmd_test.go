@@ -156,6 +156,7 @@ func TestBuildTraceViewURL(t *testing.T) {
 }
 
 func TestWebViewTraceCommand_ServerAlreadyRunning(t *testing.T) {
+	skipWithoutWebAssets(t)
 	srv := server.NewServer(server.ServerOptions{
 		Port:       19225,
 		ArchiveDir: t.TempDir(),
@@ -222,6 +223,7 @@ func TestCheckServerHealth_BadStatus(t *testing.T) {
 }
 
 func TestWebViewCommand_ServerAlreadyRunning(t *testing.T) {
+	skipWithoutWebAssets(t)
 	// Start a server that responds to health checks.
 	srv := server.NewServer(server.ServerOptions{
 		Port:       19223,
@@ -251,6 +253,7 @@ func TestWebViewCommand_ServerAlreadyRunning(t *testing.T) {
 }
 
 func TestWebViewCommand_StartsEphemeralServer(t *testing.T) {
+	skipWithoutWebAssets(t)
 	archiveDir := t.TempDir()
 
 	// Stub browser open to capture URL via channel.
