@@ -215,6 +215,9 @@ the graph and plan formats may still change before 1.0.
   their start time was empty.
 - The web UI shows why a step retried (`retried 2x: transient`) on the run timeline and the step page; the
   server dropped the archive's `retriedOn`, and the badge read "2 RETRY".
+- The batch By Test matrix no longer clips its rotated permutation labels: the header grows to fit the
+  longest, and a wide matrix uses the space beside the page column. The run timeline shows a step's node
+  only when it differs from the step ID.
 - `--override NODE=URL` routes keep the environment headers, plan headers, overlay headers, and the
   credential, like an `overrides:` entry with that `match` and `baseUrl`; they used to send no headers.
 - `aat prompt` rejects layers when the manifest sets no layers directory instead of silently running

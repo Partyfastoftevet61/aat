@@ -208,6 +208,18 @@
     });
   });
 
+  // Permutation labels are rotated -45deg, so each rises and leans right by about
+  // 0.71 of its rendered length (roughly 8.5px per character of 0.75rem uppercase
+  // text). The header grows to fit the longest label, and the wrapper leaves room
+  // for the last label's lean, so neither is clipped.
+  function permLabelReach(label: string): number {
+    return Math.ceil(label.length * 8.5 * Math.SQRT1_2);
+  }
+  let permHeaderHeight = $derived(
+    Math.max(160, ...filteredPermutationLabels.map(label => permLabelReach(label) + 16)),
+  );
+  let lastPermLabelLean = $derived(permLabelReach(filteredPermutationLabels.at(-1) ?? ''));
+
   interface TestMatrixCell {
     run: BatchRunSummary;
   }
@@ -560,14 +572,14 @@
         <button class="dimension-clear-btn" onclick={clearGroupFilters}>Clear filters</button>
       </div>
     {:else}
-      <div class="test-matrix-wrapper">
+      <div class="test-matrix-wrapper" style="padding-right: {lastPermLabelLean}px">
         <table class="run-table test-matrix">
           <thead>
             <tr>
               <th class="matrix-test-name matrix-fixed-header">Test</th>
               <th class="matrix-fixed-header">Overall</th>
               {#each filteredPermutationLabels as perm}
-                <th class="matrix-perm-header" title={perm}><span>{perm}</span></th>
+                <th class="matrix-perm-header" style="height: {permHeaderHeight}px" title={perm}><span>{perm}</span></th>
               {/each}
             </tr>
           </thead>
@@ -939,6 +951,8 @@
   }
   .test-matrix-wrapper {
     overflow-x: auto;
+    /* A wide matrix may use the space right of the page column (main is 72rem). */
+    margin-right: min(0px, calc((72rem - 100vw) / 2));
   }
   .test-matrix {
     white-space: nowrap;

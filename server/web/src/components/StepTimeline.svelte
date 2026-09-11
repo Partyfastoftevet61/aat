@@ -61,7 +61,9 @@
       <div class="step-content">
         <div class="step-header">
           <span class="step-name">{step.stepId}</span>
-          <code class="step-node">{step.node}</code>
+          {#if step.node !== step.stepId}
+            <code class="step-node">{step.node}</code>
+          {/if}
         </div>
 
         <div class="step-meta">
