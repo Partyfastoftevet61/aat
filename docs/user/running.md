@@ -37,8 +37,8 @@ aat: executing plan (5 steps)...
         Charged: $103.40
 
   cleanup:
-    deleteCart             204  0ms
     deleteOrder            204  0ms
+    deleteCart             204  0ms
 
 PASSED (5/5 steps, 354ms)
 Archive: /path/to/shop/_output/runs/run-20260910-231357-eca8e0b3/archive.json
@@ -280,7 +280,7 @@ When you run a plan, AAT performs these steps in order:
 1. **Load and validate** — parse the plan YAML, validate it against the graph
 2. **Authenticate** — obtain credentials using the environment's auth config
 3. **Resolve and execute** — for each step in topological order: resolve input values, execute the HTTP request, extract outputs, run assertions
-4. **Cleanup** — run plan-level cleanup steps, then graph-level cleanup pairings (newest resource first), even if main steps failed
+4. **Cleanup** — run plan-level cleanup steps, then graph-level cleanup pairings (once per resource, newest first), even if main steps failed
 5. **Archive** — write the full execution trace to the output directory
 
 ### Step Execution Order
@@ -299,12 +299,12 @@ Cleanup runs after the main steps finish — whether the plan passed, failed, er
 
 Two sources of cleanup work combine, in this order:
 
-1. **Plan-level cleanup steps** (`execution.cleanup:` in the plan) run first, in declaration order. Each step's `runOn` (`always`, `success`, `failure`; empty means `always`) is checked against the outcome — `success` runs only when the plan passed, `failure` runs when it failed, errored, or was aborted.
-2. **Graph-level cleanup pairings** (`cleanup: deleteX` on a node) run next from a stack: every main step whose node declares a cleanup partner pushes that partner when the step succeeds, and the stack unwinds last-in-first-out, so the most recently created resource is torn down first. A pairing whose node already ran as a plan-level cleanup step is skipped rather than run twice.
+1. **Plan-level cleanup steps** (`execution.cleanup:` in the plan) for nodes that are not a graph pairing of a step in the plan run first, in declaration order. Each step's `runOn` (`always`, `success`, `failure`; empty means `always`) is checked against the outcome — `success` runs only when the plan passed, `failure` runs when it failed, errored, or was aborted.
+2. **Graph-level cleanup pairings** (`cleanup: deleteX` on a node) run next from a stack: every main step whose node declares a cleanup partner pushes that partner when the step succeeds, and the stack unwinds last-in-first-out, so the most recently created resource is torn down first. Two steps on the same node push two entries, one per resource. A plan-level cleanup step that names a paired node does not run separately; its `runOn` decides whether that node's entries run.
 
-A plan composed from a workflow (a recipe, or a plan from `aat prompt`) is different: composition writes each graph pairing into the plan's `cleanup:` list in step order, so its cleanup runs in creation order rather than newest first. That is why the recipe run above deletes the cart before the order.
+A plan composed from a workflow (a recipe, or a plan from `aat prompt`) lists each graph pairing in its `cleanup:` section. The order and the number of calls still come from the stack, so a recipe deletes the order before the cart, and sends nothing for a cart it never created.
 
-Cleanup steps do not carry `values:`. Their inputs are filled by matching input names against the outputs of earlier steps — the step that registered the cleanup is consulted first, then any other executed step. A `deleteOrder` cleanup with an `orderId` input picks up `orderId` from the `createOrder` step that created it.
+Cleanup steps do not carry `values:`. Their inputs are filled by matching input names against the outputs of earlier steps — the step that registered the cleanup is consulted first, then the most recent step with an output of that name. A `deleteOrder` cleanup with an `orderId` input picks up `orderId` from the `createOrder` step that created it.
 
 Cleanup results are recorded in the archive (and in the `cleanup` array of `--json` output) with the same detail as main steps, but a failed cleanup step never changes the run outcome — the outcome is determined by the main steps alone.
 

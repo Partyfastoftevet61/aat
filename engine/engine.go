@@ -318,6 +318,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 			cleanupStack.Push(CleanupEntry{
 				NodeName: node.Cleanup,
 				ForNode:  node.Name,
+				ForStep:  step.StepID(),
 			})
 		}
 
@@ -378,23 +379,35 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 	}
 }
 
-// runCleanup executes cleanup after the main flow. Plan-level cleanup steps
-// (execution.cleanup) run first, in declaration order, honoring runOn
-// (always/success/failure). Graph-level cleanup pairings then run from the
-// FILO stack; an entry whose node already ran as a plan-level cleanup step is
-// skipped. Cleanup inputs are matched by output name against earlier steps.
-// Cleanup failures are recorded but never change the run outcome.
+// runCleanup executes cleanup after the main flow. A graph-level cleanup
+// pairing runs from the FILO stack, once for each step that registered it, so
+// the most recently created resource is released first and nothing is sent for
+// a resource that was never created. A plan-level cleanup step
+// (execution.cleanup) whose node is such a pairing for a step in the plan does
+// not run on its own: its runOn decides whether the stack's entries for that
+// node run. Other plan-level cleanup steps run first, in declaration order,
+// honoring runOn (always/success/failure). Cleanup inputs are matched by output
+// name, starting with the step that registered the entry. Cleanup failures are
+// recorded but never change the run outcome.
 func (e *Engine) runCleanup(ctx context.Context, p *plan.Plan, cleanupStack *CleanupStack, state *RunState, outcome Outcome) []StepResult {
+	paired := e.pairedCleanupNodes(p)
 	var planEntries []CleanupEntry
-	ran := make(map[string]bool)
+	declared := make(map[string]bool) // paired nodes the plan lists as cleanup steps
+	selected := make(map[string]bool) // declared nodes with a runOn that matches the outcome
 	for _, cs := range p.Execution.Cleanup {
-		if !cleanupRunOnMatches(cs.RunOn, outcome) {
+		matches := cleanupRunOnMatches(cs.RunOn, outcome)
+		if paired[cs.Node] {
+			declared[cs.Node] = true
+			selected[cs.Node] = selected[cs.Node] || matches
 			continue
 		}
-		planEntries = append(planEntries, CleanupEntry{NodeName: cs.Node})
-		ran[cs.Node] = true
+		if matches {
+			planEntries = append(planEntries, CleanupEntry{NodeName: cs.Node})
+		}
 	}
-	cleanupStack.Filter(func(entry CleanupEntry) bool { return !ran[entry.NodeName] })
+	cleanupStack.Filter(func(entry CleanupEntry) bool {
+		return !declared[entry.NodeName] || selected[entry.NodeName]
+	})
 
 	total := len(planEntries) + cleanupStack.Len()
 	if total == 0 {
@@ -426,6 +439,18 @@ func (e *Engine) runCleanup(ctx context.Context, p *plan.Plan, cleanupStack *Cle
 		}
 	}
 	return results
+}
+
+// pairedCleanupNodes returns the nodes that are the graph-level cleanup of a
+// step's node in p. Their cleanup runs from the stack, once per resource.
+func (e *Engine) pairedCleanupNodes(p *plan.Plan) map[string]bool {
+	paired := make(map[string]bool)
+	for _, step := range p.Execution.Steps {
+		if node, ok := e.graph.Nodes[step.Node]; ok && node.Cleanup != "" {
+			paired[node.Cleanup] = true
+		}
+	}
+	return paired
 }
 
 // abortedCleanupBudget bounds the cleanup of an interrupted run.

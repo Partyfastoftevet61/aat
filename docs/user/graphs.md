@@ -171,7 +171,7 @@ nodes:
         type: string
 ```
 
-The engine registers the pairing once the creating step succeeds (a status below 400 with outputs extracted and no [error detection](#error-detection) rule triggered), even if the step's assertions then fail, so a plan need not list it. After the main flow, the plan's own `cleanup:` steps run first, in the order listed; then the registered pairings that did not already run there, last created first. Cleanup inputs are matched by name against the outputs of the steps that ran (for a registered pairing, the creating step's outputs first), so `cancelOrder.orderId` takes `createOrder`'s `orderId` output. Recipes and `aat prompt` plans write each pairing into the plan's `cleanup:` section in step order, which means they run in that order.
+The engine registers the pairing once the creating step succeeds (a status below 400 with outputs extracted and no [error detection](#error-detection) rule triggered), even if the step's assertions then fail, so a plan need not list it. After the main flow, the plan's own `cleanup:` steps for other nodes run first, in the order listed; then the registered pairings, last created first, once per resource. Cleanup inputs are matched by name against the outputs of the steps that ran (for a registered pairing, the creating step's outputs first), so `cancelOrder.orderId` takes `createOrder`'s `orderId` output, and two `createOrder` steps each cancel their own order. Recipes and `aat prompt` plans list each pairing in the plan's `cleanup:` section; a listed pairing still runs from the registered entries, and its `runOn` decides whether they run.
 
 ### Tags
 

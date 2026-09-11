@@ -9,10 +9,14 @@ import (
 	"github.com/gburgyan/aat/graph"
 )
 
-// CleanupEntry records a cleanup node to execute and which forward node triggered it.
+// CleanupEntry records a cleanup node to execute and the step that registered it.
 type CleanupEntry struct {
-	NodeName string // cleanup node (e.g., "ignoreItinerary")
+	NodeName string // cleanup node (e.g., "deleteOrder")
 	ForNode  string // forward node that registered this cleanup
+	// ForStep is the ID of the step that registered this cleanup. Its outputs
+	// are consulted first, so two steps on the same node each clean up the
+	// resource they created.
+	ForStep string
 }
 
 // CleanupStack maintains cleanup entries in FILO order.
@@ -93,20 +97,23 @@ func executeCleanupEntry(
 		return failed(nil, fmt.Errorf("cleanup node %q not found in graph", entry.NodeName))
 	}
 
-	// Resolve inputs from current state using name-matching.
-	// For each cleanup input, try the node that registered this cleanup
-	// (entry.ForNode) first, then scan all executed steps for a matching
-	// output name.
+	// Resolve inputs by output name: first from the step that registered this
+	// cleanup, then from the most recently executed step with an output of that
+	// name. Outputs are stored by step ID, so ForNode stands in only for an
+	// entry without a ForStep.
+	source := entry.ForStep
+	if source == "" {
+		source = entry.ForNode
+	}
+	executed := state.ExecutedSteps()
 	inputs := make(map[string]any)
 	for _, input := range node.Inputs {
-		// First try the node that registered this cleanup
-		if val, err := state.GetOutput(entry.ForNode, input.Name); err == nil {
+		if val, err := state.GetOutput(source, input.Name); err == nil {
 			inputs[input.Name] = val
 			continue
 		}
-		// Scan all executed steps for a matching output name
-		for _, stepID := range state.ExecutedSteps() {
-			if val, err := state.GetOutput(stepID, input.Name); err == nil {
+		for i := len(executed) - 1; i >= 0; i-- {
+			if val, err := state.GetOutput(executed[i], input.Name); err == nil {
 				inputs[input.Name] = val
 				break
 			}

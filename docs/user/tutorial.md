@@ -777,14 +777,14 @@ aat: executing plan (5 steps)...
   [5/5] pay (paymentCharge)  201  351ms
 
   cleanup:
-    deleteCart             204  0ms
     deleteOrder            204  0ms
+    deleteCart             204  0ms
 
 PASSED (5/5 steps, 353ms)
 Archive: /home/you/shop-tutorial/runs/run-20260910-235242-ee8e9b6f/archive.json
 ```
 
-AAT composed the workflow into a full plan, applied the overrides, and ran it. When the workflow changes — a new step, a different cleanup — every recipe built on it follows. The cleanup order differs from `purchase`: composition lists a workflow's cleanup pairings in step order, so the cart is deleted before the order (see [Running Tests: Cleanup](running.md#cleanup)).
+AAT composed the workflow into a full plan, applied the overrides, and ran it. When the workflow changes — a new step, a different cleanup — every recipe built on it follows. Composition also lists the workflow's cleanup pairings in the plan; they still run newest first, so the order is deleted before the cart, as in `purchase` (see [Running Tests: Cleanup](running.md#cleanup)).
 
 ## Step 10: Multiply with Layers
 

@@ -86,6 +86,11 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- A plan-level cleanup step that names a node a step's graph node pairs with (`cleanup:` on the node)
+  runs from the graph pairings: once per created resource, newest first, and not at all when the creating
+  step failed. Its `runOn` still decides whether it runs. Recipes and `aat prompt` plans list every
+  pairing in step order, so they deleted a cart before its order, and sent cleanup requests with
+  unresolved placeholders when the create step had failed.
 - The shop example describes how its API works, for the AI tools that read it through MCP. Each operation
   lists its error codes in the order they are checked, and each input and output says what it must be,
   where it comes from, and what it means. New domain concepts cover authentication, the payments host, the
@@ -180,6 +185,11 @@ the graph and plan formats may still change before 1.0.
   empty Airline case-study stub).
 
 ### Fixed
+- Graph-level cleanup deletes the resource each step created. Cleanup looked up the creating node's
+  outputs by node name, but outputs are stored by step ID, so a step with its own `id` fell through to the
+  first step with an output of that name: two `createCart` steps with their own IDs deleted the first cart
+  twice and left the second. Cleanup now reads the registering step's outputs, then the most recent step
+  with a matching output.
 - `aat mcp serve` starts when a relative `--manifest` names an `oas:` spec. The spec path was joined onto
   the graph's directory a second time (`examples/shop/examples/shop/openapi.yaml`), so a project loaded
   from another directory failed with "no such file or directory".

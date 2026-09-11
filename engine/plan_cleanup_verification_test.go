@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -126,7 +127,7 @@ func TestPlanCleanup_RunsInDeclarationOrderBeforeGraphStack(t *testing.T) {
 	assert.Equal(t, "t1", result.CleanupResults[0].Inputs["thingId"])
 }
 
-func TestPlanCleanup_SkipsGraphEntryAlreadyRunByPlan(t *testing.T) {
+func TestPlanCleanup_ListedPairingRunsOncePerResource(t *testing.T) {
 	srv := newLifecycleServer(t, nil)
 	eng := lifecycleEngine(t, srv.URL)
 
@@ -156,6 +157,134 @@ func TestPlanCleanup_RunOnSuccessAndFailure(t *testing.T) {
 		require.Equal(t, OutcomeFailed, result.Outcome)
 		// createThing failed, so no graph-level entry was pushed; only the failure hook runs.
 		assert.Equal(t, []string{"notifyFailure"}, cleanupNodes(result.CleanupResults))
+	})
+}
+
+// sequenceAdapter returns a new thingId on every call: t1, t2, ...
+type sequenceAdapter struct {
+	stubAdapter
+	mu sync.Mutex
+	n  int
+}
+
+func (a *sequenceAdapter) ExtractOutputs(*adapter.Response) (map[string]any, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.n++
+	return map[string]any{"thingId": fmt.Sprintf("t%d", a.n)}, nil
+}
+
+func cleanupInputs(results []StepResult, name string) []any {
+	values := make([]any, 0, len(results))
+	for _, r := range results {
+		values = append(values, r.Inputs[name])
+	}
+	return values
+}
+
+func TestCleanup_EachStepCleansUpItsOwnResource(t *testing.T) {
+	srv := newLifecycleServer(t, nil)
+	eng := lifecycleEngine(t, srv.URL)
+	require.NoError(t, eng.registry.Register("test.createSeq", &sequenceAdapter{stubAdapter: stubAdapter{method: "POST", path: "/create"}}))
+	eng.graph.Nodes["createThing"].Adapter = "test.createSeq"
+
+	result := eng.Run(context.Background(), &plan.Plan{
+		Metadata: plan.Metadata{GraphVersion: "1.0.0"},
+		Execution: plan.Execution{Steps: []plan.Step{
+			{ID: "first", Node: "createThing"},
+			{ID: "second", Node: "createThing", DependsOn: []string{"first"}},
+		}},
+	})
+
+	require.Equal(t, OutcomePassed, result.Outcome, "error: %v", result.Error)
+	assert.Equal(t, []string{"deleteThing", "deleteThing"}, cleanupNodes(result.CleanupResults))
+	// Last created, first deleted, and each deletion targets its own resource.
+	assert.Equal(t, []any{"t2", "t1"}, cleanupInputs(result.CleanupResults, "thingId"))
+}
+
+func TestCleanup_RegisteringStepWinsOverLaterOutputs(t *testing.T) {
+	srv := newLifecycleServer(t, nil)
+	eng := lifecycleEngine(t, srv.URL)
+	eng.graph.Nodes["findThing"] = &graph.Node{
+		Name: "findThing", Adapter: "test.find",
+		Outputs: []graph.Output{{Name: "thingId", Type: "string"}},
+	}
+	require.NoError(t, eng.registry.Register("test.find", &stubAdapter{method: "GET", path: "/find", response: map[string]any{"thingId": "t-other"}}))
+
+	result := eng.Run(context.Background(), &plan.Plan{
+		Metadata: plan.Metadata{GraphVersion: "1.0.0"},
+		Execution: plan.Execution{Steps: []plan.Step{
+			{ID: "made", Node: "createThing"},
+			{ID: "lookup", Node: "findThing", DependsOn: []string{"made"}},
+		}},
+	})
+
+	require.Equal(t, OutcomePassed, result.Outcome, "error: %v", result.Error)
+	require.Len(t, result.CleanupResults, 1)
+	assert.Equal(t, "t1", result.CleanupResults[0].Inputs["thingId"], "the step that created the resource, not the latest thingId")
+}
+
+func TestPlanCleanup_ListedPairingsUnwindLastInFirstOut(t *testing.T) {
+	// Composition writes graph pairings into execution.cleanup in step order;
+	// they must still release the newest resource first.
+	srv := newLifecycleServer(t, nil)
+	eng := lifecycleEngine(t, srv.URL)
+	eng.graph.Nodes["createPart"] = &graph.Node{
+		Name: "createPart", Adapter: "test.createPart", Cleanup: "deletePart",
+		Outputs: []graph.Output{{Name: "partId", Type: "string"}},
+	}
+	eng.graph.Nodes["deletePart"] = &graph.Node{
+		Name: "deletePart", Adapter: "test.deletePart",
+		Inputs: []graph.Input{{Name: "partId", Type: "string"}},
+	}
+	require.NoError(t, eng.registry.Register("test.createPart", &stubAdapter{method: "POST", path: "/createPart", response: map[string]any{"partId": "p1"}}))
+	require.NoError(t, eng.registry.Register("test.deletePart", &stubAdapter{method: "DELETE", path: "/deletePart", response: map[string]any{}}))
+
+	result := eng.Run(context.Background(), &plan.Plan{
+		Metadata: plan.Metadata{GraphVersion: "1.0.0"},
+		Execution: plan.Execution{
+			Steps: []plan.Step{
+				{Node: "createThing"},
+				{Node: "createPart", DependsOn: []string{"createThing"}},
+			},
+			Cleanup: []plan.CleanupStep{
+				{Node: "deleteThing", RunOn: "always"},
+				{Node: "deletePart", RunOn: "always"},
+			},
+		},
+	})
+
+	require.Equal(t, OutcomePassed, result.Outcome, "error: %v", result.Error)
+	assert.Equal(t, []string{"deletePart", "deleteThing"}, cleanupNodes(result.CleanupResults))
+	assert.Equal(t, []string{"/create", "/createPart", "/deletePart", "/delete"}, srv.requestPaths())
+}
+
+func TestPlanCleanup_ListedPairingSkippedWhenNothingWasCreated(t *testing.T) {
+	srv := newLifecycleServer(t, map[string]int{"/create": 500})
+	result := lifecycleEngine(t, srv.URL).Run(context.Background(), lifecyclePlan([]plan.CleanupStep{{Node: "deleteThing", RunOn: "always"}}, nil))
+
+	require.Equal(t, OutcomeFailed, result.Outcome)
+	assert.Empty(t, result.CleanupResults, "no request for a resource that was never created")
+	assert.Equal(t, []string{"/create"}, srv.requestPaths())
+}
+
+func TestPlanCleanup_RunOnGatesListedPairing(t *testing.T) {
+	cleanup := []plan.CleanupStep{{Node: "deleteThing", RunOn: "failure"}}
+
+	t.Run("passed run", func(t *testing.T) {
+		srv := newLifecycleServer(t, nil)
+		result := lifecycleEngine(t, srv.URL).Run(context.Background(), lifecyclePlan(cleanup, nil))
+		require.Equal(t, OutcomePassed, result.Outcome)
+		assert.Empty(t, result.CleanupResults)
+	})
+
+	t.Run("failed run", func(t *testing.T) {
+		// createThing succeeds, so its pairing is registered; the failing
+		// verification makes the run fail.
+		srv := newLifecycleServer(t, map[string]int{"/get": 500})
+		result := lifecycleEngine(t, srv.URL).Run(context.Background(), lifecyclePlan(cleanup, verifyActive()))
+		require.Equal(t, OutcomeFailed, result.Outcome)
+		assert.Equal(t, []string{"deleteThing"}, cleanupNodes(result.CleanupResults))
 	})
 }
 

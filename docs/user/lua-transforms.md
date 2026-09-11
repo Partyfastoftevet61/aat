@@ -257,14 +257,13 @@ stack traceback:
 	[G]: ?
 
   cleanup:
-    deleteOrder            ERROR: cleanup build request: path substitution: unresolved placeholders: orderId
     deleteCart             204  0ms
 ```
 
 What a failed transform does to the run:
 
 - The run's outcome is `error` and `aat run` exits with code `2` (see [Exit Codes](running.md#exit-codes)).
-- Cleanup still runs: the plan's cleanup steps, and the cleanup pairs of the steps that completed. Above, `deleteCart` removes the cart; `deleteOrder` has no order to delete because checkout never ran.
+- Cleanup still runs for the steps that completed. Above, `deleteCart` removes the cart, and no `deleteOrder` is sent because checkout never ran.
 - All of the failing step's outputs are discarded, including the IDs its own cleanup would need. If that step's request created something (a transform error on `createCart`, say), the resource is left behind.
 - Step-level `retry:` classifies a transform error as `adapter`, which is not retried unless `on` lists it (see [Retry](plans.md#retry)). Plan-level `--retries` reruns the whole plan after an `error` outcome.
 

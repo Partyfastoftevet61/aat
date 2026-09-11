@@ -681,9 +681,9 @@ execution:
 | `success` | Only if the plan passed |
 | `failure` | If the plan failed, errored, or was aborted |
 
-A cleanup step has just two fields: `node` and `runOn`. There is no `values:` block — inputs are filled by **output-name matching**: for each input the node declares, AAT looks for an output of the same name, first on the step that registered the resource, then on any other executed step. `cancelOrder` with an `orderId` input picks up `orderId` from the `createOrder` step. Name your graph outputs to match the inputs of their teardown nodes and this needs no wiring at all.
+A cleanup step has just two fields: `node` and `runOn`. There is no `values:` block — inputs are filled by **output-name matching**: for each input the node declares, AAT looks for an output of the same name, first on the step that registered the resource, then on the most recent executed step that has one. `cancelOrder` with an `orderId` input picks up `orderId` from the `createOrder` step. Name your graph outputs to match the inputs of their teardown nodes and this needs no wiring at all.
 
-**Ordering.** Plan-level cleanup steps run first, in declaration order. Then any graph-level `cleanup:` pairings (see [API Graphs: Cleanup](graphs.md#cleanup)) run from a last-in-first-out stack, so the most recently created resource is released first. A graph-level pairing whose node already ran as a plan-level cleanup step is skipped, so declaring `cancelOrder` in both places does not cancel the order twice.
+**Ordering.** A graph-level `cleanup:` pairing (see [API Graphs: Cleanup](graphs.md#cleanup)) runs once for each step that created a resource, from a last-in-first-out stack, so the most recently created resource is released first and nothing is sent for a resource that was never created. Listing a paired node here, as recipes and `aat prompt` plans do, does not run it a second time or change that order; the listed step's `runOn` decides whether those cleanups run. Cleanup steps for other nodes, such as `sendNotification` above, run first, in declaration order.
 
 Cleanup results are recorded in the archive and in the `cleanup` array of `--json` output, and appear under a `cleanup:` block in the console. A cleanup failure never changes the run outcome. See [Running Tests: Cleanup](running.md#cleanup) for the execution-time details.
 
