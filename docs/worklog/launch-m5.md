@@ -237,3 +237,17 @@ A table test runs the real CLI in child processes to check the codes.
   documented conversion limits (M9).
 
 **Open questions:** none.
+
+## 2026-09-11 — C1: errorDetection equals
+
+**What:** An `errorDetection` `equals` rule now compares numbers by value, and a map or list `value` fails
+validation (F9).
+
+**Decisions:**
+- **Reuse the assertion comparison.** `validate.ValuesEqual`, exported from `valuesEqual`, already compares a
+  gjson result with a YAML value. It compares numbers as numbers, strings and booleans strictly, and anything
+  else by its text. `equals` rules and `fieldEquals` assertions now behave the same way.
+- **Reject values the rule cannot mean.** A map or list `value` used to panic, because `==` on two maps
+  panics. Validation now rejects such a value, and if one gets through anyway, the comparison no longer panics.
+
+**Open questions:** none.

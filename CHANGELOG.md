@@ -247,6 +247,9 @@ the graph and plan formats may still change before 1.0.
   configurations, an empty case-study stub).
 
 ### Fixed
+- An `errorDetection` `equals` rule with a number (`value: 0`) matches the JSON number. The YAML integer and the
+  JSON number used to compare as different types, so the rule never matched. A map or list `value` is now a
+  validation error; at run time it crashed `aat run` and the MCP server.
 - `aat prompt` keeps the headers of `.aat-overrides.yaml` when the plan sets its own auth or headers; it used to
   drop them.
 - A request path value with an encoded `/` (`%2F`) keeps it inside its segment; the executor used to decode it
