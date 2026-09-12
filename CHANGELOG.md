@@ -227,6 +227,15 @@ the graph and plan formats may still change before 1.0.
   configurations, an empty case-study stub).
 
 ### Fixed
+- Archive references stay inside the archive directory:
+  - `aat import --name` must be a single directory name. A name that starts with `run-` or `batch-` gets the
+    `!` prefix, as a name derived from the file does. `--name ../x` used to import outside the archive
+    directory.
+  - The web server answers `404` for a run, batch, or trace ID that is not a single directory name. An ID of
+    `..` read the parent directory's `archive.json`. `PUT /api/runs/{id}/name` renamed any directory in the
+    archive directory; it now renames only runs and batches.
+  - The MCP archive tools reject a `run_id` that is not a directory name. The plan tools reject absolute plan
+    names and names that climb out of the plans directory.
 - An environment file given with `--env-config` no longer takes the manifest's `defaultEnvironment`. A
   single-environment file therefore loads in a project whose manifest sets one; it failed with "--env is not
   applicable". A single-environment file also ignores `AAT_ENV_NAME` and an overlay's `environment:`, and only

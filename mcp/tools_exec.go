@@ -36,6 +36,9 @@ func (s *Server) handleExecutePlan(ctx context.Context, req mcp.CallToolRequest)
 	if err != nil {
 		return mcp.NewToolResultError("missing required parameter: name"), nil
 	}
+	if err := checkPlanName(name); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 
 	// Guard: required configuration
 	if len(s.ctx.PlanDirs) == 0 && s.ctx.WorkflowsDir == "" {

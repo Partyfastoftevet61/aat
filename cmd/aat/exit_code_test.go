@@ -109,6 +109,7 @@ func TestExitCodes(t *testing.T) {
 		{name: "mcp serve without a manifest", dir: empty, args: []string{"mcp", "serve"}, code: 2, stderr: "no manifest found"},
 		{name: "mcp serve with a manifest that fails to load", dir: broken, args: []string{"mcp", "serve"}, code: 2, stderr: brokenManifest},
 		{name: "import with a manifest that fails to load", dir: broken, args: []string{"import", "run.aar"}, code: 2, stderr: brokenManifest},
+		{name: "import with a name outside the archive directory", dir: broken, args: []string{"import", "run.aar", "--name", "../escaped"}, code: 2, stderr: "invalid name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

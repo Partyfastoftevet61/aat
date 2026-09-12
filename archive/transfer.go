@@ -113,6 +113,11 @@ func ImportArchive(r io.ReaderAt, size int64, name string, destDir string) (dirN
 		return "", "", fmt.Errorf("import: archive must contain archive.json (run) or batch.json (batch) at root")
 	}
 
+	// The name becomes a directory inside destDir and must stay there.
+	if err := CheckDirName(name); err != nil {
+		return "", "", fmt.Errorf("import: %w", err)
+	}
+
 	// Check destination doesn't already exist.
 	destPath := filepath.Join(destDir, name)
 	if _, err := os.Stat(destPath); err == nil {
@@ -161,15 +166,12 @@ func SanitizeArchiveName(filename string) (string, error) {
 
 	// Prefix with "!" if result matches run-/batch- pattern to avoid
 	// confusion with auto-generated directory names.
-	if autoGenPrefixRe.MatchString(name) {
+	if AutoGenPrefixRe.MatchString(name) {
 		name = "!" + name
 	}
 
 	return name, nil
 }
-
-// autoGenPrefixRe matches auto-generated run/batch directory prefixes.
-var autoGenPrefixRe = regexp.MustCompile(`^(run|batch)-`)
 
 // validateZipContents checks zip entries for security issues.
 func validateZipContents(zr *zip.Reader) error {

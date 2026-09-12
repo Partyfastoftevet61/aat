@@ -131,3 +131,34 @@ A table test runs the real CLI in child processes to check the codes.
   started does not report `"batch_id": ""`.
 
 **Open questions:** none.
+
+## 2026-09-11 — A4: IDs and names used as paths
+
+**What:** AAT now checks every name from outside input before joining it into a file path (F4):
+- `aat import --name`
+- the web server's run, batch, and trace IDs, for reads, exports, and renames
+- the MCP `run_id` and MCP plan names
+
+**Decisions:**
+- **One rule for archive directory names.** `archive.CheckDirName` accepts only a single directory name:
+  - not empty, `.`, or `..`
+  - no path separators or NUL bytes
+  - local by `filepath.IsLocal`
+
+  `archive.SavedName` adds the `!` prefix to `run-` and `batch-` names. `aat import --name` and web renames
+  share it, as the import name derived from the file already did.
+- **A bad ID is reported as not found.** The web server gives an ID that is not a directory name the same
+  error as a missing run, batch, or trace, so handlers answer `404` without a new status path. The checks
+  (`checkRef`) sit in the service methods that build paths, not in router middleware, so every caller of the
+  service is covered.
+- **A rename moves only runs and batches.** `renameSource` requires `archive.json` or `batch.json` in the
+  directory. Before, the rename route could move any directory in the archive directory, notes and version
+  control directories included.
+- **Plan names may have subdirectories.** MCP plan tools accept `negative/state-machine` but reject absolute
+  paths and `..` (`filepath.IsLocal`). The CLI still accepts absolute plan paths, because a person types them
+  on purpose; an MCP client passes whatever a model produced.
+- **Duplicates removed.** The import code's private copy of the run/batch prefix pattern and the web server's
+  own name validator are gone. The web server's `isNamed` now calls `archive.IsNamed`.
+
+**Open questions:**
+- MCP `list_archives` and `list_recent_failures` still list only `run-*` directories. Deferred to M7.

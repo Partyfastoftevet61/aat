@@ -31,7 +31,10 @@ var importCmd = &cobra.Command{
 		nameFlag, _ := cmd.Flags().GetString("name")
 		var name string
 		if nameFlag != "" {
-			name = nameFlag
+			name, err = archive.SavedName(nameFlag)
+			if err != nil {
+				return err
+			}
 		} else {
 			name, err = archive.SanitizeArchiveName(filepath.Base(filePath))
 			if err != nil {
