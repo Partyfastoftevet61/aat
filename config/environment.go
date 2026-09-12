@@ -9,9 +9,9 @@ import (
 // SecretRef holds a reference to a secret value, resolved either from an
 // environment variable or a literal value.
 type SecretRef struct {
-	Source string `yaml:"source"`          // "env" or "literal"
-	Var    string `yaml:"var,omitempty"`   // environment variable name (when source=env)
-	Value  string `yaml:"value,omitempty"` // literal value (when source=literal)
+	Source string `yaml:"source" json:"source"`                   // "env" or "literal"
+	Var    string `yaml:"var,omitempty" json:"var,omitempty"`     // environment variable name (when source=env)
+	Value  string `yaml:"value,omitempty" json:"value,omitempty"` // literal value (when source=literal)
 }
 
 // Resolve returns the secret value by resolving the reference.
@@ -37,12 +37,12 @@ func (s SecretRef) IsSet() bool {
 
 // AuthConfig describes how to authenticate against the API.
 type AuthConfig struct {
-	Type        string               `yaml:"type"`                  // oauth2, apikey, bearer, none
-	TokenURL    string               `yaml:"tokenUrl,omitempty"`    // token endpoint for oauth2
-	HeaderName  string               `yaml:"headerName,omitempty"`  // custom header name for apikey
-	GrantType   string               `yaml:"grantType,omitempty"`   // oauth2 grant_type (default: "password")
-	ExtraParams map[string]string    `yaml:"extraParams,omitempty"` // extra form params for oauth2 token request
-	Credentials map[string]SecretRef `yaml:"credentials,omitempty"` // named credential fields
+	Type        string               `yaml:"type" json:"type"`                                   // oauth2, apikey, bearer, none
+	TokenURL    string               `yaml:"tokenUrl,omitempty" json:"tokenUrl,omitempty"`       // token endpoint for oauth2
+	HeaderName  string               `yaml:"headerName,omitempty" json:"headerName,omitempty"`   // custom header name for apikey
+	GrantType   string               `yaml:"grantType,omitempty" json:"grantType,omitempty"`     // oauth2 grant_type (default: "password")
+	ExtraParams map[string]string    `yaml:"extraParams,omitempty" json:"extraParams,omitempty"` // extra form params for oauth2 token request
+	Credentials map[string]SecretRef `yaml:"credentials,omitempty" json:"credentials,omitempty"` // named credential fields
 }
 
 // LLMConfig holds LLM provider configuration.

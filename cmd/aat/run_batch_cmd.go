@@ -150,7 +150,7 @@ type batchArgs struct {
 type BatchSummary struct {
 	Outcome     string           `json:"outcome"`
 	Error       string           `json:"error,omitempty"` // why the batch stopped before running its plans
-	BatchID     string           `json:"batchId"`
+	BatchID     string           `json:"batch_id,omitempty"`
 	Runs        []BatchRunResult `json:"runs"`
 	Summary     BatchStats       `json:"summary"`
 	ArchivePath string           `json:"archive_path,omitempty"`

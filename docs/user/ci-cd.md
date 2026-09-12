@@ -157,7 +157,7 @@ aat run batch --json
 | Field | Type | Description |
 |-------|------|-------------|
 | `outcome` | string | `"passed"`, `"failed"`, `"error"`, `"aborted"`, or `"skipped"` (a duplicate permutation) |
-| `batchId` | string | Batch run identifier (camelCase, unlike the other keys) |
+| `batch_id` | string | Batch run identifier; absent when the batch stopped before it started |
 | `runs` | array | Per-plan results (see BatchRunResult below) |
 | `summary` | object | Aggregate: `total_plans`, `passed_plans`, `failed_plans`, `error_plans`, `duration_ms`; plus `aborted_plans` and `skipped_plans` when non-zero |
 | `archive_path` | string | Path to the batch archive directory |
@@ -185,7 +185,7 @@ aat run batch --json
 ```json
 {
   "outcome": "failed",
-  "batchId": "batch-20260223-150000-e5f6a7b8",
+  "batch_id": "batch-20260223-150000-e5f6a7b8",
   "runs": [
     {
       "plan_name": "smoke-test",

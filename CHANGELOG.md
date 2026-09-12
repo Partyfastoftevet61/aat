@@ -86,6 +86,16 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- **BREAKING:** JSON keys follow the convention of the document they are in:
+  - The `aat run batch --json` summary's `batchId` is now `batch_id`. It is left out when the batch stopped
+    before it started.
+  - In run archives, a step's `duration_ms` is now `durationMs`. AAT and `tools/aat-to-junit.py` still read
+    archives that use the old key.
+  - A plan's `auth` in `metadata.plan` and `metadata.instantiatedPlan` uses camelCase keys (`tokenUrl`,
+    `credentials`) instead of Go field names (`TokenURL`, `Credentials`).
+
+  The `state` object that `--json` nests with `--dump-state -` keeps the camelCase keys of the `--dump-state`
+  file.
 - **BREAKING:** `aat run batch <filter>` selects plans by whole path segments. `orders` selects `orders.yaml`
   and every plan under `orders/`, and `orders/refund` selects one plan. The filter matched the start of each
   plan's path, so `smoke` also ran `smoke-eu.yaml`.

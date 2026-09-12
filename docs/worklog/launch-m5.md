@@ -104,3 +104,30 @@ A table test runs the real CLI in child processes to check the codes.
   an error. `AAT_ENV_NAME` counts as a default here because it is usually set for a whole CI job.
 
 **Open questions:** none.
+
+## 2026-09-11 — A3: JSON keys
+
+**What:** Three JSON keys changed:
+- The `--json` batch summary's `batchId` became `batch_id` (F8).
+- An archived step's `duration_ms` became `durationMs` (F36).
+- A plan's `auth` in archive metadata uses camelCase keys instead of Go field names.
+
+**Decisions:**
+- **Each document keeps one convention.** `--json` summaries are snake_case. Archives (`archive.json`,
+  `batch.json`) are camelCase, like the YAML they record, so `batch.json`'s `metadata.batchId` stays
+  camelCase.
+- **Old archives stay readable, without a custom unmarshaler.** Archives persist. `archive.Read` and `.aar`
+  import decode through `decodeArchive`, which fills a missing `durationMs` from `duration_ms`. That second
+  pass runs only when the old key appears.
+  - The first attempt was a `StepRecord.UnmarshalJSON`, and it broke redaction. A custom unmarshaler decodes
+    its fields without the caller's `UseNumber` setting, so a large integer input came back rounded.
+    `TestRedact_UnmatchedSecretChangesNothing` caught it.
+  - `tools/aat-to-junit.py` reads both keys.
+  - The PascalCase auth keys need no fallback, because encoding/json matches keys case-insensitively.
+- **`state` stays the dump file.** With `--json --dump-state -`, the summary nests the `--dump-state` document
+  verbatim, camelCase keys included. A harness parses one format whether the dump comes from a file or from
+  stdout.
+- **An error document has no batch ID.** `batch_id` is omitted when empty, so a batch that failed before it
+  started does not report `"batch_id": ""`.
+
+**Open questions:** none.

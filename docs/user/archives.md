@@ -57,7 +57,7 @@ Each step record holds:
 
 | Field | Contents |
 |-------|----------|
-| `stepId`, `node`, `startTime`, `duration_ms` | Which step ran, and when: a retried step's start and duration cover every attempt and the waits between them |
+| `stepId`, `node`, `startTime`, `durationMs` | Which step ran, and when: a retried step's start and duration cover every attempt and the waits between them. Archives written before 0.1.0 name the duration `duration_ms`; AAT reads both |
 | `inputs` | The resolved input values |
 | `request` | Method, full URL, headers, and body. When an override routed the step elsewhere, `originalUrl` holds the URL it would have used |
 | `response` | Status, headers, and body |

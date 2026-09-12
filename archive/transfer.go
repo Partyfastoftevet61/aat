@@ -364,11 +364,7 @@ func readArchiveFromZipEntry(zf *zip.File) (*Archive, error) {
 		return nil, err
 	}
 
-	var a Archive
-	if err := json.Unmarshal(data, &a); err != nil {
-		return nil, err
-	}
-	return &a, nil
+	return decodeArchive(data)
 }
 
 // readBatchFromZipEntry reads and unmarshals a BatchArchive from a zip entry.
