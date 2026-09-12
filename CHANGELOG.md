@@ -86,6 +86,11 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- **BREAKING:** Lua transforms can no longer load code or reach the host process. The `package` library is gone,
+  and so are the base library's `dofile`, `loadfile`, `load`, `loadstring`, `require`, `module`, `getfenv`,
+  `setfenv`, `collectgarbage`, and `newproxy`. An integration kit's templates run on its users' machines, so a
+  transform must not read their files. Also, `dofile()` and `loadfile()` with no argument read stdin, which under
+  `aat mcp serve` is the MCP connection.
 - Template headers no longer replace the auth credential, an override's own headers, or overlay headers. They
   still replace environment and plan headers, such as a per-operation `Content-Type`. On nodes that an
   override routes, overlay headers now replace the credential, as they already did on the default route.

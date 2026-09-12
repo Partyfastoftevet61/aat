@@ -65,9 +65,9 @@ Scripts run in [gopher-lua](https://github.com/yuin/gopher-lua) v1.1.1, a Lua 5.
 
 ### Libraries
 
-AAT opens these libraries: the base library, `table`, `string`, `math`, and `package`. It does not open `io`, `os`, `debug`, `coroutine`, or gopher-lua's `channel`, so scripts cannot open files for reading or writing, run programs, or read environment variables through them.
+AAT opens these libraries: the base library, `table`, `string`, and `math`. It does not open `io`, `os`, `debug`, `coroutine`, `package`, or gopher-lua's `channel`, so scripts cannot open files, run programs, or read environment variables.
 
-The base library still includes `dofile`, `loadfile`, `load`, `loadstring`, `require`, `pcall`, `setfenv`, and `getfenv`. `dofile`, `loadfile`, and `require` load and run Lua files from disk (`require` searches `package.path`, which starts with `./?.lua` and honors `LUA_PATH`). See [Limits](#limits).
+From the base library, AAT removes the functions that load code or reach the host process: `dofile`, `loadfile`, `load`, `loadstring`, `require`, `module`, `getfenv`, `setfenv`, `collectgarbage`, and `newproxy`. The rest stays, including `pcall`, `error`, `pairs`, `ipairs`, `select`, `tonumber`, and `tostring`. See [Limits](#limits).
 
 Numbers follow Lua 5.1: there is no separate integer type, and every number is a double-precision float.
 
@@ -277,8 +277,8 @@ Each script run has a 5-second timeout, which fails the step with a `context dea
 
 These are current limits of the transform runtime, not guarantees to rely on:
 
-- **Not a sandbox against hostile scripts.** Without `io` and `os`, a script cannot open files for reading or writing or run programs through those libraries, but `dofile`, `loadfile`, `load`, and `require` are reachable, and `require` looks for Lua files relative to the working directory. Scripts run inside the `aat` process with its permissions. Only run templates you trust.
-- **Numbers are floats.** Integers above 2^53 lose precision, and large whole numbers substituted into later templates render in exponent form (see [Type Conversion](#type-conversion)).
+- **Not a sandbox against hostile scripts.** A script cannot open files, run programs, or load code, but it runs inside the `aat` process with its permissions. Review the transforms in templates you did not write, such as an integration kit's.
+- **Numbers are floats.** Integers above 2^53 lose precision (see [Type Conversion](#type-conversion)).
 - **Nulls are lost.** A `null` value disappears from objects, turns an array with a `null` inside into an object, and cannot be told apart from a missing path in `json_path`. Empty objects come back as empty arrays.
 - **The timeout is partial.** The 5-second limit does not interrupt a long Go-side library call, and there is no memory limit.
 

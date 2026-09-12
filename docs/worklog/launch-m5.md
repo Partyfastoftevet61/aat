@@ -218,3 +218,22 @@ A table test runs the real CLI in child processes to check the codes.
   canonicalizes them. When two map keys differed only in case, map iteration order decided the winner.
 
 **Open questions:** none.
+
+## 2026-09-11 — B3: the Lua sandbox
+
+**What:** Lua transforms lost every function that loads code or reaches the host process (F3):
+- the `package` library
+- `dofile`, `loadfile`, `load`, `loadstring`, `require`, and `module`
+- `getfenv` and `setfenv`
+- `collectgarbage`, `newproxy`, and `_printregs`
+
+**Decisions:**
+- **Nil the globals after opening the base library.** gopher-lua registers `require` and `module` in the base
+  library itself, so leaving out the `package` library would still leave them callable.
+- **Why now.** Integration kits mean people run templates that someone else wrote. Also, `dofile()` and
+  `loadfile()` with no argument read stdin, which under `aat mcp serve` is the protocol stream.
+- **Still not a sandbox.** Scripts run in-process with no memory limit, and the timeout does not interrupt a
+  long call into a Go library function. The docs and SECURITY.md say so. JSON nulls and empty objects keep their
+  documented conversion limits (M9).
+
+**Open questions:** none.
