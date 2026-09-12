@@ -116,7 +116,7 @@ overrides:
 
 ### Add transaction-level headers
 
-Headers at the top level are merged into every request, useful for access-group tokens or other cross-cutting headers. They win over environment headers, plan headers, and the auth credential, but a header that a node's template sets in `request.headers` still keeps the template's value (a known issue):
+Headers at the top level are merged into every request, useful for access-group tokens or other cross-cutting headers. They win over environment headers, plan headers, template headers, and the auth credential, on every route:
 
 ```yaml
 headers:

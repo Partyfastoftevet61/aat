@@ -355,16 +355,16 @@ func overlayOverrides(overlay *config.OverlayFile) []config.HostOverride {
 	return overlay.Overrides
 }
 
-// addHostOverrides resolves override entries against the base headers and the
+// addHostOverrides resolves override entries against the default route and the
 // effective auth provider and registers them on the router. An entry without a
 // baseUrl inherits apiBaseURL; an entry without auth inherits the provider's
-// credential.
-func addHostOverrides(ctx context.Context, router *engine.ExecutorRouter, apiBaseURL string, overrides []config.HostOverride, baseHeaders map[string]string, provider *config.AuthProvider) error {
+// credential; every entry keeps the default route's overlay headers.
+func addHostOverrides(ctx context.Context, router *engine.ExecutorRouter, apiBaseURL string, overrides []config.HostOverride, base *config.APIConfig, provider *config.AuthProvider) error {
 	if len(overrides) == 0 {
 		return nil
 	}
 	env := &config.Environment{APIBaseURL: apiBaseURL, Overrides: overrides}
-	resolved, err := env.BuildOverrideConfigsWithProvider(ctx, baseHeaders, provider)
+	resolved, err := env.BuildOverrideConfigsWithProvider(ctx, base, provider)
 	if err != nil {
 		return err
 	}
@@ -889,25 +889,22 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 	apiConfig := rctx.Env.BuildAPIConfigFromToken(token, effectiveAuth, p.Headers)
 	logf("aat: authenticated via %s\n", effectiveAuth.Type)
 
-	// 5b. Merge overlay-level headers into apiConfig (applied to all requests).
-	// Priority: env headers < plan headers < overlay headers (auto then env-overlay).
-	// Auth headers set during BuildAPIConfigFromToken are preserved.
-	if autoOverlay != nil && len(autoOverlay.Headers) > 0 {
-		for k, v := range autoOverlay.Headers {
-			apiConfig.Headers[k] = v
-		}
+	// 5b. Overlay headers apply to every request on every route: after the
+	// environment, plan, and credential headers, and out of reach of template
+	// headers. .aat-overrides.yaml first, then the --overlay file.
+	if autoOverlay != nil {
+		apiConfig.AddOverlayHeaders(autoOverlay.Headers)
 	}
-	if envOverlayFile != nil && len(envOverlayFile.Headers) > 0 {
-		for k, v := range envOverlayFile.Headers {
-			apiConfig.Headers[k] = v
-		}
+	if envOverlayFile != nil {
+		apiConfig.AddOverlayHeaders(envOverlayFile.Headers)
 	}
 
 	// 6. Create executor, environment config, and router
 	executor := adapter.NewHTTPExecutor(apiConfig.BaseURL)
 	envConfig := &adapter.EnvironmentConfig{
-		BaseURL: apiConfig.BaseURL,
-		Headers: apiConfig.Headers,
+		BaseURL:   apiConfig.BaseURL,
+		Headers:   apiConfig.Headers,
+		Protected: apiConfig.Protected,
 	}
 	router := engine.NewExecutorRouter(executor, envConfig)
 
@@ -930,7 +927,7 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 		{"--override flags", flagOverrides},
 	}
 	for _, src := range sources {
-		if err := addHostOverrides(ctx, router, rctx.Env.APIBaseURL, src.overrides, apiConfig.Headers, effectiveProvider); err != nil {
+		if err := addHostOverrides(ctx, router, rctx.Env.APIBaseURL, src.overrides, apiConfig, effectiveProvider); err != nil {
 			return &runResult{setupErr: true, err: fmt.Errorf("building %s: %w", src.label, err)}
 		}
 	}

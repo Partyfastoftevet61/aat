@@ -384,18 +384,18 @@ headers:
   X-Request-Source: automated-testing
 ```
 
-Header merge order (later values override earlier ones for the same key):
+Header merge order. A later value replaces an earlier one with the same name, whatever the case of the name:
 
 1. **Environment headers** — this `headers` section
 2. **Plan headers** — the plan's top-level `headers` (see [Plans](plans.md#plan-level-auth-and-headers))
-3. **Auth credential** — `Authorization: Bearer …`, or the API key header, from the effective auth
-4. **`.aat-overrides.yaml` headers** — its top-level `headers`
-5. **`--overlay` headers** — the overlay file's top-level `headers`
-6. **Template headers** — per-template `request.headers` (see [Templates](templates.md#header-merge-order))
+3. **Template headers** — per-template `request.headers` (see [Templates](templates.md#header-merge-order))
+4. **Auth credential** — `Authorization: Bearer …`, or the API key header, from the effective auth
+5. **`.aat-overrides.yaml` headers** — its top-level `headers`
+6. **`--overlay` headers** — the overlay file's top-level `headers`
 
-A plan header therefore cannot replace the credential, while an overlay header can. Template headers are applied last and currently replace everything before them, the credential included; this is a known issue, so keep `Authorization`, API key headers, and overlay-managed headers out of templates.
+A plan or template header therefore cannot replace the credential, and an overlay header replaces everything before it.
 
-A node matched by an override that routes it (one that sets `baseUrl`, `auth`, `headers`, or `pathRewrite`, or a `--override` flag) starts from headers 1–5, drops the inherited credential if the override declares its own `auth`, applies the override's `headers`, and then sets the credential of its effective auth again. Template headers still come last.
+A node matched by an override that routes it (one that sets `baseUrl`, `auth`, `headers`, or `pathRewrite`, or a `--override` flag) takes the same environment, plan, and template headers. If the override declares its own `auth`, the inherited credential is dropped. Then come the override's `headers`, the credential of its effective auth, and the overlay headers, in that order. A template header cannot replace the override's headers either.
 
 ## Values
 

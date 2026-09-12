@@ -736,7 +736,7 @@ func TestBuildOverrideConfigs_InheritAuth(t *testing.T) {
 	}
 
 	baseHeaders := map[string]string{"Accept": "application/json"}
-	resolved, err := env.BuildOverrideConfigs(context.Background(), baseHeaders)
+	resolved, err := env.BuildOverrideConfigs(context.Background(), &APIConfig{Headers: baseHeaders})
 	require.NoError(t, err)
 	require.Len(t, resolved, 1)
 
@@ -765,7 +765,7 @@ func TestBuildOverrideConfigs_ExplicitNone(t *testing.T) {
 		"Accept":        "application/json",
 		"Authorization": "Bearer my-token",
 	}
-	resolved, err := env.BuildOverrideConfigs(context.Background(), baseHeaders)
+	resolved, err := env.BuildOverrideConfigs(context.Background(), &APIConfig{Headers: baseHeaders})
 	require.NoError(t, err)
 	require.Len(t, resolved, 1)
 
@@ -796,7 +796,7 @@ func TestBuildOverrideConfigs_HeaderMerge(t *testing.T) {
 		"Accept":   "application/json",
 		"X-Custom": "base-value",
 	}
-	resolved, err := env.BuildOverrideConfigs(context.Background(), baseHeaders)
+	resolved, err := env.BuildOverrideConfigs(context.Background(), &APIConfig{Headers: baseHeaders})
 	require.NoError(t, err)
 	require.Len(t, resolved, 1)
 
@@ -1275,7 +1275,7 @@ func TestBuildOverrideConfigsWithProvider_InheritCached(t *testing.T) {
 		},
 	})
 
-	resolved, err := env.BuildOverrideConfigsWithProvider(context.Background(), map[string]string{"Accept": "application/json"}, provider)
+	resolved, err := env.BuildOverrideConfigsWithProvider(context.Background(), &APIConfig{Headers: map[string]string{"Accept": "application/json"}}, provider)
 	require.NoError(t, err)
 	require.Len(t, resolved, 2)
 	assert.Equal(t, "Bearer cached-tok", resolved[0].APIConfig.Headers["Authorization"])
@@ -1346,10 +1346,10 @@ func TestBuildOverrideConfigs_ExplicitAPIKeyDropsInheritedBearer(t *testing.T) {
 
 	builders := map[string]func() ([]ResolvedOverride, error){
 		"WithAuth": func() ([]ResolvedOverride, error) {
-			return env.BuildOverrideConfigs(ctx, baseHeaders)
+			return env.BuildOverrideConfigs(ctx, &APIConfig{Headers: baseHeaders})
 		},
 		"WithProvider": func() ([]ResolvedOverride, error) {
-			return env.BuildOverrideConfigsWithProvider(ctx, baseHeaders, NewAuthProvider(env.Auth))
+			return env.BuildOverrideConfigsWithProvider(ctx, &APIConfig{Headers: baseHeaders}, NewAuthProvider(env.Auth))
 		},
 	}
 	for name, build := range builders {
@@ -1376,7 +1376,7 @@ func TestBuildOverrideConfigs_ExplicitAuthDropsInheritedAPIKey(t *testing.T) {
 		Overrides: []HostOverride{{Match: "node1", Auth: &AuthConfig{Type: "none"}}},
 	}
 
-	resolved, err := env.BuildOverrideConfigs(context.Background(), map[string]string{"X-Main-Key": "main-key"})
+	resolved, err := env.BuildOverrideConfigs(context.Background(), &APIConfig{Headers: map[string]string{"X-Main-Key": "main-key"}})
 	require.NoError(t, err)
 	require.Len(t, resolved, 1)
 	assert.NotContains(t, resolved[0].APIConfig.Headers, "X-Main-Key")
@@ -1396,7 +1396,7 @@ func TestBuildOverrideConfigs_ExplicitNoneKeepsOverrideHeaders(t *testing.T) {
 		}},
 	}
 
-	resolved, err := env.BuildOverrideConfigs(context.Background(), map[string]string{"Authorization": "Bearer main-token"})
+	resolved, err := env.BuildOverrideConfigs(context.Background(), &APIConfig{Headers: map[string]string{"Authorization": "Bearer main-token"}})
 	require.NoError(t, err)
 	require.Len(t, resolved, 1)
 	assert.Equal(t, "Basic c3R1YjpzdHVi", resolved[0].APIConfig.Headers["Authorization"])

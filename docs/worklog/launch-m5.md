@@ -195,3 +195,26 @@ A table test runs the real CLI in child processes to check the codes.
   bypass all three.
 
 **Open questions:** none.
+
+## 2026-09-11 — B2: header precedence
+
+**What:** Template headers no longer overwrite the credential, an override's own headers, or overlay headers
+(F1). Three related fixes:
+- Header names compare case-insensitively.
+- Overlay headers beat the credential on routed nodes too.
+- `aat prompt` keeps dotfile headers when a plan brings its own auth or headers.
+
+**Decisions:**
+- **Protected headers apply after the template's.** `adapter.EnvironmentConfig.Protected` holds the headers a
+  template may not replace. `BuildRequest` merges config headers, then template headers, then protected
+  headers. A template can still set a per-operation `Content-Type` over an environment default.
+- **The route carries its own layers.** `config.APIConfig` gained `Protected` and `Overlay`. The credential
+  joins `Protected` when the route is built, and `AddOverlayHeaders` adds overlay headers to both. `Headers`
+  stays the full merged set, so `--dump-state` and existing callers see the same map.
+- **Overrides start from the base route, not a header map.** `BuildOverrideConfigs*` take `*APIConfig`, so a
+  routed node reapplies the base route's overlay headers after its own credential. That keeps "overlay beats
+  credential" true on every route. Before, an override's credential won over an overlay `Authorization`.
+- **Header names compare case-insensitively.** HTTP header names are case-insensitive, and Go's transport
+  canonicalizes them. When two map keys differed only in case, map iteration order decided the winner.
+
+**Open questions:** none.

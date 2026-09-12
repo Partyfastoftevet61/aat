@@ -172,11 +172,13 @@ func (a *TemplateAdapter) BuildRequest(inputs map[string]any, config *Environmen
 		return nil, fmt.Errorf("path substitution: %w", err)
 	}
 
-	// Start with config headers, then overlay template headers.
+	// Config headers first, then template headers, then the protected headers
+	// (credential, override, overlay), which a template cannot replace. Names
+	// compare case-insensitively.
 	merged := make(map[string]string)
 	if config != nil {
 		for k, v := range config.Headers {
-			merged[k] = v
+			setHeader(merged, k, v)
 		}
 	}
 	for k, tmplVal := range a.tmpl.Request.Headers {
@@ -189,7 +191,12 @@ func (a *TemplateAdapter) BuildRequest(inputs map[string]any, config *Environmen
 		if resolved == "" && strings.Contains(tmplVal, "{{?") {
 			continue
 		}
-		merged[k] = resolved
+		setHeader(merged, k, resolved)
+	}
+	if config != nil {
+		for k, v := range config.Protected {
+			setHeader(merged, k, v)
+		}
 	}
 
 	var body []byte

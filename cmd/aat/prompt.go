@@ -221,13 +221,6 @@ func promptCommand(ctx context.Context, args *promptArgs, reader io.Reader) erro
 	apiConfig := env.BuildAPIConfigFromToken(token, initialAuth, nil)
 	fmt.Printf("aat: authenticated via %s\n", initialAuth.Type)
 
-	// 5b. Merge overlay-level headers into apiConfig (applied to all requests).
-	if autoOverlay != nil && len(autoOverlay.Headers) > 0 {
-		for k, v := range autoOverlay.Headers {
-			apiConfig.Headers[k] = v
-		}
-	}
-
 	// 4. Load graph
 	g, err := graph.ParseFile(args.GraphPath)
 	if err != nil {
@@ -375,6 +368,11 @@ func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *prompt
 		}
 		apiConfig = env.BuildAPIConfigFromToken(token, authProvider.Config(), p.Headers)
 	}
+	// Overlay headers apply last, on every route, including after a rebuild for
+	// the plan's auth or headers above.
+	if autoOverlay != nil {
+		apiConfig.AddOverlayHeaders(autoOverlay.Headers)
+	}
 
 	// Load templates
 	registry := adapter.NewRegistry()
@@ -387,17 +385,18 @@ func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *prompt
 	// Create executor and environment config
 	executor := adapter.NewHTTPExecutor(apiConfig.BaseURL)
 	envConfig := &adapter.EnvironmentConfig{
-		BaseURL: apiConfig.BaseURL,
-		Headers: apiConfig.Headers,
+		BaseURL:   apiConfig.BaseURL,
+		Headers:   apiConfig.Headers,
+		Protected: apiConfig.Protected,
 	}
 	router := engine.NewExecutorRouter(executor, envConfig)
 
 	// Apply env-file overrides, then auto-discovered .aat-overrides.yaml entries
 	// (later registrations win), inheriting the effective auth via the provider.
-	if err := addHostOverrides(ctx, router, env.APIBaseURL, env.Overrides, apiConfig.Headers, effectiveProvider); err != nil {
+	if err := addHostOverrides(ctx, router, env.APIBaseURL, env.Overrides, apiConfig, effectiveProvider); err != nil {
 		return fmt.Errorf("building overrides: %w", err)
 	}
-	if err := addHostOverrides(ctx, router, env.APIBaseURL, overlayOverrides(autoOverlay), apiConfig.Headers, effectiveProvider); err != nil {
+	if err := addHostOverrides(ctx, router, env.APIBaseURL, overlayOverrides(autoOverlay), apiConfig, effectiveProvider); err != nil {
 		return fmt.Errorf("building auto-overrides: %w", err)
 	}
 

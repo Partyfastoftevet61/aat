@@ -710,16 +710,16 @@ Plan `auth` takes the same form as an environment's `auth` section: the types ar
 
 Plan `auth` replaces the environment's auth for the whole run, including overlay auth, and override entries that declare no `auth` of their own inherit it. Auth priority, lowest to highest: `env.yaml` `auth`, `.aat-overrides.yaml` `auth`, the `--overlay` file's `auth`, plan `auth`.
 
-Headers merge in this order, later sources replacing earlier ones with the same name:
+Headers merge in this order, later sources replacing earlier ones with the same name (in any case):
 
 1. Environment `headers`
 2. Plan `headers`
-3. The auth credential (`Authorization`, or the API key header)
-4. `.aat-overrides.yaml` `headers`
-5. `--overlay` file `headers`
-6. Template `request.headers`
+3. Template `request.headers`
+4. The auth credential (`Authorization`, or the API key header)
+5. `.aat-overrides.yaml` `headers`
+6. `--overlay` file `headers`
 
-So a plan header cannot replace the credential, but an overlay header can. Template headers currently replace everything before them, including the credential; see [Environments: Custom Headers](environments.md#custom-headers) for that caveat and for nodes routed by an override.
+So neither a plan header nor a template header can replace the credential, and an overlay header replaces everything before it. See [Environments: Custom Headers](environments.md#custom-headers) for nodes routed by an override.
 
 ## Layers
 

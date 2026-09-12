@@ -86,6 +86,10 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- Template headers no longer replace the auth credential, an override's own headers, or overlay headers. They
+  still replace environment and plan headers, such as a per-operation `Content-Type`. On nodes that an
+  override routes, overlay headers now replace the credential, as they already did on the default route.
+  Header names compare case-insensitively when headers merge.
 - **BREAKING:** request templates escape each substituted value for where it lands. Values used to go in
   raw.
   - **Path:** a value is URL-encoded as one path segment before the first `?`, and as a query component after
@@ -238,6 +242,8 @@ the graph and plan formats may still change before 1.0.
   configurations, an empty case-study stub).
 
 ### Fixed
+- `aat prompt` keeps the headers of `.aat-overrides.yaml` when the plan sets its own auth or headers; it used to
+  drop them.
 - A request path value with an encoded `/` (`%2F`) keeps it inside its segment; the executor used to decode it
   into a real `/`. The archive records the URL as the executor joins it, instead of concatenating the base URL
   and the path.

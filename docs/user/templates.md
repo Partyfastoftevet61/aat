@@ -50,7 +50,7 @@ request:
     X-Custom-Header: "{{customValue}}"
 ```
 
-Headers support `{{placeholder}}` substitution. Static headers like `Content-Type` are set directly; dynamic headers use placeholders resolved from step inputs. A header whose whole value is a conditional block (`{{?requestId}}{{requestId}}{{/requestId}}`) is not sent when the block resolves to nothing. Template headers are applied last and currently replace any header of the same name, including the auth credential — see [Header Merge Order](#header-merge-order).
+Headers support `{{placeholder}}` substitution. Static headers like `Content-Type` are set directly; dynamic headers use placeholders resolved from step inputs. A header whose whole value is a conditional block (`{{?requestId}}{{requestId}}{{/requestId}}`) is not sent when the block resolves to nothing. A template header replaces an environment or plan header of the same name, but not the auth credential or a header an overlay sets — see [Header Merge Order](#header-merge-order).
 
 ### Body
 
@@ -407,15 +407,15 @@ See [Lua Transforms](lua-transforms.md) for the runtime, the available globals a
 
 ## Header Merge Order
 
-When a request is built, headers come from multiple sources and are merged in this order (later values override earlier ones for the same key):
+When a request is built, headers come from multiple sources and are merged in this order. A later value replaces an earlier one with the same name, whatever the case of the name:
 
 1. **Environment headers** — static headers from the environment file's `headers` section
 2. **Plan headers** — the plan's top-level `headers` (see [Plans: Plan-Level Auth and Headers](plans.md#plan-level-auth-and-headers))
-3. **Auth credential** — `Authorization`, or the API key header, from the effective auth
-4. **Overlay headers** — top-level `headers` from `.aat-overrides.yaml`, then from the `--overlay` file
-5. **Template headers** — the template's `request.headers`
+3. **Template headers** — the template's `request.headers`
+4. **Auth credential** — `Authorization`, or the API key header, from the effective auth
+5. **Overlay headers** — top-level `headers` from `.aat-overrides.yaml`, then from the `--overlay` file
 
-You can set common headers like `Accept` in the environment and add per-operation headers such as `Content-Type` in the template. Because template headers are applied last, a template that sets `Authorization` or an overlay-managed header currently replaces the credential or the overlay's value; this is a known issue, so leave those headers out of templates. For nodes that an override routes elsewhere, see [Environments: Custom Headers](environments.md#custom-headers).
+You can set common headers like `Accept` in the environment and add per-operation headers such as `Content-Type` in the template. A template header replaces an environment or plan header, but never the credential or a header an overlay sets. For nodes that an override routes elsewhere, see [Environments: Custom Headers](environments.md#custom-headers).
 
 ## Common Patterns
 
