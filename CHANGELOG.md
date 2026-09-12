@@ -86,6 +86,24 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- **BREAKING:** exit codes follow one rule on every command:
+  - `0` passed.
+  - `1` a test or validation ran and found a failure.
+  - `2` AAT could not do what was asked. That covers an unknown flag, argument, or subcommand, and a project,
+    environment, or `--var` error. Most commands exited `1` for these.
+  - `130` aborted.
+
+  Command by command:
+  - `aat validate` exits `1` when it finds a problem, and `2` when there is no manifest to validate or
+    `--var` is bad.
+  - `aat prompt` exits with its run's outcome code, instead of `1` for any run that did not pass.
+  - `aat import`, `aat generate`, and `aat docs generate` exit `2` on an error.
+- **BREAKING:** `aat run batch --json` reports an error that stops the batch before any plan runs in a top-level
+  `error` field, with an empty `runs` array. It used a run entry with no plan name.
+- **BREAKING:** only `aat run plan` and `aat run batch` take the execution flags: `--env`, `--env-config`,
+  `--graph`, `--templates`, `--domain`, `--override`, `--overlay`, `--var`, `--retries`, `--layer`,
+  `--no-auto-overrides`, `--oas-validate`, `--verbose-auth`, and `--no-mutations`. `aat run clean` and
+  `aat run rebuild-summaries` accepted and ignored them; they now reject them.
 - Docs: the README and shop quick starts run `aat web view latest` last, since it holds the terminal until
   Ctrl+C, and then stop the sandbox. The Petstore page is now *Petstore Quickstart*, so "quick start" means
   the offline shop. The MCP server page describes `--persona` with `--http` as the code behaves, and the
@@ -193,6 +211,15 @@ the graph and plan formats may still change before 1.0.
   configurations, an empty case-study stub).
 
 ### Fixed
+- An unknown subcommand is an error (exit `2`), with a suggestion when the name is close. This covers
+  `aat run bogus` and unknown subcommands of `aat plan`, `aat env`, `aat mcp`, and `aat docs`. They printed
+  help and exited `0`, so a mistyped subcommand passed in CI. Commands that take no arguments, such as
+  `aat validate` and `aat web`, now reject stray arguments instead of ignoring them.
+- `aat mcp serve` reports a manifest that fails to load with the load error; it said the manifest was not
+  found. `aat import` fails on such a manifest instead of importing into `_output/runs`.
+- `aat run plan --json` and `aat run batch --json` print the error document for every error that stops them
+  before a plan runs. Before, a manifest that failed to load, a bad `--var`, or an overlay environment that
+  could not be resolved left stdout empty.
 - The shop kit's descriptions match the sandbox. `applyCoupon` lists its errors in the order they are
   checked; `paymentCharge` and `shipOrder` say they check the order again after their delay;
   `createReturn` and `deliverShipment` list their 404s; `addItem.quantity` and `paymentCharge.method` say

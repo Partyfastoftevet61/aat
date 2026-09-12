@@ -466,7 +466,7 @@ func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *prompt
 
 	// Exit code
 	if result.Outcome != engine.OutcomePassed {
-		return fmt.Errorf("%s", outcomeMessage(result))
+		return &exitError{Code: outcomeExitCode(result.Outcome), Err: fmt.Errorf("%s", outcomeMessage(result))}
 	}
 	return nil
 }

@@ -1,0 +1,82 @@
+# Launch M5 — Release v0.1.0
+
+## 2026-09-11 — Plan: the findings targeted at M5 come first
+
+**What:** M5's task list covers the release itself: CHANGELOG, a snapshot build, release notes, install docs,
+demos, and repository metadata. The findings deferred from M2 to M4 also point 14 items at M5. Three read-only
+exploration passes confirmed each one and read the code around them for problems the release would otherwise
+ship.
+
+**Decisions:**
+- **Every finding targeted at M5 lands before the tag.** It happens in three phases:
+  - **Contracts:** exit codes, the batch filter, environment selection, JSON and archive keys, and file
+    paths built from IDs and names.
+  - **Requests and transforms:** placeholder escaping, header precedence, and the Lua sandbox.
+  - **The rest:** the remaining fixes, then the release.
+
+  v0.1.0 is the first version people will script against, so anything that changes a contract goes in first.
+- **Exit codes follow one rule on every command:**
+  - 0: passed.
+  - 1: a test or validation ran and found a failure.
+  - 2: AAT could not do what was asked. That covers bad flags, an unknown subcommand, a manifest, environment,
+    or `--var` it cannot use, and a batch with no plans.
+  - 130: aborted.
+
+  CI can then read 1 as "the API or the tests are wrong" and 2 as "the job is wrong".
+- **Placeholders are escaped for where they sit, with no raw opt-out.** A JSON string gets JSON escaping; a path
+  segment and a query value get URL encoding. `rawBody` stays the way to send a malformed payload.
+
+**Found while exploring (fixed in the phases):**
+- `aat run bogus` and `aat run batch` with a filter that matches nothing both exit 0.
+- `aat import` ignores a manifest that fails to load. `aat mcp serve` reports such a manifest as "not found" and
+  exits without saying why.
+- Several file paths are built from IDs and names without checks: archive IDs in the web server, `run_id` and
+  plan names in MCP, and `aat import --name`.
+- `errorDetection` `equals` with a map or list value panics.
+- Archives write `metadata.plan.auth` with PascalCase keys.
+- A Lua transform can call `dofile()` with no argument, which reads stdin. Under `aat mcp serve`, stdin is the
+  MCP protocol stream.
+
+**Open questions:**
+- Edge cases of the cleanup change in f21e825, deferred to M9:
+  - A listed paired node with `runOn: success` suppresses its pairings on failure.
+  - The cleanup-input fallback can pick another step's output.
+  - `--json` cleanup entries repeat node names.
+- MCP list tools show only `run-*` directories. Deferred to M7.
+- Expression evaluation and type coercion for overlay values. Deferred to M9.
+
+## 2026-09-11 — A1: one exit-code rule on every command
+
+**What:** Every command now follows the M5 exit-code rule. Several fixes came with it:
+- Unknown subcommands and stray arguments are errors.
+- `aat mcp serve` and `aat import` report manifest load errors.
+- The execution flags moved off `run clean` and `run rebuild-summaries`.
+- Every `--json` setup error prints a JSON document.
+
+A table test runs the real CLI in child processes to check the codes.
+
+**Decisions:**
+- **A plain error exits 2.** `main` maps any error that is not an `exitError` to 2. Bad flags, missing
+  arguments, setup errors, and each command's I/O errors therefore exit 2 without every call site choosing a
+  code. Exit 1 stays explicit: `validate` findings, and the outcomes of `run`, `batch`, and `prompt`.
+- **Command groups reject unknown subcommands.** Cobra shows help and returns nil when a command with no
+  `Run` gets an argument, before any argument validation, so `aat run bach` exited 0. `groupRunE` on `run`,
+  `plan`, `env`, `mcp`, and `docs` returns an error instead, with Cobra's suggestion. Cobra sets its default
+  suggestion distance only on the root command, so `groupRunE` sets it. Commands that take no arguments
+  declare `cobra.NoArgs`.
+- **`validate` exits 2 when it has nothing to validate or was invoked wrongly, and 1 for findings.**
+  - A manifest that exists but fails to load is a finding, shown as a FAILED section.
+  - A `--manifest` that does not exist matches `config.ErrManifestNotFound` and exits 2.
+  - A `--var` the environment file cannot use matches `config.ErrUnusableVars` and exits 2. The error type
+    keeps both existing messages.
+- **Execution flags belong to `run plan` and `run batch`.** `run` keeps only the flags that locate the
+  project and the archives (`--manifest`, `--output`). `run clean` and `run rebuild-summaries` had inherited
+  14 flags they ignored.
+- **A `--json` setup error always prints a document.** `run batch` puts the reason in a new top-level `error`
+  field. It used to report it as a run entry with no plan name.
+- **The exit-code test runs the real CLI.** `TestMain` calls `main()` when `AAT_TEST_RUN_MAIN=1`. Each case
+  is a child process with its own flag state and its own `os.Exit`, isolated from the user config and
+  `AAT_PROJECT`. Cobra keeps flag values between `Execute` calls, so an in-process table would leak flags from
+  one case to the next.
+
+**Open questions:** none.

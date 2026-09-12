@@ -151,7 +151,7 @@ Without `--name`, the web UI, the API, and the CLI derive the directory name fro
 
 Known issue: `--name` is used exactly as given, without that clean-up. A name containing `../` can place the import outside the archive directory, and a name starting with `run-` or `batch-` looks auto-generated to `aat run clean`. Pass a plain name.
 
-An import never overwrites or merges. If the target directory exists, it fails (exit code `1` from the CLI):
+An import never overwrites or merges. If the target directory exists, it fails (exit code `2` from the CLI):
 
 ```
 aat: import: directory "nightly-run-3" already exists

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
@@ -42,11 +41,12 @@ With an absolute path, treats it as a standalone plan directory.`,
 
 		changed := func(name string) bool { return cmd.Flags().Changed(name) }
 		getString := func(name string) string { v, _ := cmd.Flags().GetString(name); return v }
+		jsonFlag, _ := cmd.Flags().GetBool("json")
 
 		overrides := buildProjectOverrides(changed, getString)
 		resolved, err := config.ResolveProjectPaths(overrides)
 		if err != nil {
-			return &exitError{Code: exitCodeInfra, Err: err}
+			return batchSetupFailure(jsonFlag, err)
 		}
 
 		var filterPath string
@@ -54,7 +54,6 @@ With an absolute path, treats it as a standalone plan directory.`,
 			filterPath = args[0]
 		}
 
-		jsonFlag, _ := cmd.Flags().GetBool("json")
 		quiet, _ := cmd.Flags().GetBool("quiet")
 		overrideFlags, _ := cmd.Flags().GetStringSlice("override")
 		envOverlay, _ := cmd.Flags().GetString("overlay")
@@ -73,14 +72,14 @@ With an absolute path, treats it as a standalone plan directory.`,
 		varFlags, _ := cmd.Flags().GetStringArray("var")
 		vars, err := config.ParseVars(varFlags)
 		if err != nil {
-			return &exitError{Code: 2, Err: err}
+			return batchSetupFailure(jsonFlag, err)
 		}
 		envName := resolveEnvName(cmd)
 
 		if envName == "" {
 			overlayEnv, overlaySrc, err := resolveOverlayEnvName(envOverlay, noAutoOverrides)
 			if err != nil {
-				return &exitError{Code: exitCodeInfra, Err: fmt.Errorf("resolving overlay environment: %w", err)}
+				return batchSetupFailure(jsonFlag, fmt.Errorf("resolving overlay environment: %w", err))
 			}
 			if overlayEnv != "" {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "aat: using environment %q from overlay %s\n", overlayEnv, overlaySrc)
@@ -155,10 +154,19 @@ type batchArgs struct {
 // BatchSummary is the machine-readable JSON output for batch CI/CD pipelines.
 type BatchSummary struct {
 	Outcome     string           `json:"outcome"`
+	Error       string           `json:"error,omitempty"` // why the batch stopped before running its plans
 	BatchID     string           `json:"batchId"`
 	Runs        []BatchRunResult `json:"runs"`
 	Summary     BatchStats       `json:"summary"`
 	ArchivePath string           `json:"archive_path,omitempty"`
+}
+
+// batchSetupFailure is runSetupFailure for aat run batch.
+func batchSetupFailure(jsonOut bool, err error) error {
+	if jsonOut {
+		writeJSON(&BatchSummary{Outcome: "error", Error: err.Error(), Runs: []BatchRunResult{}})
+	}
+	return &exitError{Code: exitCodeInfra, Err: err}
 }
 
 // BatchRunResult is a per-plan entry in the batch JSON summary.
@@ -225,19 +233,12 @@ func executeBatch(ba *batchArgs) int {
 
 	if ba.JSON {
 		if res.summary != nil {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			_ = enc.Encode(res.summary)
+			writeJSON(res.summary)
 		} else {
-			s := &BatchSummary{
-				Outcome: "error",
-			}
+			writeJSON(&BatchSummary{Outcome: "error", Error: errString(res.err), Runs: []BatchRunResult{}})
 			if res.err != nil {
-				s.Runs = []BatchRunResult{{PlanName: "", Outcome: "error", Error: res.err.Error()}}
+				fmt.Fprintf(os.Stderr, "aat: %s\n", res.err)
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			_ = enc.Encode(s)
 		}
 		return batchExitCode(res)
 	}

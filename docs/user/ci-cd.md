@@ -8,10 +8,10 @@ AAT is designed for automated pipelines: deterministic exit codes, machine-reada
 |------|---------|-------------------|
 | `0` | Passed | All steps and assertions succeeded; also a `--stop-after` checkpoint (`stopped`) |
 | `1` | Failed | One or more assertions failed; a step returned an unexpected status code |
-| `2` | Error | Invalid plan file, missing environment config, network failure, authentication error |
+| `2` | Error | An unknown flag or subcommand, a manifest or environment file that cannot be loaded, a bad `--var`, an invalid plan file, a network failure, an authentication error |
 | `130` | Aborted | The process received `SIGINT` (Ctrl+C) or `SIGTERM` — a cancelled CI job, a timeout wrapper, a runner shutting down. Cleanup still runs and a partial archive is written |
 
-For batch runs, the exit code reflects the worst outcome across all plans: if any plan was aborted, exit code is `130`; if any plan errors, exit code is `2`; if any plan fails (but none error), exit code is `1`; only if all plans pass is the exit code `0`.
+For batch runs, the exit code reflects the worst outcome across all plans: if any plan was aborted, exit code is `130`; if any plan errors, exit code is `2`; if any plan fails (but none error), exit code is `1`; only if all plans pass is the exit code `0`. Every `aat` command uses these codes; [Exit Codes](running.md#exit-codes) lists what each command returns.
 
 ## JSON Output
 

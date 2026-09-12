@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -126,20 +127,40 @@ func exitCode(res *runResult) int {
 	if res.setupErr {
 		return exitCodeInfra
 	}
-	switch res.outcome {
-	case engine.OutcomePassed:
-		return 0
+	return outcomeExitCode(res.outcome)
+}
+
+// outcomeExitCode maps a run outcome to its exit code: 0 passed or stopped at a
+// checkpoint, 1 failed, 2 error, 130 aborted.
+func outcomeExitCode(outcome engine.Outcome) int {
+	switch outcome {
 	case engine.OutcomeFailed:
 		return 1
 	case engine.OutcomeError:
 		return exitCodeInfra
 	case engine.OutcomeAborted:
 		return 130
-	case engine.OutcomeStopped:
-		return 0
 	default:
 		return 0
 	}
+}
+
+// writeJSON writes v to stdout as indented JSON, the format of every --json
+// document.
+func writeJSON(v any) {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(v)
+}
+
+// runSetupFailure reports an error that stopped aat run plan before it could
+// run the plan. The message goes to stderr, and under --json the error document
+// goes to stdout as well, so a pipeline parsing the output sees why it exited 2.
+func runSetupFailure(jsonOut bool, err error) error {
+	if jsonOut {
+		writeJSON(&RunSummary{Outcome: "error", Error: err.Error()})
+	}
+	return &exitError{Code: exitCodeInfra, Err: err}
 }
 
 // buildRunSummary converts an engine.RunResult to a RunSummary.

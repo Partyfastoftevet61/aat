@@ -49,7 +49,10 @@ var importCmd = &cobra.Command{
 				overrides.ExplicitManifest, _ = cmd.Flags().GetString("manifest")
 			}
 			resolved, resolveErr := config.ResolveProjectPaths(overrides)
-			if resolveErr == nil && resolved.ArchiveDir != "" {
+			if resolveErr != nil {
+				return resolveErr
+			}
+			if resolved.ArchiveDir != "" {
 				outputDir = resolved.ArchiveDir
 			}
 		}

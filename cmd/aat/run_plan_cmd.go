@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -25,16 +24,16 @@ var runPlanCmd = &cobra.Command{
 
 		changed := func(name string) bool { return cmd.Flags().Changed(name) }
 		getString := func(name string) string { v, _ := cmd.Flags().GetString(name); return v }
+		jsonFlag, _ := cmd.Flags().GetBool("json")
 
 		overrides := buildProjectOverrides(changed, getString)
 		resolved, err := config.ResolveProjectPaths(overrides)
 		if err != nil {
-			return &exitError{Code: exitCodeInfra, Err: err}
+			return runSetupFailure(jsonFlag, err)
 		}
 
 		planPath := resolvePlanPath(args[0], resolved.PlanDirs)
 
-		jsonFlag, _ := cmd.Flags().GetBool("json")
 		quiet, _ := cmd.Flags().GetBool("quiet")
 		overrideFlags, _ := cmd.Flags().GetStringSlice("override")
 		envOverlay, _ := cmd.Flags().GetString("overlay")
@@ -48,7 +47,7 @@ var runPlanCmd = &cobra.Command{
 		varFlags, _ := cmd.Flags().GetStringArray("var")
 		vars, err := config.ParseVars(varFlags)
 		if err != nil {
-			return &exitError{Code: 2, Err: err}
+			return runSetupFailure(jsonFlag, err)
 		}
 		stopAfter, _ := cmd.Flags().GetString("stop-after")
 		dumpState, _ := cmd.Flags().GetString("dump-state")
@@ -56,7 +55,7 @@ var runPlanCmd = &cobra.Command{
 		if envName == "" {
 			overlayEnv, overlaySrc, err := resolveOverlayEnvName(envOverlay, noAutoOverrides)
 			if err != nil {
-				return &exitError{Code: exitCodeInfra, Err: fmt.Errorf("resolving overlay environment: %w", err)}
+				return runSetupFailure(jsonFlag, fmt.Errorf("resolving overlay environment: %w", err))
 			}
 			if overlayEnv != "" {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "aat: using environment %q from overlay %s\n", overlayEnv, overlaySrc)
@@ -145,18 +144,13 @@ func executeRun(ra *runArgs) int {
 	// JSON output
 	if ra.JSON {
 		if res.summary != nil {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			_ = enc.Encode(res.summary)
+			writeJSON(res.summary)
 		} else {
 			// Setup error before we got a RunResult — emit minimal JSON
-			s := &RunSummary{
-				Outcome: "error",
-				Error:   errString(res.err),
+			writeJSON(&RunSummary{Outcome: "error", Error: errString(res.err)})
+			if res.err != nil {
+				fmt.Fprintf(os.Stderr, "aat: %s\n", res.err)
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			_ = enc.Encode(s)
 		}
 		return exitCode(res)
 	}
@@ -164,9 +158,7 @@ func executeRun(ra *runArgs) int {
 	// Non-JSON stdout dump (--dump-state -): emit the state export as its own
 	// JSON object. In --json mode it is already nested under summary.state.
 	if ra.DumpStatePath == "-" && res.summary != nil && res.summary.State != nil {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		_ = enc.Encode(res.summary.State)
+		writeJSON(res.summary.State)
 	}
 
 	// Quiet (non-JSON): show the final summary line

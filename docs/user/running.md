@@ -240,14 +240,24 @@ $ aat run plan smoke --json
 
 ## Exit Codes
 
+Every `aat` command uses the same codes:
+
 | Code | Meaning | When |
 |------|---------|------|
 | `0` | Passed / Stopped | All steps succeeded, or a `--stop-after` checkpoint was reached |
-| `1` | Failed | One or more steps or assertions failed |
-| `2` | Error | Infrastructure or setup error (bad config, network failure, invalid plan) |
+| `1` | Failed | A test ran and failed: one or more steps or assertions failed. For `aat validate`, validation found a problem |
+| `2` | Error | AAT could not do what was asked: an unknown flag, argument, or subcommand; a manifest, environment, or `--var` it cannot use; an invalid plan; a network or authentication failure |
 | `130` | Aborted | The run was interrupted by Ctrl+C or `SIGTERM` (see [Interrupting a Run](#interrupting-a-run-ctrlc)) |
 
 For batches, the exit code reflects the worst outcome across all plans: any aborted plan gives `130`, otherwise any error gives `2`, otherwise any failure gives `1`.
+
+By command:
+
+- `aat run plan`, `aat run batch`, and `aat prompt` exit with the outcome of the run. With `--json`, an error that stops `aat run plan` or `aat run batch` before a plan runs still prints a JSON document, with `"outcome": "error"` and the reason in `error`.
+- `aat validate` and its subcommands exit `1` when validation finds a problem, including a manifest that fails to load, and `2` when there is nothing to validate: no manifest found, or no `--graph` for `aat validate graph`, `plan`, or `workflow`.
+- `aat env list` and `aat plan list` exit `0` when they can list, even when an entry fails to load (they print its error), and `2` when they cannot.
+- `aat mcp serve` and `aat web` exit `2` with the reason on stderr when they cannot start.
+- `aat generate`, `aat docs generate`, `aat import`, `aat run clean`, and `aat run rebuild-summaries` exit `2` on an error.
 
 These codes are deterministic and designed for CI/CD pipelines. See [CI/CD Integration: Exit Codes](ci-cd.md#exit-codes) for detailed scenarios.
 
