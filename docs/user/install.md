@@ -1,7 +1,5 @@
 # Install
 
-> **Before v0.1.0:** AAT v0.1.0 has not been released yet, and the release archives, Homebrew cask, and Docker image on this page are published with it. Until it ships, [build from source](#from-source): the other methods either do not exist yet or install an earlier version whose commands differ from these docs.
-
 AAT is two binaries:
 
 - `aat` — the CLI, the web UI, and the MCP server.

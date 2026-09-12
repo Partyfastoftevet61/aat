@@ -291,3 +291,40 @@ tracked, and a tracked `server/web/dist/placeholder.txt` keeps the embed compili
   placeholder had to be force-added. The CI artifact paths now name `dist/app` too.
 
 **Open questions:** none.
+
+## 2026-09-12 — C4: release prep
+
+**What:**
+- The CHANGELOG has a `[0.1.0]` section and history back to 0.0.1.
+- The release workflow publishes the tag's CHANGELOG section as the release notes.
+- `go.mod` retracts v0.0.1–v0.0.4.
+- The pre-release notes are gone from the README, the install, home, and CI/CD pages, the Petstore README,
+  and the roadmap.
+- `plans.md` says what happens when a plan lists one paired cleanup node more than once.
+
+**Decisions:**
+- **0.1.0 is measured against v0.0.4.** *Unreleased* started at M0, so nineteen feature commits from March to
+  June had no entries. Among them:
+  - multi-environment files
+  - overlay auth, headers, values, and `expectFailure`
+  - mutations
+  - checkpoints
+  - Ctrl+C handling
+  - MCP over HTTP
+  - the renames of `--env` to `--env-config` and `--env-overlay` to `--overlay`
+
+  They are now listed, and the renames are marked BREAKING, since v0.0.4 had `--env FILE` and `--env-overlay`.
+  A Fixed entry for a bug introduced and fixed after v0.0.4 either became part of its feature's Added entry
+  (such as `--env-config` ignoring `defaultEnvironment`, or overlay values in the resolution record) or was
+  dropped (such as the shop kit descriptions, the inverted child-environment override order, or the
+  `--verbose-auth` token). `git grep` at v0.0.4 decided which features existed then.
+- **Release notes come from CHANGELOG.md.** goreleaser's generated changelog would publish every commit
+  subject; its exclude filters match prefixes this repository never uses. The workflow extracts the section
+  with awk and fails when the tag has none. The goreleaser footer still adds the install lines.
+- **Retract rather than re-tag.** The v0.0.x tags point at rewritten commits, and proxy.golang.org holds the
+  originals. A retraction in v0.1.0's `go.mod` hides them from `@latest` and `go list -m -versions`.
+- **Backfill from the tags.** 0.0.1 is summarized by area from its 150 commits. 0.0.2–0.0.4 come from their
+  ranges and the local notes file for v0.0.2..v0.0.4, which is deleted. The 0.0.1 link points at the tree,
+  since no GitHub releases exist.
+
+**Open questions:** the `[0.1.0]` date is 2026-09-12; change it if the tag lands on another day.

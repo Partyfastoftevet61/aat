@@ -299,8 +299,6 @@ jobs:
 
 Release archives are named `aat_<os>_<arch>.tar.gz` (`aat_linux_arm64`, `aat_darwin_arm64`, and so on; Windows ships as `.zip`), so the URL above always fetches the latest release for the runner's platform. Pin a specific version by replacing `latest/download` with `download/vX.Y.Z` when you want reproducible pipelines.
 
-> **Note:** version-less archive names start with v0.1.0, which has not shipped yet, so this URL does not resolve until then. Until then, build the CLI in the job instead: check out AAT, set up Go 1.25+ (`actions/setup-go`), and run `make cli`, which needs no Node because CI does not use the web UI. See [Install](install.md).
-
 Other CI systems follow the same pattern: install the binary, validate, run tests with `--json`, and upload the archive directory as an artifact. The exit codes and JSON output are CI-system-agnostic.
 
 ## Environment Management
