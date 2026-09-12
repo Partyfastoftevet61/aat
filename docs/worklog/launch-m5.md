@@ -328,3 +328,17 @@ tracked, and a tracked `server/web/dist/placeholder.txt` keeps the embed compili
   since no GitHub releases exist.
 
 **Open questions:** the `[0.1.0]` date is 2026-09-12; change it if the tag lands on another day.
+
+## 2026-09-12 — C5: demo assets at 0.1.0
+
+**What:** `make demos VERSION=0.1.0`, run from a clean tree after C4, regenerated the two GIFs and three
+screenshots in `docs/user/assets`:
+- The run and batch pages show `0.1.0` as the tool version.
+- The run timeline no longer shows `0 / 0` on steps without assertions.
+- The recorded runs passed: `full-lifecycle` with 15 of 15 steps, and the layer-group batch with 27 of 63 runs
+  and 36 skipped as duplicates.
+
+**Decisions:** none. `demos/out/social-preview.png` is not committed; the author uploads it as the repository's
+social preview.
+
+**Open questions:** none.
