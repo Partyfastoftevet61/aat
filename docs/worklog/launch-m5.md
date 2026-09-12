@@ -162,3 +162,36 @@ A table test runs the real CLI in child processes to check the codes.
 
 **Open questions:**
 - MCP `list_archives` and `list_recent_failures` still list only `run-*` directories. Deferred to M7.
+
+## 2026-09-11 — B1: placeholder escaping and the template env fallback
+
+**What:** Two changes to request templates:
+- Every substituted value is escaped for where it lands (P13).
+- The dead fallback that let a template read environment `values:` directly is gone (F2).
+
+**Decisions:**
+- **Escape by position, read from the template's own text.** `substitutePlaceholders` expands blocks, then
+  walks the literal text between placeholders:
+  - A path value is URL-encoded as a segment until the first literal `?`, and as a query component after it.
+  - In a JSON body, the scanner tracks quote and backslash state. A value inside a string literal is
+    JSON-escaped; a value outside one is written as a JSON value.
+  - Form bodies are URL-encoded. Headers and other bodies are text.
+
+  Only literal template text moves the scanner. Every inserted value is balanced for its position, so it
+  cannot move the scanner.
+- **A body's context comes from its Content-Type.** A type containing `json` means JSON,
+  `x-www-form-urlencoded` means form, and anything else means text. With no Content-Type, a body that starts
+  with `{` or `[` counts as JSON.
+- **Strings outside JSON quotes still go in as they are.** A template may build JSON text from a value, and
+  quoting the string would break it. Every other value outside quotes is written as JSON: `null`, plain
+  digits, arrays, and objects.
+- **Iteration values are escaped too.** An iteration block leaves a placeholder for each element value, so the
+  same pass escapes them.
+- **`JoinURL` keeps percent-encoding.** It joins the escaped paths and sets `RawPath`, so `%2F` stays inside
+  its segment on the wire. The archive records the URL through the same function.
+- **The template env fallback is removed, not wired up.** `adapter.EnvironmentConfig.Values` was always
+  empty in production. Environment values already reach requests through input defaults
+  (`default: "{{env.KEY}}"`), which keep them visible to validation, archives, and MCP. A second path would
+  bypass all three.
+
+**Open questions:** none.

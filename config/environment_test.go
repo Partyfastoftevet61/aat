@@ -501,7 +501,6 @@ func TestBuildAPIConfig_OAuth2(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "https://api.example.com", cfg.BaseURL)
 	assert.Equal(t, "Bearer built-token", cfg.Headers["Authorization"])
-	assert.NotNil(t, cfg.Values)
 }
 
 func TestBuildAPIConfig_APIKey(t *testing.T) {
@@ -1232,7 +1231,6 @@ func TestBuildAPIConfigFromToken_Bearer(t *testing.T) {
 	assert.Equal(t, "Bearer my-token", cfg.Headers["Authorization"])
 	assert.Equal(t, "env-val", cfg.Headers["X-Env"])
 	assert.Equal(t, "plan-val", cfg.Headers["X-Plan"])
-	assert.NotNil(t, cfg.Values)
 }
 
 func TestBuildAPIConfigFromToken_APIKey(t *testing.T) {

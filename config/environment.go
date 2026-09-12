@@ -163,7 +163,6 @@ func (env *Environment) resolveOverride(ov HostOverride, headers map[string]stri
 		APIConfig: APIConfig{
 			BaseURL: baseURL,
 			Headers: headers,
-			Values:  make(map[string]string),
 		},
 		PathRewrite:   ov.PathRewrite,
 		Values:        ov.Values,
@@ -332,7 +331,6 @@ type MultiEnvironmentFile struct {
 type APIConfig struct {
 	BaseURL string
 	Headers map[string]string
-	Values  map[string]string
 }
 
 // BuildAPIConfig authenticates and returns a flat APIConfig ready for use.
@@ -382,6 +380,5 @@ func (env *Environment) BuildAPIConfigFromToken(token *OAuthToken, auth AuthConf
 	return &APIConfig{
 		BaseURL: env.APIBaseURL,
 		Headers: headers,
-		Values:  make(map[string]string),
 	}
 }

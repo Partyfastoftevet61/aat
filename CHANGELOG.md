@@ -86,6 +86,17 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- **BREAKING:** request templates escape each substituted value for where it lands. Values used to go in
+  raw.
+  - **Path:** a value is URL-encoded as one path segment before the first `?`, and as a query component after
+    it. `a/b` stays one segment, and `&` or `#` in a value can no longer add a parameter or cut the URL.
+  - **JSON body:** a value inside quotes is JSON-escaped, so a quote, backslash, or newline in a field such
+    as `notes` no longer breaks the body. A value outside quotes is written as JSON: arrays and objects as
+    JSON, numbers in plain digits, and `null`.
+  - **Form body:** values are URL-encoded.
+  - **Headers and other bodies:** unchanged.
+
+  To send a malformed payload on purpose, use a step's `rawBody`.
 - **BREAKING:** JSON keys follow the convention of the document they are in:
   - The `aat run batch --json` summary's `batchId` is now `batch_id`. It is left out when the batch stopped
     before it started.
@@ -227,6 +238,11 @@ the graph and plan formats may still change before 1.0.
   configurations, an empty case-study stub).
 
 ### Fixed
+- A request path value with an encoded `/` (`%2F`) keeps it inside its segment; the executor used to decode it
+  into a real `/`. The archive records the URL as the executor joins it, instead of concatenating the base URL
+  and the path.
+- A number of a million or more fills a placeholder in plain digits instead of exponent form (`1.2e+06`), and a
+  map fills one as JSON instead of Go syntax (`map[k:v]`).
 - Archive references stay inside the archive directory:
   - `aat import --name` must be a single directory name. A name that starts with `run-` or `batch-` gets the
     `!` prefix, as a name derived from the file does. `--name ../x` used to import outside the archive

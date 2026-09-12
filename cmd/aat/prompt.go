@@ -389,7 +389,6 @@ func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *prompt
 	envConfig := &adapter.EnvironmentConfig{
 		BaseURL: apiConfig.BaseURL,
 		Headers: apiConfig.Headers,
-		Values:  apiConfig.Values,
 	}
 	router := engine.NewExecutorRouter(executor, envConfig)
 

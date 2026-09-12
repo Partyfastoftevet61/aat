@@ -68,17 +68,32 @@ request:
     }
 ```
 
-The body is a string template with `{{placeholder}}` substitution. Strings are inserted as-is, arrays as JSON, and other values with Go's `%v` formatting — string values in JSON should include surrounding quotes in the template; numeric values should not.
+The body is a string template with `{{placeholder}}` substitution. In a JSON body, put quotes around a placeholder for a string value, and none around a number, a boolean, or an array or object. AAT escapes each value for where it lands; see [Escaping](#escaping).
 
 ## Placeholders
 
 Templates use `{{key}}` placeholders that are resolved at execution time. Whitespace inside braces is tolerated: `{{ key }}` works the same as `{{key}}`.
 
+### Escaping
+
+Each value is escaped for the place it fills, so a value cannot change the shape of the request:
+
+| Where the placeholder is | What happens to the value |
+|--------------------------|---------------------------|
+| Path, before the first `?` | URL-encoded as one path segment: `a/b c` becomes `a%2Fb%20c` |
+| Path, after the first `?` | URL-encoded as a query component: `a&b` becomes `a%26b` |
+| JSON body, inside quotes | JSON-escaped, so a quote, backslash, or newline stays inside the string |
+| JSON body, outside quotes | Written as JSON: numbers in plain digits, arrays and objects as JSON, a null value as `null`. A string goes in as it is |
+| Form body (`application/x-www-form-urlencoded`) | URL-encoded |
+| Header, or any other body | Inserted as text |
+
+A body counts as JSON when its `Content-Type` contains `json`, or when it has no `Content-Type` and starts with `{` or `[`. Values that iteration blocks insert are escaped the same way. To send a malformed payload on purpose, give the step a `rawBody`, which replaces the rendered body.
+
 ### Resolution
 
 A placeholder is filled from the **step inputs** — the values resolved for the node's inputs from the plan, graph defaults, layers, and upstream steps. The key is the input name.
 
-Environment `values:` from env.yaml do not fill template placeholders (a known gap). They are available through `{{env.KEY}}` expressions in plan and graph values instead, so declare an input for the value and give it a default:
+A template reads only the step inputs. To use a value from env.yaml `values:`, declare an input for it and give the input a default with an `{{env.KEY}}` expression:
 
 ```yaml
 # graph.yaml — the node's input
@@ -438,7 +453,7 @@ response:
         price: "pricing.retail"
 ```
 
-Query parameters are part of the path string. The `fields` section transforms each array element so downstream selection strategies can reference `productId`, `name`, etc. by name.
+Query parameters are part of the path string, and AAT URL-encodes each value it substitutes after the `?`. The `fields` section transforms each array element so downstream selection strategies can reference `productId`, `name`, etc. by name.
 
 ### POST with JSON Body
 

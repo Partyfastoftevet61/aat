@@ -117,7 +117,6 @@ func (s *Server) handleExecutePlan(ctx context.Context, req mcp.CallToolRequest)
 	envConfig := &adapter.EnvironmentConfig{
 		BaseURL: apiConfig.BaseURL,
 		Headers: apiConfig.Headers,
-		Values:  apiConfig.Values,
 	}
 	router := engine.NewExecutorRouter(executor, envConfig)
 

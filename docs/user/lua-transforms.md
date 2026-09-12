@@ -107,10 +107,7 @@ Converting a table back follows these rules:
 - A table with any string key becomes an object; its integer keys become strings.
 - A Lua function or other non-data value becomes `null`.
 
-Every output of a template that has a transform makes this round trip, including outputs the script never touches. Two consequences for numbers:
-
-- Integers above 2^53 lose precision: `9007199254740993` comes back as `9007199254740992`. Keep large numeric IDs out of templates with transforms.
-- A whole number of 1,000,000 or more that later fills a `{{placeholder}}` in another template renders in exponent form: an extracted `1234567` is substituted as `1.234567e+06`. The archive, `--dump-state`, and assertions still show `1234567`. Without a transform, extracted numbers keep their original text. If a downstream template needs the digits, convert in the script: `outputs.total = string.format("%d", outputs.total)` (the output then becomes a string).
+Every output of a template that has a transform makes this round trip, including outputs the script never touches. Integers above 2^53 lose precision: `9007199254740993` comes back as `9007199254740992`, so keep large numeric IDs out of templates with transforms. A whole number that fills a later `{{placeholder}}` is written in plain digits, however large.
 
 ## Worked Example: Joining Cart Lines
 

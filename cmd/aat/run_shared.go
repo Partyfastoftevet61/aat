@@ -908,7 +908,6 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 	envConfig := &adapter.EnvironmentConfig{
 		BaseURL: apiConfig.BaseURL,
 		Headers: apiConfig.Headers,
-		Values:  apiConfig.Values,
 	}
 	router := engine.NewExecutorRouter(executor, envConfig)
 

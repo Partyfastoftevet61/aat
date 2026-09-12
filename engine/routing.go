@@ -92,7 +92,6 @@ func (r *ExecutorRouter) AddResolvedOverride(ov config.ResolvedOverride) {
 		cfg := &adapter.EnvironmentConfig{
 			BaseURL: ov.APIConfig.BaseURL,
 			Headers: ov.APIConfig.Headers,
-			Values:  ov.APIConfig.Values,
 		}
 		var rewrite *adapter.PathRewrite
 		if ov.PathRewrite != nil {
