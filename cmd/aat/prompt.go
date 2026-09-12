@@ -98,23 +98,15 @@ var promptCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		envName := resolveEnvName(cmd)
-
-		if envName == "" {
-			overlayEnv, overlaySrc, err := resolveOverlayEnvName("", noAutoOverrides)
-			if err != nil {
-				return fmt.Errorf("resolving overlay environment: %w", err)
-			}
-			if overlayEnv != "" {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "aat: using environment %q from overlay %s\n", overlayEnv, overlaySrc)
-				envName = overlayEnv
-			}
+		envName, err := selectEnvName(cmd, resolved, "", noAutoOverrides)
+		if err != nil {
+			return err
 		}
 
 		pa := &promptArgs{
 			Prompt:            promptText,
 			EnvPath:           resolved.EnvPath,
-			EnvName:           resolveEnvNameWithDefault(envName, resolved.DefaultEnvName),
+			EnvName:           envName,
 			GraphPath:         resolved.GraphPath,
 			TemplatesPath:     resolved.TemplatesPath,
 			DomainPath:        resolved.DomainPath,

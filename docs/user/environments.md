@@ -235,8 +235,10 @@ When using a multi-environment file, the environment name is resolved from:
 1. **`--env` flag** (highest priority)
 2. **`AAT_ENV_NAME` environment variable**
 3. **`environment:` in an overlay file** — an explicit `--overlay` file first, then an auto-discovered `.aat-overrides.yaml` (see [Selecting the Environment](#selecting-the-environment))
-4. **`defaultEnvironment` in the project manifest**
+4. **`defaultEnvironment` in the project manifest**, for the environment file the manifest names (not for one given with `--env-config`)
 5. Error listing available environments
+
+A single-environment file has no names to choose from. `--env` is an error for it, and the other sources are ignored, so `AAT_ENV_NAME` or a manifest's `defaultEnvironment` does not stop `--env-config` from loading one.
 
 ### Listing Environments
 
@@ -689,7 +691,7 @@ Environment-name priority (highest to lowest):
 2. `AAT_ENV_NAME` environment variable
 3. `--overlay` file `environment:` — explicit overlay
 4. `.aat-overrides.yaml` `environment:` — auto-discovered overlay
-5. `defaultEnvironment` from the project manifest
+5. `defaultEnvironment` from the project manifest, when the run uses the environment file the manifest names
 
 Explicit CLI choices always win, so the overlay's `environment:` behaves as a smart default — it kicks in when no env is specified, and is silently deferred when one is. Combine with `--no-auto-overrides` to skip auto-discovery entirely.
 

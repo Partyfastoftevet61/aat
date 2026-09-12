@@ -80,3 +80,27 @@ A table test runs the real CLI in child processes to check the codes.
   one case to the next.
 
 **Open questions:** none.
+
+## 2026-09-11 — A2: batch filter and environment selection
+
+**What:** Two changes to how runs pick their input:
+- `aat run batch <filter>` compares whole path segments, and a batch that finds no plans fails (F12, F31).
+- One helper chooses the environment for `run plan`, `run batch`, and `prompt`. The manifest's default applies
+  only to the manifest's own environment file (F33).
+
+**Decisions:**
+- **A filter names a directory or a plan.** `orders` selects `orders.yaml` and every plan under `orders/`.
+  `orders/refund` selects one plan, with or without `.yaml`. Names are compared after `filepath.Clean` and
+  `ToSlash`, so `orders/`, `./orders`, and Windows separators behave alike. A path relative to the working
+  directory, such as `plans/smoke.yaml`, is still read as a plan name. It now fails with the plan directories
+  in the message instead of silently selecting nothing.
+- **No plans is an error, filtered or not.** In CI, an empty plan directory means a misconfigured job, not a
+  pass. The check moved into `discoverBatchPlans`, so `batchCommand` no longer has a zero-plan path that
+  passes.
+- **The manifest's default belongs to the manifest's environment file.** An `--env-config` file holds a
+  different set of environments, so it does not inherit a name it may not define.
+- **A single-environment file ignores names it was not given explicitly.** It has no names to choose from. It
+  ignores `AAT_ENV_NAME`, an overlay's `environment:`, and the manifest default; only an explicit `--env` is
+  an error. `AAT_ENV_NAME` counts as a default here because it is usually set for a whole CI job.
+
+**Open questions:** none.

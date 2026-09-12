@@ -56,21 +56,24 @@ Each step line shows the step index, the step ID, the HTTP status code, and the 
 aat run batch [directory]
 ```
 
-Without arguments, AAT discovers all `.yaml` and `.yml` files in the plan directories declared in your manifest. With a directory argument, it scopes discovery to that subdirectory.
+Without arguments, AAT runs every `.yaml` and `.yml` plan in the plan directories declared in your manifest. With an argument, it runs some of them.
 
-### Subdirectory Filtering
+### Selecting Plans
 
-A relative path filters within the configured plan directories. An absolute path is used as a standalone directory.
+A relative argument names plans within the configured plan directories: a directory selects every plan under it, and a plan name selects that plan, with or without its extension. Names are compared a whole path segment at a time, so `orders` selects `orders.yaml` and every plan under `orders/`, but not `orders-legacy/` or `orders-archive.yaml`. An absolute path is used as a standalone plan directory.
 
 ```
 # Run only plans under plans/orders/
-aat run batch orders/
+aat run batch orders
+
+# Run one plan
+aat run batch orders/refund
 
 # Run plans from an absolute path
 aat run batch /tmp/smoke-tests/
 ```
 
-The relative filter matches the start of each plan's path within the plan directories, so `aat run batch orders` also picks up `orders-legacy/` and `orders.yaml`. End the filter with `/` to select only the subdirectory.
+A batch that finds no plans, because the filter matches none or the directories hold none, is an error (exit code `2`) rather than an empty pass, so a mistyped filter fails the job.
 
 ### Parallel Execution
 
@@ -106,7 +109,7 @@ These flags apply to both `run plan` and `run batch`.
 |------|------|---------|-------------|
 | `--manifest` | path | auto-discovered | Explicit path to `aat-project.yaml` |
 | `--env-config` | path | from manifest | Environment config file |
-| `--env` | string | `AAT_ENV_NAME`, else manifest | Environment name for multi-environment files (see [Environments: Environment Name Resolution](environments.md#environment-name-resolution)) |
+| `--env` | string | `AAT_ENV_NAME`, else an overlay's `environment:`, else the manifest's `defaultEnvironment` | Environment name for multi-environment files (see [Environments: Environment Name Resolution](environments.md#environment-name-resolution)) |
 | `--graph` | path | from manifest | API graph file |
 | `--templates` | path | from manifest | Templates directory |
 | `--domain` | path | from manifest | Domain knowledge file |
@@ -253,7 +256,7 @@ For batches, the exit code reflects the worst outcome across all plans: any abor
 
 By command:
 
-- `aat run plan`, `aat run batch`, and `aat prompt` exit with the outcome of the run. With `--json`, an error that stops `aat run plan` or `aat run batch` before a plan runs still prints a JSON document, with `"outcome": "error"` and the reason in `error`.
+- `aat run plan`, `aat run batch`, and `aat prompt` exit with the outcome of the run. With `--json`, an error that stops `aat run plan` or `aat run batch` before a plan runs still prints a JSON document, with `"outcome": "error"` and the reason in `error`. `aat run batch` exits `2` when it finds no plans to run.
 - `aat validate` and its subcommands exit `1` when validation finds a problem, including a manifest that fails to load, and `2` when there is nothing to validate: no manifest found, or no `--graph` for `aat validate graph`, `plan`, or `workflow`.
 - `aat env list` and `aat plan list` exit `0` when they can list, even when an entry fails to load (they print its error), and `2` when they cannot.
 - `aat mcp serve` and `aat web` exit `2` with the reason on stderr when they cannot start.

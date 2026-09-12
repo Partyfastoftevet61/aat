@@ -527,13 +527,37 @@ func resolveEnvName(cmd *cobra.Command) string {
 	return os.Getenv("AAT_ENV_NAME")
 }
 
-// resolveEnvNameWithDefault returns envName if non-empty, otherwise falls back to
-// the manifest's defaultEnvironment.
-func resolveEnvNameWithDefault(envName, manifestDefault string) string {
-	if envName != "" {
-		return envName
+// selectEnvName chooses the environment of a run, batch, or prompt: --env, then
+// AAT_ENV_NAME, then the environment: of the --overlay file or of
+// .aat-overrides.yaml, then the manifest's defaultEnvironment. The manifest's
+// default applies only to the environment file the manifest names, not to one
+// given with --env-config. A single-environment file has no environments to
+// choose from, so only an explicit --env reaches it (and is rejected when the
+// file loads); the other sources are defaults, and it ignores them.
+func selectEnvName(cmd *cobra.Command, resolved *config.ProjectPaths, overlayPath string, noAutoOverrides bool) (string, error) {
+	if cmd.Flags().Changed("env") {
+		return resolveEnvName(cmd), nil
 	}
-	return manifestDefault
+	if resolved.EnvPath != "" {
+		if multi, err := config.IsMultiEnvFile(resolved.EnvPath); err == nil && !multi {
+			return "", nil
+		}
+	}
+	if envName := os.Getenv("AAT_ENV_NAME"); envName != "" {
+		return envName, nil
+	}
+	overlayEnv, overlaySrc, err := resolveOverlayEnvName(overlayPath, noAutoOverrides)
+	if err != nil {
+		return "", fmt.Errorf("resolving overlay environment: %w", err)
+	}
+	if overlayEnv != "" {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "aat: using environment %q from overlay %s\n", overlayEnv, overlaySrc)
+		return overlayEnv, nil
+	}
+	if cmd.Flags().Changed("env-config") {
+		return "", nil
+	}
+	return resolved.DefaultEnvName, nil
 }
 
 // resolveOverlayEnvName extracts an environment name from overlay files. Explicit

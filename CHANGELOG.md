@@ -86,6 +86,12 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- **BREAKING:** `aat run batch <filter>` selects plans by whole path segments. `orders` selects `orders.yaml`
+  and every plan under `orders/`, and `orders/refund` selects one plan. The filter matched the start of each
+  plan's path, so `smoke` also ran `smoke-eu.yaml`.
+- **BREAKING:** a batch that finds no plans exits `2`, and the message names the filter and the plan
+  directories. It used to pass with nothing run, so a mistyped filter passed in CI. An absolute path that does
+  not exist gets the same error.
 - **BREAKING:** exit codes follow one rule on every command:
   - `0` passed.
   - `1` a test or validation ran and found a failure.
@@ -211,6 +217,11 @@ the graph and plan formats may still change before 1.0.
   configurations, an empty case-study stub).
 
 ### Fixed
+- An environment file given with `--env-config` no longer takes the manifest's `defaultEnvironment`. A
+  single-environment file therefore loads in a project whose manifest sets one; it failed with "--env is not
+  applicable". A single-environment file also ignores `AAT_ENV_NAME` and an overlay's `environment:`, and only
+  an explicit `--env` is an error for it. `aat run plan`, `aat run batch`, and `aat prompt` now choose the
+  environment in one place.
 - An unknown subcommand is an error (exit `2`), with a suggestion when the name is close. This covers
   `aat run bogus` and unknown subcommands of `aat plan`, `aat env`, `aat mcp`, and `aat docs`. They printed
   help and exited `0`, so a mistyped subcommand passed in CI. Commands that take no arguments, such as

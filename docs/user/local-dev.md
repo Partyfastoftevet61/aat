@@ -191,7 +191,7 @@ When a node matches more than one entry, two rules decide which applies:
 
 So a personal `match: "*"` in `.aat-overrides.yaml` really does redirect everything that `env.yaml` only routed by glob, while an exact-name entry in `env.yaml` still pins that one node unless you override it by exact name too. The same rules apply to `values:` and `expectFailure:` entries (see [Environments: Input-Value and Expected-Failure Overrides](environments.md#input-value-and-expected-failure-overrides)).
 
-Environment *selection* has its own chain: `--env` flag, then `AAT_ENV_NAME`, then `environment:` from the `--overlay` file, then `environment:` from `.aat-overrides.yaml`, then the manifest's `defaultEnvironment`.
+Environment *selection* has its own chain: `--env` flag, then `AAT_ENV_NAME`, then `environment:` from the `--overlay` file, then `environment:` from `.aat-overrides.yaml`, then the manifest's `defaultEnvironment` (only for the environment file the manifest names, not one given with `--env-config`). A single-environment file ignores all of these except `--env`.
 
 Transaction-level auth follows a separate chain (later entries replace earlier ones):
 
