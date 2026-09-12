@@ -251,3 +251,26 @@ validation (F9).
   panics. Validation now rejects such a value, and if one gets through anyway, the comparison no longer panics.
 
 **Open questions:** none.
+
+## 2026-09-11 — C2: recipe overrides and overlay values
+
+**What:** Two changes to recipe overrides (F14):
+- A value override on a wired input replaces the wiring.
+- An override for a step that is not in the composed plan is an error.
+
+Override `values:` from an environment, the dotfile, or an overlay now replace the input's resolution record,
+with the source `override_value` (F30).
+
+**Decisions:**
+- **Only in `Reconstitute`.** `applyTargetedResponse` is shared with the LLM path, where skipping wired inputs
+  and unknown steps keeps the model from shadowing auto-wired edges. A recipe is written by a person, so a key
+  that does nothing is a typo. `checkOverrideSteps` runs before the overrides apply, and `replaceWiring` clears
+  `from`, `select`, `fromSelection`, `fromInput`, and `fromResolved` after. Post-processing then recomputes
+  `dependsOn` from the remaining references. The error reaches every caller of `Reconstitute`: run, batch,
+  validate, and MCP.
+- **Replace the record, don't add one.** The archive shows one resolution per input. The override's record
+  takes the place of the one for the value it overwrote, so the decision trail matches the request.
+- **Overlay values stay literal.** Evaluating `{{...}}` in overlay values and applying the graph type would
+  change what negative-test overlays send today. Both move to M9.
+
+**Open questions:** none.

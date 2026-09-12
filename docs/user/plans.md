@@ -122,7 +122,7 @@ overrides:
     confirmOrder.shippingAddress: "123 Main St"
 ```
 
-Override values replace a literal, pool, or injected value that the workflow template or graph provides for that input. They are applied after composition, so they take effect on the final composed plan. An override on an input that the template wires with `from`, `fromSelection`, or `fromInput` (including a resolved `AUTOWIRE`) currently has no effect: the reference still wins, and nothing reports it. To send a literal there, change the workflow template. A key whose step ID is not in the composed plan is ignored the same way, so match keys to the composed plan's step IDs — addon steps carry an `inc0_`-style prefix (see [Workflows: Step ID Prefixing](workflows.md#step-id-prefixing)).
+Override values replace whatever the workflow template or graph provides for that input: a literal, a pool, an injected value, or a reference. They are applied after composition, so they take effect on the final composed plan. An override on an input that the template wires with `from`, `fromSelection`, or `fromInput` (including a resolved `AUTOWIRE`) removes that wiring, so the step sends the override's value. Keys name the composed plan's step IDs, and addon steps carry an `inc0_`-style prefix (see [Workflows: Step ID Prefixing](workflows.md#step-id-prefixing)). An override (value, selection, or assertion) for a step that is not in the composed plan is an error that lists the plan's steps.
 
 ### Selection Overrides
 
@@ -999,7 +999,7 @@ selection:
 # Optional — overrides applied after composition
 overrides:
   values:                            # stepId.inputName → literal value
-    stepId.inputName: value          #   no effect on an input the template wires with from
+    stepId.inputName: value          #   replaces the input's wiring; stepId must be a step of the composed plan
   selections:                        # stepId.selectionName → strategy override
     stepId.selectionName:
       strategy: min                  # first, last, index, random, min, max, match

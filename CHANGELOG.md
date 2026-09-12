@@ -86,6 +86,10 @@ the graph and plan formats may still change before 1.0.
 - Repository scaffolding: issue and pull request templates, `SECURITY.md`, and `ROADMAP.md`.
 
 ### Changed
+- **BREAKING:** a recipe's `overrides` must name steps of the composed plan. An override for any other step ID,
+  such as an addon step without its `inc0_` prefix, used to be ignored; now the recipe fails to load, and the
+  error lists the plan's steps. A value override on an input that the workflow template wires with `from`,
+  `fromSelection`, or `fromInput` now replaces that wiring and sends the override. It used to have no effect.
 - **BREAKING:** Lua transforms can no longer load code or reach the host process. The `package` library is gone,
   and so are the base library's `dofile`, `loadfile`, `load`, `loadstring`, `require`, `module`, `getfenv`,
   `setfenv`, `collectgarbage`, and `newproxy`. An integration kit's templates run on its users' machines, so a
@@ -247,6 +251,9 @@ the graph and plan formats may still change before 1.0.
   configurations, an empty case-study stub).
 
 ### Fixed
+- An override `values:` entry (from `env.yaml`, `.aat-overrides.yaml`, or `--overlay`) is recorded in the
+  archive as the input's resolution, with the source `override_value`. The decision trail used to show the plan
+  value that the override replaced.
 - An `errorDetection` `equals` rule with a number (`value: 0`) matches the JSON number. The YAML integer and the
   JSON number used to compare as different types, so the rule never matched. A map or list `value` is now a
   validation error; at run time it crashed `aat run` and the MCP server.
