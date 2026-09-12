@@ -116,7 +116,7 @@ make build
 | Target | Builds | Needs Node.js |
 |--------|--------|---------------|
 | `make build` | The frontend (`npm install && npm run build` in `server/web`), then `./aat` and `./aat-sandbox` | yes |
-| `make cli` | `./aat` only, embedding whatever `server/web/dist` already holds | no |
+| `make cli` | `./aat` only, embedding whatever `server/web/dist/app` already holds | no |
 | `make sandbox` | `./aat-sandbox` only | no |
 
 All three inject the version (`git describe`), commit, and build date. `make cli` from a fresh clone has no frontend bundle, so `aat web` exits with code `2` as described under [`go install`](#go-install); run `make build` once and later `make cli` builds keep the UI.

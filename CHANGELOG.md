@@ -251,6 +251,9 @@ the graph and plan formats may still change before 1.0.
   configurations, an empty case-study stub).
 
 ### Fixed
+- Building the web UI (`make frontend`, `make build`) no longer rewrites a tracked file, and `make clean` no
+  longer breaks `go build` by deleting one. Vite writes the bundle to `server/web/dist/app`, which git ignores,
+  and the embed is satisfied by the tracked `server/web/dist/placeholder.txt`.
 - An override `values:` entry (from `env.yaml`, `.aat-overrides.yaml`, or `--overlay`) is recorded in the
   archive as the input's resolution, with the source `override_value`. The decision trail used to show the plan
   value that the override replaced.
@@ -407,7 +410,6 @@ the graph and plan formats may still change before 1.0.
 - Visualizers receive `--color-text-secondary`, `--color-danger`, and `--color-warning` as documented; the
   web UI sent variable names it does not define.
 - "executing plan (N steps)" counts the mutation and verification steps the progress output numbers.
-- `make clean` no longer deletes the tracked `server/web/dist/index.html`, which broke `go build`.
 - `--verbose-auth` no longer prints the full access token in the logged token response.
 - `aat validate`, `aat generate --oas`, and the MCP OpenAPI operation details include parameters
   declared on an OpenAPI path item (such as a shared `{cartId}`), not only those on the operation.

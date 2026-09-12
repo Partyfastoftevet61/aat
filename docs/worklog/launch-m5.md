@@ -274,3 +274,20 @@ with the source `override_value` (F30).
   change what negative-test overlays send today. Both move to M9.
 
 **Open questions:** none.
+
+## 2026-09-11 — C3: frontend build output
+
+**What:** Vite builds into `server/web/dist/app`, which git ignores. `server/web/dist/index.html` is no longer
+tracked, and a tracked `server/web/dist/placeholder.txt` keeps the embed compiling (F21).
+
+**Decisions:**
+- **A subdirectory, not a tracked build file.** Every frontend build rewrote the tracked `index.html`, which
+  holds hashed asset names, so `make build` left the tree dirty and a stray commit could ship a stale entry
+  point. `//go:embed web/dist` needs at least one file, and Vite's `emptyOutDir` deletes every file in its
+  output directory. Building into `dist/app` leaves the placeholder alone.
+- **A `.txt` placeholder.** go:embed skips files whose names start with `.` or `_`, so a `.gitkeep` would not
+  satisfy the pattern.
+- **Anchor `/dist/`.** The unanchored goreleaser `dist/` rule also ignored `server/web/dist`, so the old
+  placeholder had to be force-added. The CI artifact paths now name `dist/app` too.
+
+**Open questions:** none.
