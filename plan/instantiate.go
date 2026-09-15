@@ -476,11 +476,56 @@ func cloneClosureWithSuffix(closure []Step, suffix string) []Step {
 	return clones
 }
 
+// rewriteExprValueRefs returns v with the {{step.output}} references in its
+// strings renamed as idMap maps old step IDs to new ones, at any depth, and
+// whether any changed. A list or map with a change is copied, so a value other
+// steps share is left as it was.
+func rewriteExprValueRefs(v any, idMap map[string]string) (any, bool) {
+	switch t := v.(type) {
+	case string:
+		rewritten := RewriteExprRefs(t, idMap)
+		return rewritten, rewritten != t
+	case []any:
+		var out []any
+		for i, item := range t {
+			rewritten, changed := rewriteExprValueRefs(item, idMap)
+			if !changed {
+				continue
+			}
+			if out == nil {
+				out = slices.Clone(t)
+			}
+			out[i] = rewritten
+		}
+		if out == nil {
+			return v, false
+		}
+		return out, true
+	case map[string]any:
+		var out map[string]any
+		for key, item := range t {
+			rewritten, changed := rewriteExprValueRefs(item, idMap)
+			if !changed {
+				continue
+			}
+			if out == nil {
+				out = maps.Clone(t)
+			}
+			out[key] = rewritten
+		}
+		if out == nil {
+			return v, false
+		}
+		return out, true
+	}
+	return v, false
+}
+
 // rewriteStepRefs mutates s in place, replacing any step-id reference whose
 // old id appears as a key in idMap. Covers: DependsOn entries, Values' From
 // and FromInput (which use "stepId.field" format), Selections' From, and the
-// {{step.output}} expressions in selection filters, assertions, and repeat
-// conditions. FromSelection (selection-name local) and FromResolved
+// {{step.output}} expressions in values, pools, selection filters, assertions,
+// and repeat conditions. FromSelection (selection-name local) and FromResolved
 // (intra-step) are not step-id references and are left untouched.
 func rewriteStepRefs(s *Step, idMap map[string]string) {
 	for i, dep := range s.DependsOn {
@@ -501,6 +546,14 @@ func rewriteStepRefs(s *Step, idMap map[string]string) {
 				sv.FromInput = rewritten
 				changed = true
 			}
+		}
+		if rewritten, ok := rewriteExprValueRefs(sv.Default, idMap); ok {
+			sv.Default = rewritten
+			changed = true
+		}
+		if rewritten, ok := rewriteExprValueRefs(sv.Pool, idMap); ok {
+			sv.Pool = rewritten.([]any)
+			changed = true
 		}
 		if sv.Select != nil {
 			if filter := RewriteExprRefs(sv.Select.Filter, idMap); filter != sv.Select.Filter {

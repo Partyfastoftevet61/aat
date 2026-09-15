@@ -241,7 +241,7 @@ The syntax is `stepId.inputName`. The referenced step joins `dependsOn`, and the
 ## Dynamic Expressions
 
 Expressions use `{{...}}` delimiters and are evaluated at execution time. Where they work:
-- step values, pools, graph defaults, layers, recipe overrides, and slot `inject` values
+- step values, pools, graph defaults, layers, recipe overrides, and slot `inject` values; a step value can read an earlier step's output as `{{step.output}}`, often with an offset (see [Reference Arithmetic](#reference-arithmetic))
 - a `fieldEquals` `value` and a quoted `predicate` string in an assertion, and a quoted string in `repeat.until`, which can name the step's inputs and read an earlier step's output as `{{step.output}}` (see [Plans: Assertions](plans.md))
 - a quoted string in a selection `filter`, which can read an earlier step's output the same way, as in `filter: 'objectId == "{{create.customerId}}"'`
 
@@ -293,13 +293,20 @@ The unit is `seconds`, `minutes`, `hours`, or `days`, or the singular; a day is 
 
 ### Reference Arithmetic
 
+An offset changes a value the step can already read: another input of the step, declared earlier on the node, or an earlier step's output.
+
 ```yaml
 values:
   departureDate: "2026-03-15"
-  returnDate: "{{departureDate + 7 days}}"
+  returnDate: "{{departureDate + 7 days}}"        # a date moves by whole days
+  amountToCapture: "{{authorize.amount - 500}}"   # an integer output, 500 less
+  refundAmount: "{{order.totalAmount - 10.50}}"   # decimal text keeps its places: "221.78" gives "211.28"
+  frozenTime: "{{clock.frozenTime + 32 days}}"    # Unix seconds, 32 days later
 ```
 
-Reference arithmetic operates on a previously resolved input's value. The referenced value must be a date string in `YYYY-MM-DD` format.
+- **A number offset,** such as `+ 500` or `- 0.25`, adds to a number. Two whole numbers give a whole number, and a decimal gives a decimal. A decimal number written as text, as many APIs send money, gives text with as many decimal places as the more precise of the two.
+- **A time offset,** such as `+ 32 days` or `- 90 minutes`, moves Unix seconds by that much time, or a `YYYY-MM-DD` date by whole days. Its units are those of `{{unixtime}}`, and it counts whole units.
+- **An earlier step's output** is read as `{{step.output}}`, with an offset or without, and the reference implies `dependsOn`, as `from:` does. `from:` copies an output as it is; an expression changes it. An output the step didn't produce, or one that is null, a list, or an object, fails the step.
 
 ### Mixed Expressions
 

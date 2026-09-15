@@ -7,6 +7,11 @@ the graph and plan formats may still change before 1.0.
 ## [Unreleased]
 
 ### Added
+- An expression can put an offset on a reference, and a step value can read an earlier step's output:
+  `amountToCapture: "{{authorize.amount - 500}}"`, `"{{order.totalAmount - 10.50}}"` on a decimal written as text, and
+  `"{{clock.frozenTime + 32 days}}"` on Unix seconds. A number offset keeps whole numbers whole and decimal text at its
+  places, and a time offset moves Unix seconds by its unit or a date by whole days. Assertions, `repeat.until`, and
+  selection filters take the same offsets, and a value's reference implies `dependsOn` and is checked by `aat validate`.
 - A selection `filter` can read an earlier step's output, as an assertion can:
   `filter: 'objectId == "{{create.customerId}}"'` picks the element about the object an earlier step made. The reference
   implies `dependsOn`, `aat validate` checks it, and the step's selection record shows the filter with the value it

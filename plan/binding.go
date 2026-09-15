@@ -179,9 +179,26 @@ func referencedSteps(step Step) []string {
 			add(from)
 		}
 	}
-	for _, ref := range append(StepOutputRefs(step.Assertions, step.Repeat), FilterOutputRefs(step)...) {
+	outputRefs := StepOutputRefs(step.Assertions, step.Repeat)
+	outputRefs = append(outputRefs, FilterOutputRefs(step)...)
+	outputRefs = append(outputRefs, ValueOutputRefs(step)...)
+	for _, ref := range outputRefs {
 		if !slices.Contains(refs, ref.Step) {
 			refs = append(refs, ref.Step)
+		}
+	}
+	return refs
+}
+
+// ValueOutputRefs returns the {{step.output}} references in the expressions of
+// a step's values and their pools, in value name order.
+func ValueOutputRefs(step Step) []OutputRef {
+	var refs []OutputRef
+	for _, name := range slices.Sorted(maps.Keys(step.Values)) {
+		sv := step.Values[name]
+		refs = append(refs, ExprValueOutputRefs(sv.Default)...)
+		for _, entry := range sv.Pool {
+			refs = append(refs, ExprValueOutputRefs(entry)...)
 		}
 	}
 	return refs

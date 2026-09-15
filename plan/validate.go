@@ -207,12 +207,6 @@ func validateAssertions(prefix string, assertions *Assertions) []string {
 	return errs
 }
 
-// valueOutputRefError says why a step value can't read a {{step.output}}
-// reference, and what to write instead.
-func valueOutputRefError(ref OutputRef) string {
-	return fmt.Sprintf("%s reads a step's output, which only assertions, repeat.until, and selection filters can; use from: %s.%s", ref, ref.Step, ref.Output)
-}
-
 // outputRefScope checks the {{step.output}} references in a plan's assertions
 // and repeat conditions against the plan's main steps and their nodes.
 type outputRefScope struct {
@@ -748,14 +742,20 @@ func Validate(p *Plan, g *graph.Graph) error {
 			}
 			if err := ValidateExprValue(sv.Default); err != nil {
 				errs = append(errs, fmt.Sprintf("step %d (%s): invalid expression for %q: %v", i, sid, name, err))
-			} else if refs := ExprValueOutputRefs(sv.Default); len(refs) > 0 {
-				errs = append(errs, fmt.Sprintf("step %d (%s): invalid expression for %q: %s", i, sid, name, valueOutputRefError(refs[0])))
+			}
+			for _, ref := range ExprValueOutputRefs(sv.Default) {
+				if msg := refScope.check(ref, sid); msg != "" {
+					errs = append(errs, fmt.Sprintf("step %d (%s): value %q reads %s%s", i, sid, name, ref, msg))
+				}
 			}
 			for k, entry := range sv.Pool {
 				if err := ValidateExprValue(entry); err != nil {
 					errs = append(errs, fmt.Sprintf("step %d (%s): invalid expression in pool entry %d for %q: %v", i, sid, k, name, err))
-				} else if refs := ExprValueOutputRefs(entry); len(refs) > 0 {
-					errs = append(errs, fmt.Sprintf("step %d (%s): invalid expression in pool entry %d for %q: %s", i, sid, k, name, valueOutputRefError(refs[0])))
+				}
+				for _, ref := range ExprValueOutputRefs(entry) {
+					if msg := refScope.check(ref, sid); msg != "" {
+						errs = append(errs, fmt.Sprintf("step %d (%s): pool entry %d for %q reads %s%s", i, sid, k, name, ref, msg))
+					}
 				}
 			}
 		}

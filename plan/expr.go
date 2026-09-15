@@ -236,10 +236,12 @@ type parsedExpr struct {
 	refName  string        // for exprRef
 	stepID   string        // for exprOutput
 	output   string        // for exprOutput
-	offset   int           // days offset (positive or negative)
-	hasArith bool          // whether arithmetic was specified
+	offset   int           // days offset for exprToday (positive or negative)
+	hasArith bool          // whether an offset was written
 	length   int           // for exprRandom
-	duration time.Duration // time offset for exprNow and exprUnixtime
+	duration time.Duration // time offset for exprNow, exprUnixtime, and a reference's unit offset
+	hasUnit  bool          // a reference's offset names a unit of time
+	number   string        // a reference's offset without a unit, signed as written, such as "-500"
 }
 
 // maxRandomLength is the longest value {{random N}} generates.
@@ -250,12 +252,11 @@ var (
 	exprEnvRe       = regexp.MustCompile(`^env\.([A-Za-z_][A-Za-z0-9_]*)$`)
 	exprOutputRe    = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$`)
 	exprDashedRefRe = regexp.MustCompile(`^[A-Za-z0-9_]*-[A-Za-z0-9_-]*\.[A-Za-z_][A-Za-z0-9_]*$`)
-	exprOutputRefRe = regexp.MustCompile(`\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}`)
+	exprOutputRefRe = regexp.MustCompile(`\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)(\s*[+-]\s*\d+(?:\.\d+)?(?:\s+[A-Za-z]+)?)?\s*\}\}`)
 	exprArithRe     = regexp.MustCompile(`^(\S+)\s*([+-])\s*(\d+)\s+days?$`)
 	exprIdentOnlyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	exprClockRe     = regexp.MustCompile(`^(now|unixtime)(?:\s*([+-])\s*(\d+)\s+([A-Za-z]+))?$`)
 	exprRandomRe    = regexp.MustCompile(`^random\s+(\S+)$`)
-	exprOffsetRe    = regexp.MustCompile(`^(\S+)\s*([+-])\s*(\d+)\s+([A-Za-z]+)$`)
 )
 
 func parseExprInner(inner string) (*parsedExpr, error) {
@@ -308,41 +309,22 @@ func parseExprInner(inner string) (*parsedExpr, error) {
 		return &parsedExpr{kind: exprRandom, length: n}, nil
 	}
 
-	// Arithmetic: <something> +/- N days
-	if m := exprArithRe.FindStringSubmatch(inner); m != nil {
-		base := m[1]
-		sign := m[2]
+	// today +/- N days
+	if m := exprArithRe.FindStringSubmatch(inner); m != nil && m[1] == "today" {
 		n, err := strconv.Atoi(m[3])
 		if err != nil {
 			return nil, fmt.Errorf("invalid day count in expression %q: %w", inner, err)
 		}
-		offset := n
-		if sign == "-" {
-			offset = -n
+		if m[2] == "-" {
+			n = -n
 		}
-		if base == "uuid" || base == "random" {
-			return nil, fmt.Errorf("%s takes no offset, in %q", base, inner)
-		}
-		if base == "today" {
-			return &parsedExpr{kind: exprToday, offset: offset, hasArith: true}, nil
-		}
-		if exprIdentOnlyRe.MatchString(base) {
-			return &parsedExpr{kind: exprRef, refName: base, offset: offset, hasArith: true}, nil
-		}
-		return nil, fmt.Errorf("invalid expression base %q in %q", base, inner)
+		return &parsedExpr{kind: exprToday, offset: n, hasArith: true}, nil
 	}
 
-	// An offset in a unit other than days, on a base that counts days or on a
-	// generated value
-	if m := exprOffsetRe.FindStringSubmatch(inner); m != nil {
-		base := m[1]
-		if base == "uuid" || base == "random" {
-			return nil, fmt.Errorf("%s takes no offset, in %q", base, inner)
-		}
-		if base == "today" || exprIdentOnlyRe.MatchString(base) {
-			return nil, fmt.Errorf("%s counts days, in %q; for a time use {{now %s %s %s}} or {{unixtime %s %s %s}}",
-				base, inner, m[2], m[3], m[4], m[2], m[3], m[4])
-		}
+	// A reference with an offset: an input or an earlier step's output, plus
+	// or minus a number, or a number of units of time
+	if m := exprRefOffsetRe.FindStringSubmatch(inner); m != nil {
+		return parseRefOffset(inner, m)
 	}
 
 	// Plain "today"
@@ -356,6 +338,58 @@ func parseExprInner(inner string) (*parsedExpr, error) {
 	}
 
 	return nil, fmt.Errorf("invalid expression syntax: %q", inner)
+}
+
+var (
+	// exprRefOffsetRe matches a reference with an offset: an input or
+	// step.output, then + or - a number, then optionally a unit of time.
+	exprRefOffsetRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?\s*([+-])\s*(\d+(?:\.\d+)?)(?:\s+([A-Za-z]+))?$`)
+	// decimalTextRe matches a decimal number written as text, such as "221.78".
+	decimalTextRe = regexp.MustCompile(`^[+-]?\d+(?:\.\d+)?$`)
+)
+
+// parseRefOffset parses a reference with an offset, as exprRefOffsetRe matched
+// it in inner: an input or step.output, plus or minus a number, with a unit for
+// a time offset. A base that isn't a reference says what it takes instead.
+func parseRefOffset(inner string, m []string) (*parsedExpr, error) {
+	base, output, sign, number, unit := m[1], m[2], m[3], m[4], m[5]
+	if output == "" {
+		switch base {
+		case "uuid", "random":
+			return nil, fmt.Errorf("%s takes no offset, in %q", base, inner)
+		case "today":
+			if unit != "" {
+				return nil, fmt.Errorf("today counts days, in %q; for a time use {{now %s %s %s}} or {{unixtime %s %s %s}}",
+					inner, sign, number, unit, sign, number, unit)
+			}
+			return nil, fmt.Errorf("today takes an offset in days, as {{today %s %s days}}, in %q", sign, number, inner)
+		case "now", "unixtime":
+			return nil, fmt.Errorf("%s takes an offset with a unit, as {{%s %s %s minutes}}, in %q", base, base, sign, number, inner)
+		}
+	} else if base == "env" {
+		return nil, fmt.Errorf("an environment variable takes no offset, in %q", inner)
+	}
+
+	pe := &parsedExpr{kind: exprRef, refName: base, hasArith: true}
+	if output != "" {
+		pe = &parsedExpr{kind: exprOutput, stepID: base, output: output, hasArith: true}
+	}
+	if unit == "" {
+		pe.number = sign + number
+		return pe, nil
+	}
+	if strings.Contains(number, ".") {
+		return nil, fmt.Errorf("a time offset counts whole units, not %s, in %q", number, inner)
+	}
+	d, err := offsetDuration(number, unit, inner)
+	if err != nil {
+		return nil, err
+	}
+	if sign == "-" {
+		d = -d
+	}
+	pe.duration, pe.hasUnit = d, true
+	return pe, nil
 }
 
 func evalOneExpr(inner string, ctx ExprContext) (any, error) {
@@ -400,38 +434,163 @@ func evalOneExpr(inner string, ctx ExprContext) (any, error) {
 			// Plain reference: return as-is
 			return raw, nil
 		}
-		// Date arithmetic on a reference
-		dateStr, ok := raw.(string)
-		if !ok {
-			return nil, fmt.Errorf("reference %q is %T, not a date string", pe.refName, raw)
-		}
-		t, err := time.Parse("2006-01-02", dateStr)
-		if err != nil {
-			return nil, fmt.Errorf("reference %q value %q is not a valid date (YYYY-MM-DD): %w", pe.refName, dateStr, err)
-		}
-		d := t.AddDate(0, 0, pe.offset)
-		return d.Format("2006-01-02"), nil
+		return applyOffset(fmt.Sprintf("reference %q", pe.refName), raw, pe)
 
 	case exprOutput:
 		if ctx.Outputs == nil {
-			return nil, fmt.Errorf("{{%s.%s}} reads a step's output, which only assertions and repeat.until can; in a step value use from: %s.%s",
-				pe.stepID, pe.output, pe.stepID, pe.output)
+			return nil, fmt.Errorf("{{%s.%s}} reads a step's output, which can't be read here; step values, assertions, repeat.until, and selection filters can read one",
+				pe.stepID, pe.output)
 		}
 		v, err := ctx.Outputs(pe.stepID, pe.output)
 		if err != nil {
 			return nil, err
 		}
-		return outputExprValue(pe.stepID, pe.output, v)
+		if v, err = outputExprValue(pe.stepID, pe.output, v); err != nil || !pe.hasArith {
+			return v, err
+		}
+		return applyOffset(fmt.Sprintf("{{%s.%s}}", pe.stepID, pe.output), v, pe)
 
 	default:
 		return nil, fmt.Errorf("unknown expression kind %d", pe.kind)
 	}
 }
 
+// applyOffset adds a reference's offset to its value v; what names the
+// reference in errors. A time offset moves Unix seconds by that much time, or a
+// YYYY-MM-DD date by whole days. A number offset adds to a number.
+func applyOffset(what string, v any, pe *parsedExpr) (any, error) {
+	if !pe.hasUnit {
+		return addNumber(what, v, pe.number)
+	}
+	if date, ok := v.(string); ok {
+		t, err := time.Parse("2006-01-02", date)
+		if err != nil {
+			return nil, fmt.Errorf("%s value %q is not a valid date (YYYY-MM-DD): %w", what, date, err)
+		}
+		if pe.duration%(24*time.Hour) != 0 {
+			return nil, fmt.Errorf("%s is a date, which moves by whole days", what)
+		}
+		return t.AddDate(0, 0, int(pe.duration/(24*time.Hour))).Format("2006-01-02"), nil
+	}
+	secs, ok := wholeNumber(v)
+	if !ok {
+		return nil, fmt.Errorf("%s is %T, not a date string or Unix seconds", what, v)
+	}
+	return secs + int64(pe.duration/time.Second), nil
+}
+
+// wholeNumber returns v as an int64 when it is a whole number: an int, an
+// int64, a json.Number that holds one, or a float64 without a fraction.
+func wholeNumber(v any) (int64, bool) {
+	switch x := v.(type) {
+	case int:
+		return int64(x), true
+	case int64:
+		return x, true
+	case json.Number:
+		i, err := x.Int64()
+		return i, err == nil
+	case float64:
+		if x == math.Trunc(x) && math.Abs(x) < 1<<53 {
+			return int64(x), true
+		}
+	}
+	return 0, false
+}
+
+// addNumber adds offset, a signed number as written such as "-500" or "+0.25",
+// to v. A whole number plus a whole offset is an int64, and any other pair of
+// numbers a float64. A decimal number written as text, such as "221.78", gives
+// text with as many decimal places as the more precise of the two.
+func addNumber(what string, v any, offset string) (any, error) {
+	if s, ok := v.(string); ok {
+		sum, ok := addDecimalText(s, offset)
+		if !ok {
+			return nil, fmt.Errorf("%s value %q is not a number", what, s)
+		}
+		return sum, nil
+	}
+	if i, ok := wholeNumber(v); ok && !strings.Contains(offset, ".") {
+		n, err := strconv.ParseInt(offset, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("offset %s is out of range: %w", offset, err)
+		}
+		return i + n, nil
+	}
+	var base float64
+	switch x := v.(type) {
+	case int:
+		base = float64(x)
+	case int64:
+		base = float64(x)
+	case float64:
+		base = x
+	case json.Number:
+		f, err := x.Float64()
+		if err != nil {
+			return nil, fmt.Errorf("%s value %q is not a number", what, x.String())
+		}
+		base = f
+	default:
+		return nil, fmt.Errorf("%s is %T, not a number", what, v)
+	}
+	n, err := strconv.ParseFloat(offset, 64)
+	if err != nil {
+		return nil, fmt.Errorf("offset %s is not a number: %w", offset, err)
+	}
+	return base + n, nil
+}
+
+// addDecimalText adds offset to s, both decimal numbers written as text, and
+// writes the sum with as many decimal places as the more precise of the two. It
+// reports false when s isn't such a number or the sum is out of range.
+func addDecimalText(s, offset string) (string, bool) {
+	if !decimalTextRe.MatchString(s) {
+		return "", false
+	}
+	places := max(decimalPlaces(s), decimalPlaces(offset))
+	a, errA := scaledInt(s, places)
+	b, errB := scaledInt(offset, places)
+	if errA != nil || errB != nil {
+		return "", false
+	}
+	return formatScaled(a+b, places), true
+}
+
+// decimalPlaces counts the digits after a decimal number's point.
+func decimalPlaces(s string) int {
+	_, frac, _ := strings.Cut(s, ".")
+	return len(frac)
+}
+
+// scaledInt returns decimal text s times 10^places as an integer; s has at most
+// that many decimal places.
+func scaledInt(s string, places int) (int64, error) {
+	whole, frac, _ := strings.Cut(s, ".")
+	return strconv.ParseInt(whole+frac+strings.Repeat("0", places-len(frac)), 10, 64)
+}
+
+// formatScaled writes n divided by 10^places, with exactly places decimal
+// places.
+func formatScaled(n int64, places int) string {
+	if places == 0 {
+		return strconv.FormatInt(n, 10)
+	}
+	sign := ""
+	if n < 0 {
+		sign, n = "-", -n
+	}
+	digits := strconv.FormatInt(n, 10)
+	if len(digits) <= places {
+		digits = strings.Repeat("0", places-len(digits)+1) + digits
+	}
+	return sign + digits[:len(digits)-places] + "." + digits[len(digits)-places:]
+}
+
 // outputExprValue returns a step's output as a {{step.output}} reference reads
 // it: a number, a boolean, or text. An extracted json.Number becomes an int64 or
-// a float64. A null, list, or object output is an error, since an assertion
-// compares a single value.
+// a float64. A null, list, or object output is an error, since a reference reads
+// a single value.
 func outputExprValue(stepID, output string, v any) (any, error) {
 	switch x := v.(type) {
 	case nil:
@@ -445,9 +604,9 @@ func outputExprValue(stepID, output string, v any) (any, error) {
 		}
 		return x.String(), nil
 	case []any:
-		return nil, fmt.Errorf("step %q output %q is a list; an assertion compares a string, number, or boolean", stepID, output)
+		return nil, fmt.Errorf("step %q output %q is a list; a reference reads a string, number, or boolean", stepID, output)
 	case map[string]any:
-		return nil, fmt.Errorf("step %q output %q is an object; an assertion compares a string, number, or boolean", stepID, output)
+		return nil, fmt.Errorf("step %q output %q is an object; a reference reads a string, number, or boolean", stepID, output)
 	}
 	return v, nil
 }
@@ -517,7 +676,7 @@ func RewriteExprRefs(s string, idMap map[string]string) string {
 	return exprOutputRefRe.ReplaceAllStringFunc(s, func(m string) string {
 		sub := exprOutputRefRe.FindStringSubmatch(m)
 		if newID, ok := idMap[sub[1]]; ok && sub[1] != "env" {
-			return "{{" + newID + "." + sub[2] + "}}"
+			return "{{" + newID + "." + sub[2] + sub[3] + "}}" // an offset stays with its reference
 		}
 		return m
 	})
