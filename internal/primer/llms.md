@@ -540,7 +540,7 @@ assertions:
 - **Failure:** reaching `max` or `timeout` before `until` holds fails the step with a `repeat` assertion result. A request that errors or returns 400 or more ends the repeats.
 - **Paging:** with `next`, the step passes when every cursor comes back missing, `null`, or `""` (`exhausted`). Reaching `max` or `timeout` with a cursor left fails it, and so does a cursor an earlier request already sent (`loop`). The step's inputs are the first page's.
 - **Not allowed:** with `expectFailure`, or on a node with a cleanup pairing. Verification steps can repeat.
-- **Archive:** each request under `iterations` (request, response, outputs, `untilMet`, and `inputs` when paging), and why it stopped under `repeatStop`.
+- **Archive:** each request under `iterations` (request, response, outputs, `untilMet`, and `inputs` when paging), and why it stopped under `repeatStop`. `aat run show latest --step ID` lists the requests, and `--iteration N` shows one; add a part flag such as `--response` for its body.
 
 ### Cleanup
 
@@ -984,6 +984,7 @@ aat run show latest --step checkout                     # one step: URL, status,
 aat run show latest --step checkout --response --shape  # the response's structure, one gjson path per line
 aat run show latest --step checkout --response --path lines.0.sku
 aat run show latest --step checkout --outputs           # what the template extracted
+aat run show latest --step listOrders --iteration 2     # one request of a repeated step
 aat run show latest --step checkout --resolutions       # where each input's value came from, and why one failed
 aat run show latest --json --compact                    # the step list as one JSON line, for a script
 aat run show latest --response --path error.code        # one part of every step that has it

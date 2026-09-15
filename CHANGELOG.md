@@ -7,6 +7,13 @@ the graph and plan formats may still change before 1.0.
 ## [Unreleased]
 
 ### Added
+- `aat run show --step ID` lists a repeated step's requests: each one's status, time, and whether `until` held, the
+  inputs it sent that differ from the step's when it pages, and its outputs. `--iteration N` shows one of them, and with
+  `--request`, `--response`, `--inputs`, `--outputs`, `--path`, or `--shape` prints that request's part.
+  - `--json` gives the list as the step's `iterations`, and `--iteration N --json` gives the request.
+  - The web UI's step detail has a Requests tab. Selecting a request loads its bodies, headers, inputs, outputs, and
+    OpenAPI validation from `GET /api/runs/{id}/steps/{stepId}/iterations/{index}`.
+  - The MCP server's `inspect_archive` lists each repeated step's requests.
 - An assertion can compare with an earlier step's output, written `{{step.output}}`: `amount == "{{checkout.total}}"` in a
   predicate, `value: "{{checkout.total}}"` in `fieldEquals`, and a quoted literal in `repeat.until`.
   - A main step reads the main steps before it, and a verification step reads the main steps. A reference implies

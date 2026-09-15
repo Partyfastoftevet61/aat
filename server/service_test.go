@@ -746,6 +746,104 @@ func TestGetStep_FullRequest(t *testing.T) {
 	assert.Equal(t, "Content-Type", detail.Request.Headers[1].Name)
 }
 
+// repeatedStep is a step whose repeat block sent three requests, the last of
+// which met its until condition and broke the spec.
+func repeatedStep() archive.StepRecord {
+	request := func(index int, status string, met bool) archive.IterationRecord {
+		return archive.IterationRecord{
+			Index:      index,
+			DurationMs: int64(100 * index),
+			Request:    &archive.RequestRecord{Method: "GET", URL: "https://api.example.com/exports/exp_1", Headers: map[string]string{"Accept": "application/json"}},
+			Response:   &archive.ResponseRecord{Status: 200, Body: json.RawMessage(`{"status":"` + status + `","rows":[]}`)},
+			Outputs:    map[string]any{"status": status, "rows": []any{}},
+			UntilMet:   met,
+		}
+	}
+	step := makeStepWithID("waitForExport", "getExport", 200, 600)
+	step.Iterations = []archive.IterationRecord{request(1, "running", false), request(2, "running", false), request(3, "complete", true)}
+	step.Iterations[2].OASValidation = &archive.OASValidationRecord{
+		OperationID: "getExport",
+		Response:    &archive.OASPayloadRecord{Errors: []archive.OASSchemaError{{Path: "/rows", Message: "expected array"}}},
+	}
+	step.RepeatStop = "until"
+	return step
+}
+
+func TestGetStep_Iterations(t *testing.T) {
+	dir := t.TempDir()
+	writeArchive(t, dir, makeArchive("run-20260101-100000-aaaa0001", "passed", repeatedStep()))
+
+	svc := NewArchiveService(dir)
+	detail, err := svc.GetStep("run-20260101-100000-aaaa0001", "waitForExport")
+	require.NoError(t, err)
+
+	assert.Equal(t, "until", detail.RepeatStop)
+	require.Len(t, detail.Iterations, 3)
+	first, last := detail.Iterations[0], detail.Iterations[2]
+	assert.Equal(t, 1, first.Index)
+	assert.Equal(t, 200, first.Status)
+	assert.Equal(t, int64(100), first.DurationMs)
+	assert.NotEmpty(t, first.DurationDisplay)
+	assert.False(t, first.UntilMet)
+	assert.True(t, last.UntilMet)
+	assert.Equal(t, 1, last.OASErrorCount)
+	assert.Equal(t, map[string]any{"status": "complete"}, last.Outputs, "scalar outputs only; the request's own detail has them all")
+}
+
+func TestGetStepIteration(t *testing.T) {
+	dir := t.TempDir()
+	runID := "run-20260101-100000-aaaa0001"
+	writeArchive(t, dir, makeArchive(runID, "passed", repeatedStep(), makeStep("SearchOffers", 200, 100)))
+	svc := NewArchiveService(dir)
+
+	it, err := svc.GetStepIteration(runID, "waitForExport", 2)
+	require.NoError(t, err)
+	assert.Equal(t, "waitForExport", it.StepID)
+	assert.Equal(t, 2, it.Index)
+	assert.Equal(t, 3, it.Count)
+	assert.Equal(t, 200, it.Status)
+	assert.Empty(t, it.RepeatStop, "only the last request says why the step stopped")
+	require.NotNil(t, it.Request)
+	assert.Equal(t, "GET", it.Request.Method)
+	require.Len(t, it.Request.Headers, 1)
+	require.NotNil(t, it.Response)
+	assert.JSONEq(t, `{"status":"running","rows":[]}`, string(it.Response.Body))
+	assert.Equal(t, []any{}, it.Outputs["rows"])
+	assert.Nil(t, it.OASValidation)
+
+	it, err = svc.GetStepIteration(runID, "waitForExport", 3)
+	require.NoError(t, err)
+	assert.Equal(t, "until", it.RepeatStop)
+	assert.True(t, it.UntilMet)
+	assert.NotNil(t, it.OASValidation)
+
+	_, err = svc.GetStepIteration(runID, "waitForExport", 4)
+	assert.ErrorIs(t, err, ErrIterationNotFound)
+	_, err = svc.GetStepIteration(runID, "SearchOffers", 1)
+	assert.ErrorIs(t, err, ErrIterationNotFound, "a step that didn't repeat has no requests to read")
+	_, err = svc.GetStepIteration(runID, "nope", 1)
+	assert.ErrorIs(t, err, ErrStepNotFound)
+	_, err = svc.GetStepIteration("run-20260101-100000-ffff0009", "waitForExport", 1)
+	assert.ErrorIs(t, err, ErrRunNotFound)
+}
+
+func TestGetAttemptStepIteration(t *testing.T) {
+	dir := t.TempDir()
+	runID := "run-20260101-100000-aaaa0001"
+	writeArchive(t, dir, makeArchive(runID, "passed", makeStep("SearchOffers", 200, 100)))
+	require.NoError(t, archive.Write(makeArchive(runID, "failed", repeatedStep()), filepath.Join(dir, runID, "attempt-01.json")))
+	svc := NewArchiveService(dir)
+
+	it, err := svc.GetAttemptStepIteration(runID, 1, "waitForExport", 3)
+	require.NoError(t, err)
+	assert.True(t, it.UntilMet)
+
+	_, err = svc.GetStepIteration(runID, "waitForExport", 1)
+	assert.ErrorIs(t, err, ErrStepNotFound, "the final archive has no such step")
+	_, err = svc.GetAttemptStepIteration(runID, 2, "waitForExport", 1)
+	assert.ErrorIs(t, err, ErrRunNotFound)
+}
+
 func TestGetStep_FullResponse(t *testing.T) {
 	dir := t.TempDir()
 
@@ -2359,6 +2457,30 @@ func TestStaticRun_GetAttempt_NotFound(t *testing.T) {
 	_, err := svc.GetAttempt("r1", 1)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrRunNotFound))
+}
+
+func TestStaticRun_GetStepIteration(t *testing.T) {
+	main := makeArchive("r1", "passed", repeatedStep())
+	attempt1 := makeArchive("r1", "failed", repeatedStep())
+	attempt1.Steps[0].Iterations = attempt1.Steps[0].Iterations[:2]
+	svc := NewArchiveServiceFromRun("r1", main, map[int]*archive.Archive{1: attempt1})
+
+	it, err := svc.GetStepIteration("r1", "waitForExport", 3)
+	require.NoError(t, err)
+	assert.True(t, it.UntilMet)
+
+	it, err = svc.GetAttemptStepIteration("r1", 1, "waitForExport", 2)
+	require.NoError(t, err)
+	assert.Equal(t, 2, it.Count)
+
+	_, err = svc.GetAttemptStepIteration("r1", 1, "waitForExport", 3)
+	assert.ErrorIs(t, err, ErrIterationNotFound)
+	_, err = svc.GetAttemptStepIteration("r1", 2, "waitForExport", 1)
+	assert.ErrorIs(t, err, ErrRunNotFound)
+
+	step, err := svc.GetAttemptStep("r1", 1, "waitForExport")
+	require.NoError(t, err)
+	assert.Len(t, step.Iterations, 2, "the attempt's own requests")
 }
 
 func TestStaticRun_MutatingOpsBlocked(t *testing.T) {

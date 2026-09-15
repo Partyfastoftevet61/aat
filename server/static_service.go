@@ -179,31 +179,47 @@ func (s *staticArchiveService) GetStep(runID, stepID string) (*StepDetail, error
 }
 
 func (s *staticArchiveService) GetAttemptStep(runID string, attemptNum int, stepID string) (*StepDetail, error) {
-	findAttempt := func(sr *staticRun) *archive.Archive {
-		if sr.attempts == nil {
-			return nil
+	a, err := s.loadAttempt(runID, attemptNum)
+	if err != nil {
+		return nil, err
+	}
+	return getStepFromArchive(a, runID, stepID)
+}
+
+func (s *staticArchiveService) GetStepIteration(runID, stepID string, index int) (*IterationDetail, error) {
+	a, err := s.loadArchive(runID)
+	if err != nil {
+		return nil, err
+	}
+	return getIterationFromArchive(a, runID, stepID, index)
+}
+
+func (s *staticArchiveService) GetAttemptStepIteration(runID string, attemptNum int, stepID string, index int) (*IterationDetail, error) {
+	a, err := s.loadAttempt(runID, attemptNum)
+	if err != nil {
+		return nil, err
+	}
+	return getIterationFromArchive(a, runID, stepID, index)
+}
+
+// loadAttempt returns a prior attempt archive of a run, standalone or a batch
+// member.
+func (s *staticArchiveService) loadAttempt(runID string, attemptNum int) (*archive.Archive, error) {
+	findAttempt := func(sr *staticRun) (*archive.Archive, error) {
+		if a := sr.attempts[attemptNum]; a != nil {
+			return a, nil
 		}
-		return sr.attempts[attemptNum]
+		return nil, fmt.Errorf("attempt %d of run %q: %w", attemptNum, runID, ErrRunNotFound)
 	}
 
 	if sr, ok := s.runs[runID]; ok {
-		a := findAttempt(sr)
-		if a == nil {
-			return nil, fmt.Errorf("attempt %d of run %q: %w", attemptNum, runID, ErrRunNotFound)
-		}
-		return getStepFromArchive(a, runID, stepID)
+		return findAttempt(sr)
 	}
-
 	for _, sb := range s.batches {
 		if sr, ok := sb.runs[runID]; ok {
-			a := findAttempt(sr)
-			if a == nil {
-				return nil, fmt.Errorf("attempt %d of run %q: %w", attemptNum, runID, ErrRunNotFound)
-			}
-			return getStepFromArchive(a, runID, stepID)
+			return findAttempt(sr)
 		}
 	}
-
 	return nil, fmt.Errorf("run %q: %w", runID, ErrRunNotFound)
 }
 

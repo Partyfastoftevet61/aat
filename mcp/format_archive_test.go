@@ -155,6 +155,35 @@ func TestFormatArchiveDetail_BasicStructure(t *testing.T) {
 	assert.Contains(t, result, "POST")
 }
 
+func TestFormatArchiveDetail_WithIterations(t *testing.T) {
+	step := testStep("getExport", 200, 600)
+	for i := 1; i <= 25; i++ {
+		it := archive.IterationRecord{
+			Index:      i,
+			DurationMs: 20,
+			Response:   &archive.ResponseRecord{Status: 200},
+			Outputs:    map[string]any{"status": "running", "rows": []any{}, "note": "a|b"},
+		}
+		if i == 25 {
+			it.Outputs["status"] = "complete"
+			it.UntilMet = true
+		}
+		step.Iterations = append(step.Iterations, it)
+	}
+	step.Iterations[3].Error = "status 503"
+	step.RepeatStop = "until"
+
+	result := formatArchiveDetail(testArchive("passed", step))
+	assert.Contains(t, result, "**Requests:** 25 (stopped: until)")
+	assert.Contains(t, result, "| # | Status | Time | Until | Outputs |")
+	assert.Regexp(t, `\| 1 \| 200 \| \S+ \|  \| note="a\\\|b", status="running" \|`, result, "scalar outputs, with the table's pipe escaped")
+	assert.Regexp(t, `\| 4 \| 200 \| \S+ \|  \| error: status 503 \|`, result)
+	assert.Contains(t, result, "| 19 | 200 |")
+	assert.NotContains(t, result, "| 20 | 200 |")
+	assert.Contains(t, result, "| … | | | | 5 more |")
+	assert.Regexp(t, `\| 25 \| 200 \| \S+ \| met \| note="a\\\|b", status="complete" \|`, result)
+}
+
 func TestFormatArchiveDetail_WithError(t *testing.T) {
 	a := testArchive("error")
 	a.Result.Error = "connection refused"
