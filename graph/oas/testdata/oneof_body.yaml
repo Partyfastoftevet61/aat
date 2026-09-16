@@ -1,6 +1,24 @@
 openapi: 3.1.0
 info: {title: OneOf body, version: "1.0"}
 paths:
+  /instant:
+    post:
+      operationId: createInstant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShipmentWrapper'
+      responses:
+        "201":
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object_id: {type: string}
   /parcels:
     post:
       operationId: createParcel
@@ -47,3 +65,17 @@ components:
           properties:
             template: {type: string}
           required: [template]
+    ShipmentWrapper:
+      type: object
+      properties:
+        shipment:
+          type: object
+          properties:
+            address_from: {type: string}
+            address_to: {type: string}
+            parcels:
+              type: array
+              items:
+                type: object
+                properties:
+                  parcel_id: {type: string}

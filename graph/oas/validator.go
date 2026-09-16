@@ -386,12 +386,14 @@ func collectInputNames(pathItem *v3high.PathItem, op *v3high.Operation) map[stri
 }
 
 // bodyPropertyNames returns every property name a request body schema can
-// carry, those under oneOf and anyOf branches included. A body whose schema is
-// composed is written by hand, and it draws from whichever branch it sends, so
-// an input matching a property of any branch is one the spec knows. Required
-// names are not collected this way: a property required in one branch is not
-// required of the body, which is why collectRequiredInputs still reads only
-// the schema and its allOf.
+// carry: its own, those of the oneOf and anyOf branches it can take, and those
+// of the objects nested inside them. A body whose schema is composed or nested
+// is written by hand, and a template routinely flattens it — one input per
+// leaf, assembled into the shape the API wants — so an input matching a
+// property anywhere in the body is one the spec knows. Required names are not
+// collected this way: a property required in one branch, or of a nested
+// object, is not required of the body, which is why collectRequiredInputs
+// still reads only the schema and its allOf.
 func bodyPropertyNames(schema *base.Schema) map[string]bool {
 	names := make(map[string]bool)
 	seen := make(map[*base.Schema]bool)
@@ -403,6 +405,12 @@ func bodyPropertyNames(schema *base.Schema) map[string]bool {
 		seen[s] = true
 		for _, p := range resolveSchemaProperties(s) {
 			names[p.name] = true
+			if p.proxy != nil {
+				walk(p.proxy.Schema(), depth+1)
+			}
+		}
+		if s.Items != nil && s.Items.IsA() {
+			walk(s.Items.A.Schema(), depth+1)
 		}
 		for _, group := range [][]*base.SchemaProxy{s.AllOf, s.OneOf, s.AnyOf} {
 			for _, branch := range group {

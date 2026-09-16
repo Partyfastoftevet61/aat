@@ -372,7 +372,9 @@ the graph and plan formats may still change before 1.0.
   `mass_unit`, quoted or bare and inside a conditional block, in both the unknown-input and the required-property
   checks. Until now only form-bodied APIs could name inputs for the package rather than the spec; a JSON-bodied one
   had to spell every input the spec's way or carry a warning for each.
-- `aat validate --strict` knows the inputs of a node whose request body is a `oneOf` or `anyOf`. Only the schema and
+- `aat validate --strict` knows the inputs of a node whose request body is a `oneOf` or `anyOf`, or whose inputs name
+  properties of an object nested inside it. A template routinely flattens a nested body into one input per leaf, and
+  every one of those was reported as unknown. Only the schema and
   its `allOf` were read, so a body written by hand for a composed schema had every one of its inputs reported as
   `input "weight" not found in OAS parameters or request body`. `aat generate` declines to write such a body and says
   so, so the operations it hands over were exactly the ones that then warned — six of them in Shippo's spec. Property

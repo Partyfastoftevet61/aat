@@ -132,7 +132,7 @@ Graph structural validation catches:
 When an OpenAPI spec is configured (at the graph level or per-node), AAT checks consistency between the graph and the spec:
 
 - Every `operationId` in the graph exists in the node's spec (an error)
-- Every graph input is a parameter or a request body property of the operation, unless the node's template sends it only in request headers, such as an idempotency key, or as the whole value of a field the spec names otherwise, where it counts as that field (a warning). The field can be:
+- Every graph input is a parameter or a request body property of the operation — its own, one of a `oneOf`/`anyOf` branch, or one of an object nested inside, since a template routinely flattens a nested body into one input per leaf — unless the node's template sends it only in request headers, such as an idempotency key, or as the whole value of a field the spec names otherwise, where it counts as that field (a warning). The field can be:
     - a `form:` field: `customer: "{{customerId}}"` matches the spec's `customer`
     - a query parameter in the path: `status={{orderStatus}}` matches `status`, inside a `{{?orderStatus}}` block too
     - a JSON body property: `"mass_unit": "{{massUnit}}"` matches the spec's `mass_unit`, quoted or bare, inside a conditional block too
