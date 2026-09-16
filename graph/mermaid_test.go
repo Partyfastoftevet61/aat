@@ -157,3 +157,53 @@ func mustParseFile(t *testing.T, path string) *Graph {
 	require.NoError(t, err)
 	return g
 }
+
+// An input that defaults from another node's output is a dependency the graph
+// states plainly, and for a REST API modelled one operation per node it is
+// usually the only structure there is.
+func TestGenerateMermaid_EdgesFromInputWiring(t *testing.T) {
+	g := &Graph{
+		Nodes: map[string]*Node{
+			"createOrder": {
+				Name: "createOrder", Description: "Create",
+				Cleanup: CleanupPairing{Node: "cancelOrder"},
+			},
+			"getOrder": {
+				Name: "getOrder", Description: "Read",
+				Inputs: []Input{{
+					Name: "orderId", Type: "string",
+					Default: &InputDefault{From: "createOrder.orderId"},
+				}},
+			},
+			"cancelOrder": {
+				Name: "cancelOrder", Description: "Cancel",
+				Inputs: []Input{{
+					Name: "orderId", Type: "string",
+					Default: &InputDefault{From: "createOrder.orderId"},
+				}},
+			},
+			"listOrders": {
+				Name: "listOrders", Description: "List",
+				Inputs: []Input{
+					// A self-reference, an unknown node, and a default that is a
+					// plain value all name no edge.
+					{Name: "after", Type: "string", Default: &InputDefault{From: "listOrders.lastId"}},
+					{Name: "region", Type: "string", Default: &InputDefault{From: "noSuchNode.region"}},
+					{Name: "limit", Type: "integer", Default: &InputDefault{Value: 10}},
+				},
+			},
+		},
+	}
+	g.BuildSatisfierIndex()
+
+	result := GenerateMermaid(g)
+
+	assert.Contains(t, result, "createOrder --> getOrder")
+	// The cleanup pairing keeps its dashed arrow rather than being replaced by
+	// the solid one the same wiring would draw.
+	assert.Contains(t, result, "createOrder -.-> cancelOrder")
+	assert.NotContains(t, result, "createOrder --> cancelOrder")
+
+	assert.NotContains(t, result, "listOrders --> listOrders")
+	assert.NotContains(t, result, "noSuchNode")
+}

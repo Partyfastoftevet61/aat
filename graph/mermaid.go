@@ -72,6 +72,35 @@ func GenerateMermaid(g *Graph) string {
 		}
 	}
 
+	// Draw arrows from the wiring in input defaults. An input that defaults
+	// `from: otherNode.output` reads that node, which is a dependency the graph
+	// states as plainly as a requirement token — and for a REST API modelled one
+	// operation per node, it is usually the only structure there is. These come
+	// last, so an explicit requires/satisfies pair or a cleanup pairing keeps
+	// its own arrow for the same two nodes.
+	for _, name := range names {
+		node := g.Nodes[name]
+		for i := range node.Inputs {
+			def := node.Inputs[i].Default
+			if def == nil || def.From == "" {
+				continue
+			}
+			from, _, found := strings.Cut(def.From, ".")
+			if !found || from == "" || from == name {
+				continue
+			}
+			if _, ok := g.Nodes[from]; !ok {
+				continue
+			}
+			key := edgeKey{from, name}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			fmt.Fprintf(&b, "    %s --> %s\n", from, name)
+		}
+	}
+
 	// Add cleanup style definition if there are cleanup nodes
 	if len(cleanupNodes) > 0 {
 		b.WriteString("\n    classDef cleanup fill:#fee,stroke:#c33,stroke-dasharray:5 5\n")
