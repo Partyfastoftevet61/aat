@@ -700,6 +700,4 @@ execution:
 
 When composed with a Round-Trip booking, `$after.offerRef` resolves to `priceOfferByRef.offerRef`, the AUTOWIRE `bookingId` resolves to `createBooking.bookingId`, and step IDs become `inc0_searchSeatMap` and `inc0_addSeatOffer`.
 
----
-
-*Source: workflow types in `graph/types.go`, composition logic in `intent/compose.go`, template loading in `intent/template.go`.*
+<!-- Source: workflow types in `graph/types.go`, composition logic in `intent/compose.go`, template loading in `intent/template.go`. -->

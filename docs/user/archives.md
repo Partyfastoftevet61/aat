@@ -436,6 +436,4 @@ It rewrites `summary.json` for every top-level run directory with an `archive.js
 
 Known issue: `batch.json` is not recomputed, so batch-level counts stay as they were written.
 
----
-
-*Source: `archive/types.go`, `archive/writer.go`, `archive/redact.go`, `archive/transfer.go`, `archive/naming.go`, `archive/clean.go`, `archive/rebuild.go`, `engine/archive.go`, `cmd/aat/run_shared.go`, `cmd/aat/import_cmd.go`, `cmd/aat/run_clean_cmd.go`, `cmd/aat/run_rebuild_cmd.go`, `cmd/aat/web_cmd.go`, `server/handlers.go`, `server/service.go`, `server/web/src/routes/*.svelte`.*
+<!-- Source: `archive/types.go`, `archive/writer.go`, `archive/redact.go`, `archive/transfer.go`, `archive/naming.go`, `archive/clean.go`, `archive/rebuild.go`, `engine/archive.go`, `cmd/aat/run_shared.go`, `cmd/aat/import_cmd.go`, `cmd/aat/run_clean_cmd.go`, `cmd/aat/run_rebuild_cmd.go`, `cmd/aat/web_cmd.go`, `server/handlers.go`, `server/service.go`, `server/web/src/routes/*.svelte`. -->

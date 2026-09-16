@@ -48,7 +48,7 @@ The seven OpenAPI tools register only when an OAS spec is loaded (from the manif
 |---------|------------|-------|
 | `api` | Integration developer | Understanding endpoints, data shapes, schemas, domain rules |
 | `test` | Test developer | Creating plans, running tests, debugging failures |
-| *(omitted)* | Both | All tools registered (backward compatible) |
+| *(omitted)* | Both | All tools registered |
 
 ### Choosing a Persona
 
@@ -56,7 +56,7 @@ The seven OpenAPI tools register only when an OAS spec is loaded (from the manif
 
 **Use `test`** when creating, running, or debugging AAT test plans. The test persona includes plan management, execution, archive inspection, and failure analysis tools.
 
-**Omit the flag** for backward compatibility or when you need both sets of capabilities.
+**Omit the flag** when one client needs both sets of capabilities.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -152,15 +152,7 @@ HTTP mode serves the MCP protocol over Streamable HTTP, enabling remote access w
 
 ### Authentication
 
-HTTP mode does not enforce authentication by default. For production deployments behind a reverse proxy, use the proxy's auth layer.
-
-AAT ships an `AuthMiddleware` function in the `mcp` package that validates `Authorization: Bearer <token>` headers. It's not wired into the CLI by default but is ready for programmatic use:
-
-```go
-handler := server.NewStreamableHTTPServer(mcpServer, opts...)
-protected := mcp.AuthMiddleware([]string{"your-api-key"})(handler)
-http.ListenAndServe(":8080", protected)
-```
+HTTP mode does not enforce authentication. Run it behind a reverse proxy that authenticates, or on a host untrusted networks cannot reach.
 
 ### Logging
 
@@ -368,9 +360,9 @@ Each persona registers a compact overview resource instead of a full graph dump,
 | `aat://template/{adapter}` | Template Detail | HTTP template detail for a specific adapter |
 | `aat://workflow/{name}` | Workflow Detail | Enriched step-by-step recipe for a workflow |
 
-### Legacy Resources (no persona)
+### Resources with no persona
 
-When no persona is specified, the server registers the original resources including the full `aat://graph` dump:
+When no persona is specified, the server registers these resources, including the full `aat://graph` dump:
 
 | URI | Name | Description |
 |-----|------|-------------|
@@ -400,7 +392,7 @@ Dynamic resources: `aat://node/{name}`, `aat://template/{adapter}`, `aat://workf
 | `debug_failing_test` | `run_id` (required) | Load a failed run archive and diagnose root causes with comprehensive failure context |
 | `enrich_documentation` | `node` (required) | Create or enrich documentation for a node using graph metadata, existing docs, OAS, and domain |
 
-### Legacy Prompts (no persona)
+### Prompts with no persona
 
 All 6 prompts are registered: `explain_workflow`, `generate_client_code`, `integration_guide`, `test_workflow`, `debug_failing_test`, `enrich_documentation`.
 
@@ -482,6 +474,4 @@ The graph and templates are required. Everything else is optional and adds capab
 
 See [Project Setup](project-setup.md) for how to configure the manifest.
 
----
-
-*Source: `cmd/aat/mcp_cmd.go`, `mcp/server.go`, `mcp/middleware.go`, `mcp/context.go`, `mcp/resources.go`, `mcp/prompts.go`, `mcp/prompts_workflow.go`, `mcp/tools_*.go`.*
+<!-- Source: `cmd/aat/mcp_cmd.go`, `mcp/server.go`, `mcp/middleware.go`, `mcp/context.go`, `mcp/resources.go`, `mcp/prompts.go`, `mcp/prompts_workflow.go`, `mcp/tools_*.go`. -->

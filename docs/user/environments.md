@@ -8,7 +8,7 @@ AAT separates **what to test** (graph, plans, templates) from **where to test** 
 
 AAT supports two environment file formats:
 
-- **Single-environment** (legacy) — one environment per file, selected by pointing `--env-config` (or the manifest's `environment:`) at the file
+- **Single-environment** — one environment per file, the simplest form, selected by pointing `--env-config` (or the manifest's `environment:`) at the file
 - **Multi-environment** — multiple environments in one file, selected with `--env`
 
 ## Single-Environment Format
@@ -948,6 +948,4 @@ environments:
           var: PROD_CLIENT_SECRET
 ```
 
----
-
-*Source: `config/environment.go`, `config/multi_env.go`, `config/auth.go`, `config/auth_provider.go`, `config/load.go`.*
+<!-- Source: `config/environment.go`, `config/multi_env.go`, `config/auth.go`, `config/auth_provider.go`, `config/load.go`. -->

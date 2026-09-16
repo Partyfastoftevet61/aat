@@ -222,6 +222,4 @@ Browse traces visually with `aat web viewtrace`. See [Web UI: Viewing Traces](we
 
 **Use `--trace` to debug poor results.** If the LLM picks the wrong workflow or fills in bad values, the trace shows exactly what prompts were sent and what came back. Adjust your domain knowledge or workflow descriptions to guide better selections.
 
----
-
-*Source: `cmd/aat/prompt.go`, `intent/interpret.go`, `intent/compose.go`.*
+<!-- Source: `cmd/aat/prompt.go`, `intent/interpret.go`, `intent/compose.go`. -->

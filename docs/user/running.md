@@ -404,6 +404,4 @@ What it shows:
 
 This flag is available on both `run plan` and `run batch`.
 
----
-
-*Source: `cmd/aat/run_plan_cmd.go`, `cmd/aat/run_batch_cmd.go`, `cmd/aat/run_shared.go`, `cmd/aat/progress.go`, `graph/permute.go`, `config/auth.go`.*
+<!-- Source: `cmd/aat/run_plan_cmd.go`, `cmd/aat/run_batch_cmd.go`, `cmd/aat/run_shared.go`, `cmd/aat/progress.go`, `graph/permute.go`, `config/auth.go`. -->

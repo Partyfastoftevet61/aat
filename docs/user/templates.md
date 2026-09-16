@@ -679,6 +679,4 @@ response:
     return outputs
 ```
 
----
-
-*Source: `adapter/template.go`, `adapter/lua.go`.*
+<!-- Source: `adapter/template.go`, `adapter/lua.go`. -->

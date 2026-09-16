@@ -362,6 +362,4 @@ Across the whole project, the hand-tuned version adds:
 
 An extract rule can also rename an output, since the extract key is the output name and the path is where the value lives (`orderId: id`). The shop keeps the API's names, so none of its templates do.
 
----
-
-*Source: `cmd/aat/generate_cmd.go`, `graph/oas/generate.go`, `graph/oas/oas.go`, `examples/shop/graph.yaml`, `examples/shop/templates/`.*
+<!-- Source: `cmd/aat/generate_cmd.go`, `graph/oas/generate.go`, `graph/oas/oas.go`, `examples/shop/graph.yaml`, `examples/shop/templates/`. -->

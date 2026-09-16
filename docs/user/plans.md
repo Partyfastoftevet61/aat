@@ -1260,6 +1260,4 @@ execution:
       runOn: always                   # always, success, failure
 ```
 
----
-
-*Source: plan types in `plan/types.go`, recipe types in `plan/recipe.go`, validation in `plan/validate.go`, layers in `graph/layer.go`.*
+<!-- Source: plan types in `plan/types.go`, recipe types in `plan/recipe.go`, validation in `plan/validate.go`, layers in `graph/layer.go`. -->

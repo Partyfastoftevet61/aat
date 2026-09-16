@@ -169,7 +169,7 @@ Then:
 ## Current Limits
 
 - A manifest names one graph, one templates directory, and one workflows directory. An operation or workflow that must stay internal cannot be added on top of a kit, so keep it out of the shipped files.
-- `package-kit.sh` copies a fixed list of files. Nothing derives the list from the kit manifest yet.
+- `package-kit.sh` copies a fixed list of files; edit the list when the kit's files change.
 
 ## The Shop Does This
 

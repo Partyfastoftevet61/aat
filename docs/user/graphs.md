@@ -623,6 +623,4 @@ When templates are available (`--templates`, or the manifest's `templates`), val
 
 See [Validation](validation.md) for the full reference covering all `aat validate` subcommands.
 
----
-
-*Source: graph types in `graph/types.go`, parsing in `graph/parse.go`, validation in `graph/validate.go` and `graph/oas/validator.go`, chaining in `graph/chain.go`.*
+<!-- Source: graph types in `graph/types.go`, parsing in `graph/parse.go`, validation in `graph/validate.go` and `graph/oas/validator.go`, chaining in `graph/chain.go`. -->

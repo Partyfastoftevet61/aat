@@ -233,6 +233,4 @@ If the visualizer appears but shows nothing, check:
 - [Web UI](web-ui.md) — the web viewer where visualizers display
 - [Project Setup](project-setup.md) — the `visualizers` manifest field
 
----
-
-*Source: `config/visualizer.go`, `server/visualizer.go`, `server/visualizer_handler.go`.*
+<!-- Source: `config/visualizer.go`, `server/visualizer.go`, `server/visualizer_handler.go`. -->

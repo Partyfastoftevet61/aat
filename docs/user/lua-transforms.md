@@ -283,6 +283,4 @@ These are current limits of the transform runtime, not guarantees to rely on:
 - **Nulls are lost.** A `null` value disappears from objects, turns an array with a `null` inside into an object, and cannot be told apart from a missing path in `json_path`. Empty objects come back as empty arrays.
 - **The timeout is partial.** The 5-second limit does not interrupt a long Go-side library call, and there is no memory limit.
 
----
-
-*Source: `adapter/lua.go`, `adapter/template.go`, `engine/engine.go`, `engine/cleanup.go`, `engine/validate_adapters.go`, `graph/oas/validator.go`, `archive/types.go`, `server/web/src/routes/StepDetail.svelte`, `mcp/tools_template.go`, `mcp/tools_graph.go`.*
+<!-- Source: `adapter/lua.go`, `adapter/template.go`, `engine/engine.go`, `engine/cleanup.go`, `engine/validate_adapters.go`, `graph/oas/validator.go`, `archive/types.go`, `server/web/src/routes/StepDetail.svelte`, `mcp/tools_template.go`, `mcp/tools_graph.go`. -->

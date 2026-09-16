@@ -154,6 +154,4 @@ The MCP server's per-node documentation is read from the directory set by the ma
 - **Diagram labels are not escaped.** A `"` in a node description breaks the Mermaid diagram. Labels are cut at 50 bytes, which can split a multi-byte character.
 - **Example order is not stable.** When a concept has more than one example group (the shop's `us` and `eu`), the groups can come out in a different order on each run, so regenerating the docs can change them with no change to the graph or domain.
 
----
-
-*Source: `cmd/aat/docs_cmd.go`, `graph/docgen.go`, `graph/mermaid.go`, `config/resolver.go`.*
+<!-- Source: `cmd/aat/docs_cmd.go`, `graph/docgen.go`, `graph/mermaid.go`, `config/resolver.go`. -->

@@ -284,6 +284,4 @@ $ pytest -q test_handoff.py
 
 The fixture's teardown runs whether the test passes or fails, so the order and the cart are deleted either way; afterwards both return `404`. The `DELETE /orders/{orderId}` and `DELETE /carts/{cartId}` calls are the same operations the plan's cleanup would have run (`deleteOrder` and `deleteCart` in the shop graph).
 
----
-
-*Source: `cmd/aat/run_plan_cmd.go`, `cmd/aat/run_shared.go`, `engine/engine.go`, `engine/export.go`, `examples/shop/`.*
+<!-- Source: `cmd/aat/run_plan_cmd.go`, `cmd/aat/run_shared.go`, `engine/engine.go`, `engine/export.go`, `examples/shop/`. -->

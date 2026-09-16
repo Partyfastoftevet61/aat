@@ -7,7 +7,6 @@
 [![CI](https://github.com/gburgyan/aat/actions/workflows/ci.yml/badge.svg)](https://github.com/gburgyan/aat/actions/workflows/ci.yml)
 [![Docs](https://github.com/gburgyan/aat/actions/workflows/docs.yml/badge.svg)](https://gburgyan.github.io/aat/)
 [![Release](https://img.shields.io/github/v/release/gburgyan/aat)](https://github.com/gburgyan/aat/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/gburgyan/aat)](https://goreportcard.com/report/github.com/gburgyan/aat)
 [![License](https://img.shields.io/github/license/gburgyan/aat)](https://github.com/gburgyan/aat/blob/main/LICENSE)
 
 <img src="https://raw.githubusercontent.com/gburgyan/aat/main/docs/user/assets/demo-plan.gif" alt="aat run plan full-lifecycle against the offline shop sandbox: fifteen steps stream in with status codes and durations, two steps retry, cleanup deletes the order and the cart, and the run passes" width="820">

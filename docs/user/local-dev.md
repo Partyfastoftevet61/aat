@@ -224,7 +224,7 @@ aat run batch --no-auto-overrides
 
 The `--no-auto-overrides` flag is available on `aat run plan`, `aat run batch`, and `aat prompt`.
 
-## Existing Alternatives
+## Other ways to route
 
 `.aat-overrides.yaml` is the recommended approach for ongoing local development. For other scenarios:
 

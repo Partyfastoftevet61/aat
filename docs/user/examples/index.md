@@ -4,7 +4,7 @@ Two complete projects ship in the repository. CI checks both with `aat validate 
 
 | Example | API | What it shows | Needs |
 |---------|-----|---------------|-------|
-| [Shop](shop.md) | An offline e-commerce API served by `aat-sandbox` | Everything: a 17-operation graph, workflows with slots and addons, a Lua transform, layers and batch matrices with dedup, `us`/`eu` environments, a separately hosted payments API, negative tests and mutations, retries, checkpoints, a visualizer, MCP configuration, and an [integration kit](../integration-kit.md) packaged from the project | Nothing — no network, no account |
+| [Shop](shop.md) | An offline e-commerce API served by `aat-sandbox` | Everything: an 18-operation graph, workflows with slots and addons, a Lua transform, layers and batch matrices with dedup, `us`/`eu` environments, a separately hosted payments API, negative tests and mutations, retries, checkpoints, a visualizer, MCP configuration, and an [integration kit](../integration-kit.md) packaged from the project | Nothing — no network, no account |
 | [Petstore](../petstore-walkthrough.md) | The public Swagger Petstore | The smallest working project: four operations, two workflows, two recipes, and graph cleanup pairing | Network access |
 
 Three more projects run against real, public APIs and live in their own repositories. Each was built against the API's live test mode, and every claim in its README is something a run recorded:

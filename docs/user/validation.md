@@ -303,6 +303,4 @@ aat validate && aat run batch --json
 
 If validation fails (exit code 1), the batch command never runs. This is the recommended pattern for CI/CD pipelines. See [CI/CD Integration](ci-cd.md) for full pipeline examples.
 
----
-
-*Source: `cmd/aat/validate_cmd.go`, `cmd/aat/validate_graph_cmd.go`, `cmd/aat/validate_plan_cmd.go`, `cmd/aat/validate_workflow_cmd.go`, `graph/validate.go`, `plan/validate.go`, `internal/yamlx/decode.go`.*
+<!-- Source: `cmd/aat/validate_cmd.go`, `cmd/aat/validate_graph_cmd.go`, `cmd/aat/validate_plan_cmd.go`, `cmd/aat/validate_workflow_cmd.go`, `graph/validate.go`, `plan/validate.go`, `internal/yamlx/decode.go`. -->

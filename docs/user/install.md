@@ -136,6 +136,4 @@ aat-sandbox init shop && cd shop
 
 See [Examples: Shop](examples/shop.md), or start with the [Quickstart](quickstart.md) or the [Tutorial](tutorial.md).
 
----
-
-*Source: `.goreleaser.yml`, `Dockerfile`, `Makefile`, `go.mod`, `server/web/package.json`, `internal/version/version.go`, `cmd/aat/web_cmd.go`, `server/embed.go`.*
+<!-- Source: `.goreleaser.yml`, `Dockerfile`, `Makefile`, `go.mod`, `server/web/package.json`, `internal/version/version.go`, `cmd/aat/web_cmd.go`, `server/embed.go`. -->

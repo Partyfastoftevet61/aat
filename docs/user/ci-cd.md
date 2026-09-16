@@ -448,6 +448,4 @@ aat web view exported-run.aar
 
 The web UI shows the full request/response, value resolution chain, and assertion results for each step. See [Web UI: Debugging Patterns](web-ui.md#debugging-patterns) for a detailed walkthrough.
 
----
-
-*Source: `cmd/aat/run_shared.go`, `cmd/aat/run_batch_cmd.go`.*
+<!-- Source: `cmd/aat/run_shared.go`, `cmd/aat/run_batch_cmd.go`. -->

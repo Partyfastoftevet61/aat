@@ -505,6 +505,4 @@ values:
   discountCode: {}
 ```
 
----
-
-*Source: resolution logic in `engine/resolve.go`, selection strategies in `engine/selection.go`, expressions in `plan/expr.go`, predicates in `plan/predicate.go`, type coercion in `engine/resolve.go`.*
+<!-- Source: resolution logic in `engine/resolve.go`, selection strategies in `engine/selection.go`, expressions in `plan/expr.go`, predicates in `plan/predicate.go`, type coercion in `engine/resolve.go`. -->

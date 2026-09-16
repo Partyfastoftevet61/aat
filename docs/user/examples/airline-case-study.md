@@ -27,4 +27,4 @@ The same project describes the API well enough to integrate with it. Given the p
 
 ## Try the Same Patterns
 
-The [shop example](shop.md) uses these patterns on an API you can run offline: a 17-operation graph, base workflows with slots and addons, layers, two environments, a Lua transform, and a visualizer.
+The [shop example](shop.md) uses these patterns on an API you can run offline: an 18-operation graph, base workflows with slots and addons, layers, two environments, a Lua transform, and a visualizer.

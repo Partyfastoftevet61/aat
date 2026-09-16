@@ -225,6 +225,4 @@ In `--dev` mode, the Go server proxies frontend requests to Vite on port 5173 an
 
 For production, `make build` compiles the Svelte frontend and embeds it into the Go binary via `//go:embed`. Release binaries are built this way.
 
----
-
-*Source: `cmd/aat/web_cmd.go`, `server/server.go`, `server/handlers.go`, `server/service.go`, `server/embed.go`, `server/web/src/routes/*.svelte`, `server/web/src/components/*.svelte`.*
+<!-- Source: `cmd/aat/web_cmd.go`, `server/server.go`, `server/handlers.go`, `server/service.go`, `server/embed.go`, `server/web/src/routes/*.svelte`, `server/web/src/components/*.svelte`. -->

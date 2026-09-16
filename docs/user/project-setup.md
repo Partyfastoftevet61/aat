@@ -180,7 +180,7 @@ CLI flags always override the corresponding manifest field. This lets you test a
 aat run plan checkout.yaml --env-config staging-env.yaml
 
 # Use the project's environment, but a different graph
-aat validate graph --graph experimental-graph.yaml
+aat validate graph --graph graph-v2.yaml
 ```
 
 ## Multiple Environments
@@ -241,6 +241,4 @@ traces: traces/                    # optional — planning trace output director
 visualizers: visualizers/          # optional — visualizer plugins directory
 ```
 
----
-
-*Source: `config/manifest.go`, `config/resolver.go`, `config/user_config.go`.*
+<!-- Source: `config/manifest.go`, `config/resolver.go`, `config/user_config.go`. -->

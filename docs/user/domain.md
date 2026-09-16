@@ -424,6 +424,4 @@ valuePools:                                # curated test data
         - value-b
 ```
 
----
-
-*Source: `domain/types.go`, `domain/parse.go` (including `Merge`), `domain/validate.go`, `domain/query.go`; used by `intent/targeted.go`, `cmd/aat/docs_cmd.go`, and `mcp/`.*
+<!-- Source: `domain/types.go`, `domain/parse.go` (including `Merge`), `domain/validate.go`, `domain/query.go`; used by `intent/targeted.go`, `cmd/aat/docs_cmd.go`, and `mcp/`. -->
