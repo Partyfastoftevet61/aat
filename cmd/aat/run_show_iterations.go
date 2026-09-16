@@ -182,6 +182,8 @@ type shownIteration struct {
 	Outputs           map[string]any               `json:"outputs,omitempty"`
 	OASValidation     *archive.OASValidationRecord `json:"oas_validation,omitempty"`
 	RequestBodyBytes  int                          `json:"request_body_bytes,omitempty"`
+	RequestBodyForm   bool                         `json:"request_body_form,omitempty"`   // the request body is form-encoded
+	RequestFormFields int                          `json:"request_form_fields,omitempty"` // its fields, decoded
 	ResponseBodyBytes int                          `json:"response_body_bytes,omitempty"`
 }
 
@@ -205,6 +207,11 @@ func buildShownIteration(step *archive.StepRecord, it *archive.IterationRecord, 
 	if it.Request != nil {
 		view.Method, view.URL = it.Request.Method, it.Request.URL
 		view.RequestBodyBytes = compactSize(it.Request.Body)
+		if archive.IsFormMediaType(archive.HeaderValue(it.Request.Headers, "Content-Type")) {
+			view.RequestBodyForm = true
+			view.RequestFormFields = len(archive.FormFields(it.Request.Body))
+			view.RequestBodyBytes = len(archive.BodyText(it.Request.Body))
+		}
 	}
 	if it.Response != nil {
 		view.Status = it.Response.Status
@@ -252,7 +259,7 @@ func showIteration(out io.Writer, step *archive.StepRecord, it *archive.Iteratio
 	writeShownValues(&b, "inputs", view.Inputs)
 	writeShownValues(&b, "outputs", view.Outputs)
 	writeShownOAS(&b, view.OASValidation)
-	fmt.Fprintf(&b, "request body: %s\n", showSize(view.RequestBodyBytes))
+	fmt.Fprintf(&b, "request body: %s%s\n", showSize(view.RequestBodyBytes), formNote(view.RequestBodyForm, view.RequestFormFields))
 	fmt.Fprintf(&b, "response body: %s\n", showSize(view.ResponseBodyBytes))
 	if view.ResponseBodyBytes > 0 {
 		fmt.Fprintf(&b, "\nNext: --iteration %d --response --shape for its response's structure, --iteration %d --response --path PATH for one part of it\n", view.Index, view.Index)
@@ -308,7 +315,7 @@ func showIterationPart(out, errOut io.Writer, it *archive.IterationRecord, id st
 	if err != nil {
 		return err
 	}
-	return showPart(out, errOut, doc, fmt.Sprintf("request %d of step %s", it.Index, id), opts)
+	return showPart(out, errOut, doc, partContentType(it.Request, it.Response, opts.Part), fmt.Sprintf("request %d of step %s", it.Index, id), opts)
 }
 
 // iterationPartJSON returns a part of a repeated step's request as JSON, or

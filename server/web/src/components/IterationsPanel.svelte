@@ -127,7 +127,10 @@
             <HeadersTable headers={detail.request.headers} />
           </details>
         {/if}
-        {#if detail.request.body !== undefined && detail.request.body !== null}
+        {#if detail.request.formFields && detail.request.formFields.length > 0}
+          <h4 class="section-heading">Request body ({detail.request.formFields.length} form fields)</h4>
+          <HeadersTable headers={detail.request.formFields} />
+        {:else if detail.request.body !== undefined && detail.request.body !== null}
           <h4 class="section-heading">Request body</h4>
           <JsonViewer data={detail.request.body} />
         {/if}

@@ -60,7 +60,7 @@ Each step record holds:
 |-------|----------|
 | `stepId`, `node`, `startTime`, `durationMs` | Which step ran, and when: a retried step's start and duration cover every attempt and the waits between them. Archives written before 0.1.0 name the duration `duration_ms`; AAT reads both |
 | `inputs` | The resolved input values |
-| `request` | Method, full URL, headers, and body. When an override routed the step elsewhere, `originalUrl` holds the URL it would have used |
+| `request` | Method, full URL, headers, and body. A body that isn't JSON, such as a form-encoded one, is archived as the text it was sent as, and its `Content-Type` header says which it is. When an override routed the step elsewhere, `originalUrl` holds the URL it would have used |
 | `response` | Status, headers, and body |
 | `outputs`, `displayOutputs` | Extracted outputs (after any [Lua transform](lua-transforms.md), whose script is in `transformScript`) and the plan's display outputs |
 | `resolutions` | How each input got its value: `source` (such as `plan_default`, `graph_default`, `layer`, `expression`, `plan_from`, `select_edge`, or `fallback_pool`), the `layer` that set the value, the raw and final value, the step and output it came from, and whether a `constraint` passed |
@@ -227,6 +227,8 @@ These flags print one part of the step instead:
 | `--compact` | JSON on one line, for a script or `jq`: a part, with or without `--path`, and with `--json` the step list, the step, or the shape. With `--shape`, or without a part, it needs `--json` |
 
 `--iteration N`, with `--step`, reads one request of a repeated step instead, counting from 1. On its own it prints that request's URL, status, and time, whether `until` held, why the step stopped when it is the last, the inputs it sent when the step pages, its outputs, its OpenAPI validation, and the sizes of its bodies. With `--request`, `--response`, `--inputs`, `--outputs`, `--path`, or `--shape`, it prints that request's part; `--json` works as for a step. `--resolutions` needs the step alone, since a repeated step resolves its inputs once for every request.
+
+A form-encoded body prints as its decoded fields, one `name=value` per line, since a single escaped string is not what the step sent. `--compact` prints the body as it went over the wire, and `--path` and `--shape` read the value its bracketed keys describe, so `--path metadata.source` selects from `metadata[source]=aat-stripe` and a key ending in `[]`, or one sent more than once, reads as an array.
 
 Without `--step`, a part flag or `--path` prints that part of every step that has it, cleanup steps included, one line each. One command then answers a question about the whole run:
 

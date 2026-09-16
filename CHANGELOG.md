@@ -7,6 +7,13 @@ the graph and plan formats may still change before 1.0.
 ## [Unreleased]
 
 ### Added
+- A form-encoded body reads as what was sent, rather than as one escaped string. `aat run show --request` prints its
+  decoded fields, one `name=value` per line; `--compact` prints the body as it went over the wire; and `--path` and
+  `--shape` read the value its bracketed keys describe, so `--path metadata.source` selects from
+  `metadata[source]=aat-stripe`, and a key ending in `[]` or sent twice reads as an array.
+  - The step view notes the body as `91 bytes (form, 5 fields)`, and its `--json` adds `request_body_form`.
+  - The web UI's Request and Response tabs show a form body as its fields, and the API adds `formFields` to each.
+  - The MCP server's `inspect_archive` prints form bodies as fields too.
 - `aat run show --step ID` lists a repeated step's requests: each one's status, time, and whether `until` held, the
   inputs it sent that differ from the step's when it pages, and its outputs. `--iteration N` shows one of them, and with
   `--request`, `--response`, `--inputs`, `--outputs`, `--path`, or `--shape` prints that request's part.

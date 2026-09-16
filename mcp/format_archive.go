@@ -126,17 +126,27 @@ func formatStepRecord(s *archive.StepRecord, idx, total int) string {
 			result, s.ExpectFailure.Expected, s.ExpectFailure.Actual)
 	}
 
-	// Request body (truncated)
+	// Request body (truncated), as fields when it is form-encoded
 	if s.Request != nil && len(s.Request.Body) > 0 {
-		b.WriteString("**Request Body:**\n```json\n")
-		b.WriteString(truncateBody(s.Request.Body, 2000))
+		if archive.IsFormMediaType(archive.HeaderValue(s.Request.Headers, "Content-Type")) {
+			b.WriteString("**Request Body** (form):\n```\n")
+			b.WriteString(truncateFormBody(s.Request.Body, 2000))
+		} else {
+			b.WriteString("**Request Body:**\n```json\n")
+			b.WriteString(truncateBody(s.Request.Body, 2000))
+		}
 		b.WriteString("\n```\n\n")
 	}
 
 	// Response body (truncated)
 	if s.Response != nil && len(s.Response.Body) > 0 {
-		b.WriteString("**Response Body:**\n```json\n")
-		b.WriteString(truncateBody(s.Response.Body, 2000))
+		if archive.IsFormMediaType(archive.HeaderValue(s.Response.Headers, "Content-Type")) {
+			b.WriteString("**Response Body** (form):\n```\n")
+			b.WriteString(truncateFormBody(s.Response.Body, 2000))
+		} else {
+			b.WriteString("**Response Body:**\n```json\n")
+			b.WriteString(truncateBody(s.Response.Body, 2000))
+		}
 		b.WriteString("\n```\n\n")
 	}
 
@@ -466,6 +476,24 @@ func formatArchiveDiff(a1, a2 *archive.Archive) string {
 	}
 
 	return b.String()
+}
+
+// truncateFormBody prints a form-encoded body as one decoded field per line,
+// truncated to maxLen characters, rather than as the one escaped string it is
+// archived as.
+func truncateFormBody(body json.RawMessage, maxLen int) string {
+	var b strings.Builder
+	for _, field := range archive.FormFields(body) {
+		b.WriteString(field.Name)
+		b.WriteByte('=')
+		b.WriteString(field.Value)
+		b.WriteByte('\n')
+	}
+	text := strings.TrimSuffix(b.String(), "\n")
+	if len(text) > maxLen {
+		return text[:maxLen] + "\n... (truncated)"
+	}
+	return text
 }
 
 // truncateBody pretty-prints JSON and truncates to maxLen characters.

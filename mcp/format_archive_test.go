@@ -395,3 +395,16 @@ func TestFindFailedSteps_AllPassed(t *testing.T) {
 	failed := findFailedSteps(steps)
 	assert.Empty(t, failed)
 }
+
+func TestFormatArchiveDetail_FormBody(t *testing.T) {
+	step := testStep("createPaymentIntent", 200, 120)
+	body, err := json.Marshal("amount=2000&metadata[source]=aat-stripe&name=AAT+Stripe")
+	assert.NoError(t, err)
+	step.Request.Headers = map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
+	step.Request.Body = body
+
+	result := formatArchiveDetail(testArchive("passed", step))
+	assert.Contains(t, result, "**Request Body** (form):")
+	assert.Contains(t, result, "amount=2000\nmetadata[source]=aat-stripe\nname=AAT Stripe")
+	assert.NotContains(t, result, `&`, "not the one escaped string the archive holds")
+}
