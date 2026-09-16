@@ -37,3 +37,20 @@ paths:
       responses:
         '200':
           description: One item of an order
+  /v1/parcels:
+    post:
+      operationId: createParcel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mass_unit: {type: string}
+                distance_unit: {type: string}
+                weight: {type: string}
+              required: [weight, mass_unit]
+      responses:
+        '201':
+          description: A parcel

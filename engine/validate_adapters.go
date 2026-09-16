@@ -126,6 +126,19 @@ func TemplateQueryInputParams(g *graph.Graph, registry *adapter.Registry) oas.Qu
 	return params
 }
 
+// TemplateBodyInputFields maps each templated node to the JSON body properties
+// its template sends each input as, for the static OAS input checks (see
+// oas.Validator.WithBodyInputFields).
+func TemplateBodyInputFields(g *graph.Graph, registry *adapter.Registry) oas.BodyInputFields {
+	fields := make(oas.BodyInputFields, len(g.Nodes))
+	for name, node := range g.Nodes {
+		if tmpl, ok := registry.GetTemplate(node.Adapter); ok {
+			fields[name] = tmpl.BodyInputFields()
+		}
+	}
+	return fields
+}
+
 // TemplatePaths maps each templated node to its request path in OpenAPI form,
 // for the static OAS input checks (see oas.Validator.WithPathTemplates).
 func TemplatePaths(g *graph.Graph, registry *adapter.Registry) oas.PathTemplates {

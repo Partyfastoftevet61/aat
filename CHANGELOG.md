@@ -367,6 +367,11 @@ the graph and plan formats may still change before 1.0.
   object after an expected failure.
 
 ### Fixed
+- An input sent as a JSON body property the spec names otherwise counts as that property, as one sent as a form
+  field, a query parameter, or a path segment already did. `"mass_unit": "{{massUnit}}"` now matches the spec's
+  `mass_unit`, quoted or bare and inside a conditional block, in both the unknown-input and the required-property
+  checks. Until now only form-bodied APIs could name inputs for the package rather than the spec; a JSON-bodied one
+  had to spell every input the spec's way or carry a warning for each.
 - `aat validate --strict` knows the inputs of a node whose request body is a `oneOf` or `anyOf`. Only the schema and
   its `allOf` were read, so a body written by hand for a composed schema had every one of its inputs reported as
   `input "weight" not found in OAS parameters or request body`. `aat generate` declines to write such a body and says

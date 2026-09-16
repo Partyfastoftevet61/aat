@@ -19,6 +19,7 @@ type Validator struct {
 	headerInputs     HeaderInputs
 	formInputFields  FormInputFields
 	queryInputParams QueryInputParams
+	bodyInputFields  BodyInputFields
 	pathTemplates    PathTemplates
 }
 
@@ -39,6 +40,10 @@ type HeaderInputs map[string]map[string]bool
 // node's template sends that input as: the form fields whose whole value is the
 // input.
 type FormInputFields map[string]map[string][]string
+
+// BodyInputFields maps node name → input → the JSON body properties the node's
+// template sends it as, for the unknown-input check.
+type BodyInputFields map[string]map[string][]string
 
 // QueryInputParams maps node name → input → the query parameters the node's
 // template sends that input as: the parameters whose whole value is the input.
@@ -87,6 +92,14 @@ func (v *Validator) WithHeaderInputs(inputs HeaderInputs) *Validator {
 // skus[] counts as the skus field.
 func (v *Validator) WithFormInputFields(fields FormInputFields) *Validator {
 	v.formInputFields = fields
+	return v
+}
+
+// WithBodyInputFields makes the input checks match an input to the JSON body
+// property the node's template sends it as, so an input named massUnit and
+// sent as "mass_unit": "{{massUnit}}" counts as mass_unit.
+func (v *Validator) WithBodyInputFields(fields BodyInputFields) *Validator {
+	v.bodyInputFields = fields
 	return v
 }
 
@@ -271,8 +284,9 @@ func (v *Validator) outputPath(nodeName, output string) (string, bool) {
 }
 
 // sentAs maps each input of a node to the request fields its template sends it
-// as under another name: the form fields and query parameters whose whole
-// value it is, and the path parameters of opPath at the segments it fills.
+// as under another name: the form fields, query parameters, and JSON body
+// properties whose whole value it is, and the path parameters of opPath at the
+// segments it fills.
 func (v *Validator) sentAs(nodeName, opPath string) map[string][]string {
 	fields := make(map[string][]string)
 	add := func(input string, names []string) {
@@ -286,6 +300,9 @@ func (v *Validator) sentAs(nodeName, opPath string) map[string][]string {
 		add(input, names)
 	}
 	for input, names := range v.queryInputParams[nodeName] {
+		add(input, names)
+	}
+	for input, names := range v.bodyInputFields[nodeName] {
 		add(input, names)
 	}
 	if path, ok := v.pathTemplates[nodeName]; ok {

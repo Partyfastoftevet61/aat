@@ -491,6 +491,31 @@ func (t *Template) QueryInputParams() map[string][]string {
 	return inputs
 }
 
+// jsonBodyPairRe matches a JSON body property whose value is one placeholder,
+// quoted or bare: "mass_unit": "{{massUnit}}" and "async": {{async}}.
+var jsonBodyPairRe = regexp.MustCompile(`"([^"\\]+)"\s*:\s*"?\{\{\s*(` + blockNamePat + `)\s*\}\}"?`)
+
+// BodyInputFields maps each input the template sends as a JSON body property
+// to the property names it is written under, so an input named massUnit and
+// sent as "mass_unit": "{{massUnit}}" counts as mass_unit. Only a property
+// whose whole value is one placeholder is matched: anything built from several
+// placeholders names no single field. Block tags are stripped first, so a
+// property inside a conditional counts like any other.
+func (t *Template) BodyInputFields() map[string][]string {
+	inputs := make(map[string][]string)
+	if t.Request.Body == "" {
+		return inputs
+	}
+	body := blockTagRe.ReplaceAllString(t.Request.Body, "")
+	for _, m := range jsonBodyPairRe.FindAllStringSubmatch(body, -1) {
+		name, input := m[1], m[2]
+		if !slices.Contains(inputs[input], name) {
+			inputs[input] = append(inputs[input], name)
+		}
+	}
+	return inputs
+}
+
 // WholeValueInputs returns, sorted, the inputs that are the whole value of a
 // request.form field or a header. Such a field or header is left out when its
 // input has no value, so a misspelled name would send nothing, silently; the
