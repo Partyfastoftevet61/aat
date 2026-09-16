@@ -241,6 +241,7 @@ response:
 - **Lists and maps:** a list repeats the key as written (`tags[]` or `tags`). A map, nested in the template or as an input's value, writes bracketed keys, and a map in a list writes `items[0][sku]`.
 - **Other text,** such as `"Order {{orderId}}"`, is sent as one value and still needs its placeholders. Iteration blocks aren't allowed in a form.
 - **Field names needn't match input names:** `customer: "{{customerId}}"` counts `customerId` as the spec's `customer` field in `aat validate`.
+- The same holds for a JSON body: `"mass_unit": "{{massUnit}}"` counts `massUnit` as the spec's `mass_unit`, so an input can be named for the package rather than the spec.
 
 ```yaml
 request:

@@ -367,6 +367,7 @@ func TestValidate_ParamsNamedApart(t *testing.T) {
 		inputs    []string
 		path      string              // the template's path in OpenAPI form; "" when unknown
 		query     map[string][]string // input → the query parameters it is sent as
+		body      map[string][]string // input → the JSON body properties it is sent as
 		wantMsgs  []string            // empty: no issue expected
 	}{
 		{
@@ -424,6 +425,31 @@ func TestValidate_ParamsNamedApart(t *testing.T) {
 			path:      "/v1/orders",
 			query:     map[string][]string{"orderStatus": {"status"}, "startingAfter": {"starting_after"}},
 		},
+		{
+			name:      "body inputs without template knowledge",
+			operation: "createParcel",
+			inputs:    []string{"weight", "massUnit", "distanceUnit"},
+			path:      "/v1/parcels",
+			wantMsgs: []string{
+				`input "massUnit" not found`, `input "distanceUnit" not found`,
+				`required parameter "mass_unit" missing`,
+			},
+		},
+		{
+			name:      "JSON body properties sent as whole values",
+			operation: "createParcel",
+			inputs:    []string{"weight", "massUnit", "distanceUnit"},
+			path:      "/v1/parcels",
+			body:      map[string][]string{"massUnit": {"mass_unit"}, "distanceUnit": {"distance_unit"}},
+		},
+		{
+			name:      "an input no body property carries is still reported",
+			operation: "createParcel",
+			inputs:    []string{"weight", "massUnit", "colour"},
+			path:      "/v1/parcels",
+			body:      map[string][]string{"massUnit": {"mass_unit"}},
+			wantMsgs:  []string{`input "colour" not found`},
+		},
 	}
 
 	for _, tt := range tests {
@@ -434,6 +460,7 @@ func TestValidate_ParamsNamedApart(t *testing.T) {
 				v.WithPathTemplates(PathTemplates{tt.operation: tt.path})
 			}
 			v.WithQueryInputParams(QueryInputParams{tt.operation: tt.query})
+			v.WithBodyInputFields(BodyInputFields{tt.operation: tt.body})
 
 			inputs := make([]graph.Input, 0, len(tt.inputs))
 			for _, name := range tt.inputs {

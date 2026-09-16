@@ -125,6 +125,7 @@ func graphValidateCommand(args *graphValidateArgs) int {
 			WithHeaderInputs(engine.TemplateHeaderInputs(g, registry)).
 			WithFormInputFields(engine.TemplateFormInputFields(g, registry)).
 			WithQueryInputParams(engine.TemplateQueryInputParams(g, registry)).
+			WithBodyInputFields(engine.TemplateBodyInputFields(g, registry)).
 			WithPathTemplates(engine.TemplatePaths(g, registry))
 	}
 	specPaths := validator.CollectSpecPaths(g)

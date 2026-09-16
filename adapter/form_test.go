@@ -305,6 +305,47 @@ func TestTemplate_PathTemplate(t *testing.T) {
 	}
 }
 
+func TestTemplate_BodyInputFields(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want map[string][]string
+	}{
+		{name: "no body", body: "", want: map[string][]string{}},
+		{
+			name: "quoted and bare values",
+			body: `{"mass_unit": "{{massUnit}}", "async": {{async}}, "note": "fixed"}`,
+			want: map[string][]string{"massUnit": {"mass_unit"}, "async": {"async"}},
+		},
+		{
+			name: "inside a conditional block",
+			body: `{"weight": "{{weight}}"{{?distanceUnit}}, "distance_unit": "{{distanceUnit}}"{{/distanceUnit}}}`,
+			want: map[string][]string{"weight": {"weight"}, "distanceUnit": {"distance_unit"}},
+		},
+		{
+			name: "a value built from more than a placeholder names no field",
+			body: `{"reference": "order-{{orderId}}"}`,
+			want: map[string][]string{},
+		},
+		{
+			name: "one input in two properties",
+			body: `{"from": "{{day}}", "to": "{{day}}"}`,
+			want: map[string][]string{"day": {"from", "to"}},
+		},
+		{
+			name: "an iterated list names no field",
+			body: `{"ids": [{{#ids}}"{{.}}"{{/ids}}]}`,
+			want: map[string][]string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpl := Template{Request: TemplateRequest{Body: tt.body}}
+			assert.Equal(t, tt.want, tmpl.BodyInputFields())
+		})
+	}
+}
+
 func TestTemplate_QueryInputParams(t *testing.T) {
 	tests := []struct {
 		name string
