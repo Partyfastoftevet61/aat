@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +27,8 @@ type ArchiveService interface {
 	GetAttempt(runID string, attemptNum int) (*RunDetail, error)
 	GetStep(runID, stepID string) (*StepDetail, error)
 	GetAttemptStep(runID string, attemptNum int, stepID string) (*StepDetail, error)
+	GetStepIteration(runID, stepID string, index int) (*IterationDetail, error)
+	GetAttemptStepIteration(runID string, attemptNum int, stepID string, index int) (*IterationDetail, error)
 	ListBatches(limit int, savedOnly bool) ([]BatchListEntry, error)
 	GetBatch(id string) (*BatchDetail, error)
 	ExportRun(id string, w io.Writer) (string, error)
@@ -207,6 +210,35 @@ func (s *diskArchiveService) GetStep(runID, stepID string) (*StepDetail, error) 
 
 // GetAttemptStep loads the full detail of a single step within a prior attempt archive.
 func (s *diskArchiveService) GetAttemptStep(runID string, attemptNum int, stepID string) (*StepDetail, error) {
+	a, err := s.loadAttempt(runID, attemptNum)
+	if err != nil {
+		return nil, err
+	}
+	return getStepFromArchive(a, runID, stepID)
+}
+
+// GetStepIteration loads one request of a repeated step within a run.
+func (s *diskArchiveService) GetStepIteration(runID, stepID string, index int) (*IterationDetail, error) {
+	a, err := s.loadArchive(runID)
+	if err != nil {
+		return nil, err
+	}
+	return getIterationFromArchive(a, runID, stepID, index)
+}
+
+// GetAttemptStepIteration loads one request of a repeated step within a prior
+// attempt archive.
+func (s *diskArchiveService) GetAttemptStepIteration(runID string, attemptNum int, stepID string, index int) (*IterationDetail, error) {
+	a, err := s.loadAttempt(runID, attemptNum)
+	if err != nil {
+		return nil, err
+	}
+	return getIterationFromArchive(a, runID, stepID, index)
+}
+
+// loadAttempt reads a prior attempt archive of a run, standalone or a batch
+// member.
+func (s *diskArchiveService) loadAttempt(runID string, attemptNum int) (*archive.Archive, error) {
 	// Find the run directory (standalone or batch member).
 	_, batchID, err := s.loadArchiveWithContext(runID)
 	if err != nil {
@@ -228,8 +260,20 @@ func (s *diskArchiveService) GetAttemptStep(runID string, attemptNum int, stepID
 		}
 		return nil, fmt.Errorf("reading attempt %d of run %q: %w", attemptNum, runID, err)
 	}
+	return a, nil
+}
 
-	return getStepFromArchive(a, runID, stepID)
+// getIterationFromArchive extracts one request of a repeated step, counting
+// from 1, from a loaded archive.
+func getIterationFromArchive(a *archive.Archive, runID, stepID string, index int) (*IterationDetail, error) {
+	rec, _ := archive.FindStep(a, stepID)
+	if rec == nil {
+		return nil, fmt.Errorf("step %q in run %q: %w", stepID, runID, ErrStepNotFound)
+	}
+	if index < 1 || index > len(rec.Iterations) {
+		return nil, fmt.Errorf("request %d of step %q in run %q, which recorded %d: %w", index, stepID, runID, len(rec.Iterations), ErrIterationNotFound)
+	}
+	return toIterationDetail(stepID, *rec, rec.Iterations[index-1]), nil
 }
 
 // getStepFromArchive extracts a step detail from a loaded archive.
@@ -955,6 +999,8 @@ func toStepDetail(s archive.StepRecord, isCleanup bool, nodeSteps map[string]str
 		HasResolutions:       len(s.Resolutions) > 0,
 		RetryCount:           s.RetryCount,
 		RetriedOn:            s.RetriedOn,
+		RepeatStop:           s.RepeatStop,
+		Iterations:           toIterationSummaries(s.Iterations),
 		StartTime:            s.StartTime,
 		Inputs:               s.Inputs,
 		Outputs:              s.Outputs,
@@ -969,6 +1015,69 @@ func toStepDetail(s archive.StepRecord, isCleanup bool, nodeSteps map[string]str
 		OASValidation:        toOASValidationDetail(s.OASValidation),
 		TransformScript:      s.TransformScript,
 	}
+}
+
+// toIterationSummaries lists a repeated step's requests without their bodies,
+// or nil for a step that didn't repeat.
+func toIterationSummaries(its []archive.IterationRecord) []IterationSummary {
+	if len(its) == 0 {
+		return nil
+	}
+	summaries := make([]IterationSummary, len(its))
+	for i, it := range its {
+		sum := IterationSummary{
+			Index:           it.Index,
+			DurationMs:      it.DurationMs,
+			DurationDisplay: formatDuration(it.DurationMs),
+			UntilMet:        it.UntilMet,
+			RetryCount:      it.RetryCount,
+			Error:           it.Error,
+			OASErrorCount:   oasErrorCount(it.OASValidation),
+		}
+		if it.Response != nil {
+			sum.Status = it.Response.Status
+		}
+		for name, v := range it.Outputs {
+			switch v.(type) {
+			case []any, map[string]any:
+				continue
+			}
+			if sum.Outputs == nil {
+				sum.Outputs = map[string]any{}
+			}
+			sum.Outputs[name] = v
+		}
+		summaries[i] = sum
+	}
+	return summaries
+}
+
+// toIterationDetail is one request of a repeated step with its bodies, headers,
+// inputs, outputs, and OpenAPI validation.
+func toIterationDetail(stepID string, step archive.StepRecord, it archive.IterationRecord) *IterationDetail {
+	detail := &IterationDetail{
+		StepID:          stepID,
+		Index:           it.Index,
+		Count:           len(step.Iterations),
+		DurationMs:      it.DurationMs,
+		DurationDisplay: formatDuration(it.DurationMs),
+		StartTime:       it.StartTime,
+		UntilMet:        it.UntilMet,
+		RetryCount:      it.RetryCount,
+		Error:           it.Error,
+		Inputs:          it.Inputs,
+		Outputs:         it.Outputs,
+		Request:         toRequestDetail(it.Request),
+		Response:        toResponseDetail(it.Response),
+		OASValidation:   toOASValidationDetail(it.OASValidation),
+	}
+	if it.Response != nil {
+		detail.Status = it.Response.Status
+	}
+	if it.Index == len(step.Iterations) {
+		detail.RepeatStop = step.RepeatStop
+	}
+	return detail
 }
 
 func countAssertions(s archive.StepRecord) (total, passed int) {
@@ -1023,6 +1132,7 @@ func toRequestDetail(r *archive.RequestRecord) *RequestDetail {
 		OriginalURL: r.OriginalURL,
 		Headers:     toHeaderEntries(r.Headers),
 		Body:        r.Body,
+		FormFields:  toFormFields(r.Headers, r.Body),
 	}
 }
 
@@ -1031,10 +1141,29 @@ func toResponseDetail(r *archive.ResponseRecord) *ResponseDetail {
 		return nil
 	}
 	return &ResponseDetail{
-		Status:  r.Status,
-		Headers: toHeaderEntries(r.Headers),
-		Body:    r.Body,
+		Status:     r.Status,
+		Headers:    toHeaderEntries(r.Headers),
+		Body:       r.Body,
+		FormFields: toFormFields(r.Headers, r.Body),
 	}
+}
+
+// toFormFields decodes a form-encoded body into its fields, so the web UI shows
+// them as they were sent rather than as one escaped string. A body of any other
+// type has none.
+func toFormFields(headers map[string]string, body json.RawMessage) []FormField {
+	if !archive.IsFormMediaType(archive.HeaderValue(headers, "Content-Type")) {
+		return nil
+	}
+	decoded := archive.FormFields(body)
+	if len(decoded) == 0 {
+		return nil
+	}
+	fields := make([]FormField, len(decoded))
+	for i, field := range decoded {
+		fields[i] = FormField{Name: field.Name, Value: field.Value}
+	}
+	return fields
 }
 
 func toValidationDetail(v *archive.ValidationRecord) *ValidationDetail {

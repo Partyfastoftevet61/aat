@@ -3,6 +3,8 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gburgyan/aat/archive"
@@ -124,17 +126,27 @@ func formatStepRecord(s *archive.StepRecord, idx, total int) string {
 			result, s.ExpectFailure.Expected, s.ExpectFailure.Actual)
 	}
 
-	// Request body (truncated)
+	// Request body (truncated), as fields when it is form-encoded
 	if s.Request != nil && len(s.Request.Body) > 0 {
-		b.WriteString("**Request Body:**\n```json\n")
-		b.WriteString(truncateBody(s.Request.Body, 2000))
+		if archive.IsFormMediaType(archive.HeaderValue(s.Request.Headers, "Content-Type")) {
+			b.WriteString("**Request Body** (form):\n```\n")
+			b.WriteString(truncateFormBody(s.Request.Body, 2000))
+		} else {
+			b.WriteString("**Request Body:**\n```json\n")
+			b.WriteString(truncateBody(s.Request.Body, 2000))
+		}
 		b.WriteString("\n```\n\n")
 	}
 
 	// Response body (truncated)
 	if s.Response != nil && len(s.Response.Body) > 0 {
-		b.WriteString("**Response Body:**\n```json\n")
-		b.WriteString(truncateBody(s.Response.Body, 2000))
+		if archive.IsFormMediaType(archive.HeaderValue(s.Response.Headers, "Content-Type")) {
+			b.WriteString("**Response Body** (form):\n```\n")
+			b.WriteString(truncateFormBody(s.Response.Body, 2000))
+		} else {
+			b.WriteString("**Response Body:**\n```json\n")
+			b.WriteString(truncateBody(s.Response.Body, 2000))
+		}
 		b.WriteString("\n```\n\n")
 	}
 
@@ -217,9 +229,75 @@ func formatStepRecord(s *archive.StepRecord, idx, total int) string {
 	}
 	if len(s.Iterations) > 0 {
 		fmt.Fprintf(&b, "**Requests:** %d (stopped: %s)\n\n", len(s.Iterations), s.RepeatStop)
+		b.WriteString(formatIterations(s.Iterations))
 	}
 
 	return b.String()
+}
+
+// maxListedIterations is how many of a repeated step's requests its step block
+// lists.
+const maxListedIterations = 20
+
+// formatIterations lists a repeated step's requests as a Markdown table: each
+// one's status, time, whether until held, and its scalar outputs, or its error.
+// Past maxListedIterations it lists the first ones and the last, with a row
+// counting the rest.
+func formatIterations(its []archive.IterationRecord) string {
+	var b strings.Builder
+	b.WriteString("| # | Status | Time | Until | Outputs |\n|---|---|---|---|---|\n")
+	row := func(it archive.IterationRecord) {
+		status := "-"
+		if it.Response != nil {
+			status = strconv.Itoa(it.Response.Status)
+		}
+		until := ""
+		if it.UntilMet {
+			until = "met"
+		}
+		rest := formatScalarOutputs(it.Outputs, 80)
+		if it.Error != "" {
+			rest = "error: " + it.Error
+		}
+		fmt.Fprintf(&b, "| %d | %s | %s | %s | %s |\n", it.Index, status, formatDurationMs(it.DurationMs), until, strings.ReplaceAll(rest, "|", `\|`))
+	}
+	listed := its
+	if len(its) > maxListedIterations {
+		listed = its[:maxListedIterations-1]
+	}
+	for _, it := range listed {
+		row(it)
+	}
+	if len(listed) < len(its) {
+		fmt.Fprintf(&b, "| … | | | | %d more |\n", len(its)-len(listed)-1)
+		row(its[len(its)-1])
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
+// formatScalarOutputs renders the outputs that are strings, numbers, booleans,
+// or null as name=value pairs sorted by name, cut to limit characters.
+func formatScalarOutputs(outputs map[string]any, limit int) string {
+	names := make([]string, 0, len(outputs))
+	for name, v := range outputs {
+		switch v.(type) {
+		case []any, map[string]any:
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	pairs := make([]string, len(names))
+	for i, name := range names {
+		value, _ := json.Marshal(outputs[name])
+		pairs[i] = name + "=" + string(value)
+	}
+	text := []rune(strings.Join(pairs, ", "))
+	if len(text) > limit {
+		return string(text[:limit]) + "…"
+	}
+	return string(text)
 }
 
 // formatFailureAnalysis returns a failure-focused Markdown analysis of an archive.
@@ -398,6 +476,24 @@ func formatArchiveDiff(a1, a2 *archive.Archive) string {
 	}
 
 	return b.String()
+}
+
+// truncateFormBody prints a form-encoded body as one decoded field per line,
+// truncated to maxLen characters, rather than as the one escaped string it is
+// archived as.
+func truncateFormBody(body json.RawMessage, maxLen int) string {
+	var b strings.Builder
+	for _, field := range archive.FormFields(body) {
+		b.WriteString(field.Name)
+		b.WriteByte('=')
+		b.WriteString(field.Value)
+		b.WriteByte('\n')
+	}
+	text := strings.TrimSuffix(b.String(), "\n")
+	if len(text) > maxLen {
+		return text[:maxLen] + "\n... (truncated)"
+	}
+	return text
 }
 
 // truncateBody pretty-prints JSON and truncates to maxLen characters.

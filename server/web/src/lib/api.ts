@@ -1,4 +1,4 @@
-import type { RunListEntry, RunDetail, StepDetail, TraceListEntry, TraceDetail, BatchListEntry, BatchDetail, ApiError, RenameResponse, ImportResponse } from './types';
+import type { RunListEntry, RunDetail, StepDetail, IterationDetail, TraceListEntry, TraceDetail, BatchListEntry, BatchDetail, ApiError, RenameResponse, ImportResponse } from './types';
 
 export class ApiRequestError extends Error {
   status: number;
@@ -74,6 +74,14 @@ export function fetchAttemptStep(runId: string, attempt: number, stepId: string)
   return request<StepDetail>(
     `/api/runs/${encodeURIComponent(runId)}/attempts/${attempt}/steps/${encodeURIComponent(stepId)}`,
   );
+}
+
+// fetchStepIteration loads request `index` (counting from 1) of a repeated step, in a prior attempt when one is given.
+export function fetchStepIteration(runId: string, stepId: string, index: number, attempt?: number): Promise<IterationDetail> {
+  const step = attempt
+    ? `/api/runs/${encodeURIComponent(runId)}/attempts/${attempt}/steps/${encodeURIComponent(stepId)}`
+    : `/api/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(stepId)}`;
+  return request<IterationDetail>(`${step}/iterations/${index}`);
 }
 
 export function fetchBatches(limit = 50, saved?: boolean): Promise<BatchListEntry[]> {

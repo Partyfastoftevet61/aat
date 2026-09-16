@@ -516,6 +516,52 @@ func TestHandleGetAttemptStep_NotFound(t *testing.T) {
 	assert.Equal(t, "not_found", errResp.Code)
 }
 
+// --- handleGetStepIteration ---
+
+func TestHandleGetStepIteration(t *testing.T) {
+	dir := t.TempDir()
+	runID := "run-20260201-100000-bbbb0001"
+	writeArchive(t, dir, makeArchive(runID, "passed", repeatedStep()))
+	s := newTestServer(dir)
+
+	rec := serveRequest(s, "GET", "/api/runs/"+runID+"/steps/waitForExport/iterations/3")
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var it IterationDetail
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&it))
+	assert.Equal(t, 3, it.Index)
+	assert.Equal(t, "until", it.RepeatStop)
+
+	for path, code := range map[string]int{
+		"/api/runs/" + runID + "/steps/waitForExport/iterations/0":   http.StatusBadRequest,
+		"/api/runs/" + runID + "/steps/waitForExport/iterations/two": http.StatusBadRequest,
+		"/api/runs/" + runID + "/steps/waitForExport/iterations/4":   http.StatusNotFound,
+		"/api/runs/" + runID + "/steps/nope/iterations/1":            http.StatusNotFound,
+	} {
+		rec := serveRequest(s, "GET", path)
+		assert.Equal(t, code, rec.Code, path)
+	}
+}
+
+func TestHandleGetAttemptStepIteration(t *testing.T) {
+	dir := t.TempDir()
+	runID := "run-20260201-100000-bbbb0001"
+	writeArchive(t, dir, makeArchive(runID, "passed", makeStep("node", 200, 100)))
+	require.NoError(t, archive.Write(makeArchive(runID, "failed", repeatedStep()), dir+"/"+runID+"/attempt-01.json"))
+	s := newTestServer(dir)
+
+	rec := serveRequest(s, "GET", "/api/runs/"+runID+"/attempts/1/steps/waitForExport/iterations/2")
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var it IterationDetail
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&it))
+	assert.Equal(t, 2, it.Index)
+	assert.Equal(t, 3, it.Count)
+
+	rec = serveRequest(s, "GET", "/api/runs/"+runID+"/attempts/x/steps/waitForExport/iterations/2")
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	rec = serveRequest(s, "GET", "/api/runs/"+runID+"/attempts/2/steps/waitForExport/iterations/2")
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 // --- handleListRuns with saved filter ---
 
 func TestHandleListRuns_SavedFilter(t *testing.T) {

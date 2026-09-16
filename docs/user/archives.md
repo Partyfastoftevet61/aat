@@ -60,7 +60,7 @@ Each step record holds:
 |-------|----------|
 | `stepId`, `node`, `startTime`, `durationMs` | Which step ran, and when: a retried step's start and duration cover every attempt and the waits between them. Archives written before 0.1.0 name the duration `duration_ms`; AAT reads both |
 | `inputs` | The resolved input values |
-| `request` | Method, full URL, headers, and body. When an override routed the step elsewhere, `originalUrl` holds the URL it would have used |
+| `request` | Method, full URL, headers, and body. A body that isn't JSON, such as a form-encoded one, is archived as the text it was sent as, and its `Content-Type` header says which it is. When an override routed the step elsewhere, `originalUrl` holds the URL it would have used |
 | `response` | Status, headers, and body |
 | `outputs`, `displayOutputs` | Extracted outputs (after any [Lua transform](lua-transforms.md), whose script is in `transformScript`) and the plan's display outputs |
 | `resolutions` | How each input got its value: `source` (such as `plan_default`, `graph_default`, `layer`, `expression`, `plan_from`, `select_edge`, or `fallback_pool`), the `layer` that set the value, the raw and final value, the step and output it came from, and whether a `constraint` passed |
@@ -170,7 +170,8 @@ cleanup:
 - the outputs, with arrays and objects by their size
 - assertion counts, with each failure
 - warnings, such as a [selection tie](value-flow.md#selection-strategies)
-- the sizes of the request and response bodies
+- a [repeated step](plans.md#repeat)'s requests, one line each: status, time, and whether `until` held, the inputs each sent that differ from the step's when it pages with `next`, and its outputs
+- the sizes of the request and response bodies, which on a repeated step are its last request's
 
 A step that failed before its request was sent still shows the inputs resolved up to the failure, and the one that failed.
 
@@ -196,6 +197,22 @@ request body: 48 bytes
 response body: 518 bytes
 ```
 
+A repeated step lists its requests after its assertions, and the body sizes it prints are its last request's. The shop's state-machine plan reads its customer's orders a page at a time in a verification step:
+
+```
+$ aat run show latest --step verify_listOrders
+step verify_listOrders (node listOrders)
+GET http://localhost:8765/us/v1/orders?limit=1&customerEmail=audit-j6ojn7id%40example.com&after=ord_0001
+status 200  pass  0ms  2 requests (stopped: exhausted)
+...
+requests:
+  #  STATUS     TIME  UNTIL  SENT              OUTPUTS
+  1     200      0ms         -                 liveOrderCount 0, nextCursor "ord_0001", orderCount 1, orders [1 item]
+  2     200      0ms         after "ord_0001"  liveOrderCount 0, nextCursor "", orderCount 0, orders [0 items]
+request body: none
+response body: 45 bytes
+```
+
 These flags print one part of the step instead:
 
 | Flag | Prints |
@@ -206,8 +223,12 @@ These flags print one part of the step instead:
 | `--path PATH` | Only what a [gjson path](https://github.com/tidwall/gjson/blob/master/SYNTAX.md) selects: `lines.0.sku`, or `lines.#.sku` for every element. The `$.lines[0].sku` form works too. Without a part flag, it reads the response body |
 | `--shape` | The part's structure instead of its values. Without a part flag, the response body's |
 | `--max-bytes N` | Cut a printed part after `N` bytes, 65536 by default, with a note on stderr; `0` prints everything |
-| `--json` | The step list or the step as JSON with `snake_case` keys, or the shape as a JSON array. A step's JSON includes `resolutions`, `warnings`, and `validation`, its assertion results as `archive.json` names them (`archive.json` itself uses `camelCase` keys) |
+| `--json` | The step list or the step as JSON with `snake_case` keys, or the shape as a JSON array. A step's JSON includes `resolutions`, `warnings`, and `validation`, its assertion results as `archive.json` names them (`archive.json` itself uses `camelCase` keys). A repeated step's also includes `iterations`: each request's `status`, `duration_ms`, `until_met`, `retries`, `error`, the `sent` inputs that differ from the step's, and its scalar `outputs` |
 | `--compact` | JSON on one line, for a script or `jq`: a part, with or without `--path`, and with `--json` the step list, the step, or the shape. With `--shape`, or without a part, it needs `--json` |
+
+`--iteration N`, with `--step`, reads one request of a repeated step instead, counting from 1. On its own it prints that request's URL, status, and time, whether `until` held, why the step stopped when it is the last, the inputs it sent when the step pages, its outputs, its OpenAPI validation, and the sizes of its bodies. With `--request`, `--response`, `--inputs`, `--outputs`, `--path`, or `--shape`, it prints that request's part; `--json` works as for a step. `--resolutions` needs the step alone, since a repeated step resolves its inputs once for every request.
+
+A form-encoded body prints as its decoded fields, one `name=value` per line, since a single escaped string is not what the step sent. `--compact` prints the body as it went over the wire, and `--path` and `--shape` read the value its bracketed keys describe, so `--path metadata.source` selects from `metadata[source]=aat-stripe` and a key ending in `[]`, or one sent more than once, reads as an array.
 
 Without `--step`, a part flag or `--path` prints that part of every step that has it, cleanup steps included, one line each. One command then answers a question about the whole run:
 

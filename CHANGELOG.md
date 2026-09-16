@@ -12,6 +12,20 @@ the graph and plan formats may still change before 1.0.
   `"{{clock.frozenTime + 32 days}}"` on Unix seconds. A number offset keeps whole numbers whole and decimal text at its
   places, and a time offset moves Unix seconds by its unit or a date by whole days. Assertions, `repeat.until`, and
   selection filters take the same offsets, and a value's reference implies `dependsOn` and is checked by `aat validate`.
+- A form-encoded body reads as what was sent, rather than as one escaped string. `aat run show --request` prints its
+  decoded fields, one `name=value` per line; `--compact` prints the body as it went over the wire; and `--path` and
+  `--shape` read the value its bracketed keys describe, so `--path metadata.source` selects from
+  `metadata[source]=aat-stripe`, and a key ending in `[]` or sent twice reads as an array.
+  - The step view notes the body as `91 bytes (form, 5 fields)`, and its `--json` adds `request_body_form`.
+  - The web UI's Request and Response tabs show a form body as its fields, and the API adds `formFields` to each.
+  - The MCP server's `inspect_archive` prints form bodies as fields too.
+- `aat run show --step ID` lists a repeated step's requests: each one's status, time, and whether `until` held, the
+  inputs it sent that differ from the step's when it pages, and its outputs. `--iteration N` shows one of them, and with
+  `--request`, `--response`, `--inputs`, `--outputs`, `--path`, or `--shape` prints that request's part.
+  - `--json` gives the list as the step's `iterations`, and `--iteration N --json` gives the request.
+  - The web UI's step detail has a Requests tab. Selecting a request loads its bodies, headers, inputs, outputs, and
+    OpenAPI validation from `GET /api/runs/{id}/steps/{stepId}/iterations/{index}`.
+  - The MCP server's `inspect_archive` lists each repeated step's requests.
 - A selection `filter` can read an earlier step's output, as an assertion can:
   `filter: 'objectId == "{{create.customerId}}"'` picks the element about the object an earlier step made. The reference
   implies `dependsOn`, `aat validate` checks it, and the step's selection record shows the filter with the value it

@@ -103,6 +103,8 @@ export interface StepDetail {
   hasResolutions?: boolean;
   retryCount?: number;
   retriedOn?: string[];
+  repeatStop?: string;
+  iterations?: IterationSummary[];
   startTime?: string;
   inputs?: Record<string, unknown>;
   outputs?: Record<string, unknown>;
@@ -122,6 +124,39 @@ export interface StepDetail {
   prevStepId?: string;
   nextStepId?: string;
   visualizers?: VisualizerHit[];
+}
+
+// One request of a repeated step, as its step detail lists it, without bodies.
+export interface IterationSummary {
+  index: number;
+  status?: number;
+  durationMs: number;
+  durationDisplay: string;
+  untilMet?: boolean;
+  retryCount?: number;
+  error?: string;
+  oasErrorCount?: number;
+  outputs?: Record<string, unknown>; // scalar outputs only
+}
+
+// One request of a repeated step, with its bodies, headers, inputs, outputs, and OpenAPI validation.
+export interface IterationDetail {
+  stepId: string;
+  index: number;
+  count: number;
+  status?: number;
+  durationMs: number;
+  durationDisplay: string;
+  startTime?: string;
+  untilMet?: boolean;
+  retryCount?: number;
+  error?: string;
+  repeatStop?: string;
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
+  request?: RequestDetail;
+  response?: ResponseDetail;
+  oasValidation?: OASValidationDetail;
 }
 
 export interface VisualizerHit {
@@ -158,12 +193,20 @@ export interface RequestDetail {
   originalUrl?: string;
   headers?: HeaderEntry[];
   body?: unknown;
+  formFields?: FormField[]; // a form-encoded body's fields, in the order they were sent
 }
 
 export interface ResponseDetail {
   status: number;
   headers?: HeaderEntry[];
   body?: unknown;
+  formFields?: FormField[];
+}
+
+// One field of a form-encoded body, decoded.
+export interface FormField {
+  name: string;
+  value: string;
 }
 
 export interface ValidationDetail {

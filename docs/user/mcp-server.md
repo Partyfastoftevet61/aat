@@ -321,7 +321,7 @@ The test persona registers 26 tools focused on test plan lifecycle, execution, a
 | Tool | Description |
 |------|-------------|
 | `list_archives` | List recent run archives showing run ID, timestamp, outcome, and duration |
-| `inspect_archive` | Show a detailed Markdown view of a run archive including per-step request/response data |
+| `inspect_archive` | Show a detailed Markdown view of a run archive including per-step request/response data, and each repeated step's requests |
 | `analyze_failure` | Analyze a failed run archive and provide failure-focused diagnostics with suggested next steps |
 | `diff_archives` | Side-by-side comparison of two run archives: outcome, status, duration, and output differences |
 | `list_recent_failures` | List recent failed run archives, skipping passed runs |

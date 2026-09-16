@@ -42,6 +42,12 @@ path, such as items.0.sku, and --shape prints one step's part as its structure
 instead of its values: each path with its type, array sizes, and a sample
 value, which is the way to learn a large response.
 
+A repeated step, one with a repeat block, also lists its requests: each one's
+status, time, and whether until held, the inputs it sent that differ from the
+step's when it pages, and its outputs. --iteration N shows the step's Nth
+request instead, counting from 1, and with a part flag prints that request's
+part.
+
 The run is latest (the newest run, runs inside batches included), a run ID, a
 batch ID and a run ID joined by a slash, a batch ID and a plan name as the
 batch's PLAN column shows it (batch-ID/negative/state-machine), or a path to a
@@ -58,6 +64,7 @@ holds.`,
   aat run show latest --step checkout --response --shape
   aat run show latest --step checkout --response --path orderId
   aat run show latest --step checkout --resolutions
+  aat run show latest --step waitForExport --iteration 3 --response
   aat run show latest --response --path error.code
   aat run show batch-20260914-112520-9e406b57
   aat run show batch-20260914-112520-9e406b57/negative/state-machine --response --path error.code
@@ -83,8 +90,15 @@ holds.`,
 }
 
 func init() {
-	flags := runShowCmd.Flags()
+	addShowFlags(runShowCmd)
+	runCmd.AddCommand(runShowCmd)
+}
+
+// addShowFlags registers the flags of aat run show on cmd.
+func addShowFlags(cmd *cobra.Command) {
+	flags := cmd.Flags()
 	flags.String("step", "", "show one step, by step ID or by the node it ran")
+	flags.Int("iteration", 0, "with --step, show one request of a repeated step, counting from 1")
 	flags.Bool("request", false, "print the step's request body")
 	flags.Bool("response", false, "print the step's response body")
 	flags.Bool("inputs", false, "print the step's resolved inputs")
@@ -95,18 +109,18 @@ func init() {
 	flags.Int("max-bytes", defaultShowMaxBytes, "cut a printed part after this many bytes (0 for no limit)")
 	flags.Bool("json", false, "print the step list or the step as JSON, or the shape as a JSON array")
 	flags.Bool("compact", false, "print JSON on one line: a step part, or with --json the step list, the step, or the shape")
-	runCmd.AddCommand(runShowCmd)
 }
 
 // showOptions holds the flags of aat run show.
 type showOptions struct {
-	Step     string
-	Part     string // request, response, inputs, outputs, or resolutions; empty for the step overview
-	Path     string
-	Shape    bool
-	JSON     bool
-	Compact  bool // JSON on one line
-	MaxBytes int
+	Step      string
+	Iteration int    // one request of a repeated step, counting from 1; 0 for the whole step
+	Part      string // request, response, inputs, outputs, or resolutions; empty for the step overview
+	Path      string
+	Shape     bool
+	JSON      bool
+	Compact   bool // JSON on one line
+	MaxBytes  int
 }
 
 // showFormat is how aat run show prints a step list or a step.
@@ -149,6 +163,7 @@ func showOptionsFromFlags(cmd *cobra.Command) (showOptions, error) {
 	flags := cmd.Flags()
 	var opts showOptions
 	opts.Step, _ = flags.GetString("step")
+	opts.Iteration, _ = flags.GetInt("iteration")
 	opts.Path, _ = flags.GetString("path")
 	opts.Shape, _ = flags.GetBool("shape")
 	opts.JSON, _ = flags.GetBool("json")
@@ -167,6 +182,14 @@ func showOptionsFromFlags(cmd *cobra.Command) (showOptions, error) {
 	}
 	if opts.Part == "" && (opts.Path != "" || opts.Shape) {
 		opts.Part = "response"
+	}
+	switch {
+	case opts.Iteration < 0:
+		return opts, errors.New("--iteration counts a step's requests from 1")
+	case opts.Iteration > 0 && opts.Step == "":
+		return opts, errors.New("--iteration needs --step: it shows one request of a repeated step")
+	case opts.Iteration > 0 && opts.Part == "resolutions":
+		return opts, errors.New("--iteration and --resolutions: a repeated step resolves its inputs once, for every request, so drop --iteration")
 	}
 	if opts.MaxBytes < 0 {
 		return opts, errors.New("--max-bytes must be 0 or more")
@@ -204,6 +227,16 @@ func runShowCommand(ref string, archiveDir func() (string, error), opts showOpti
 	step, id, cleanup, err := findShownStep(a, opts.Step)
 	if err != nil {
 		return err
+	}
+	if opts.Iteration > 0 {
+		it, err := findShownIteration(step, id, opts.Iteration)
+		if err != nil {
+			return err
+		}
+		if opts.Part == "" {
+			return showIteration(out, step, it, id, opts.format())
+		}
+		return showIterationPart(out, errOut, it, id, opts)
 	}
 	if opts.Part == "" {
 		return showStep(out, step, id, cleanup, opts.format())
@@ -610,11 +643,14 @@ type shownStep struct {
 	RetriedOn         []string                  `json:"retried_on,omitempty"`
 	Requests          int                       `json:"requests,omitempty"`    // requests a repeated step sent
 	RepeatStop        string                    `json:"repeat_stop,omitempty"` // why a repeated step stopped
+	Iterations        []shownIterationRow       `json:"iterations,omitempty"`  // a repeated step's requests
 	Error             string                    `json:"error,omitempty"`
 	Inputs            map[string]any            `json:"inputs,omitempty"`
 	Outputs           map[string]any            `json:"outputs,omitempty"`
 	Validation        *shownValidation          `json:"validation,omitempty"`
 	RequestBodyBytes  int                       `json:"request_body_bytes,omitempty"`
+	RequestBodyForm   bool                      `json:"request_body_form,omitempty"`   // the request body is form-encoded
+	RequestFormFields int                       `json:"request_form_fields,omitempty"` // its fields, decoded
 	ResponseBodyBytes int                       `json:"response_body_bytes,omitempty"`
 	Resolutions       []archive.InputResolution `json:"resolutions,omitempty"`
 	Warnings          []string                  `json:"warnings,omitempty"`
@@ -709,9 +745,13 @@ func showStep(out io.Writer, step *archive.StepRecord, id string, cleanup bool, 
 			fmt.Fprintf(&b, "  %s\n", warning)
 		}
 	}
-	fmt.Fprintf(&b, "request body: %s\n", showSize(view.RequestBodyBytes))
+	writeShownIterations(&b, view.Iterations)
+	fmt.Fprintf(&b, "request body: %s%s\n", showSize(view.RequestBodyBytes), formNote(view.RequestBodyForm, view.RequestFormFields))
 	fmt.Fprintf(&b, "response body: %s\n", showSize(view.ResponseBodyBytes))
-	if view.ResponseBodyBytes > 0 {
+	switch {
+	case len(view.Iterations) > 0:
+		fmt.Fprintf(&b, "\nNext: --iteration N (1 to %d) for one request; the bodies above are the last request's\n", len(view.Iterations))
+	case view.ResponseBodyBytes > 0:
 		fmt.Fprintf(&b, "\nNext: --response --shape for the response's structure, --response --path PATH for one part of it\n")
 	}
 	_, err := io.WriteString(out, b.String())
@@ -737,6 +777,11 @@ func buildShownStep(step *archive.StepRecord, id string, cleanup bool) shownStep
 	if step.Request != nil {
 		view.Method, view.URL = step.Request.Method, step.Request.URL
 		view.RequestBodyBytes = compactSize(step.Request.Body)
+		if archive.IsFormMediaType(archive.HeaderValue(step.Request.Headers, "Content-Type")) {
+			view.RequestBodyForm = true
+			view.RequestFormFields = len(archive.FormFields(step.Request.Body))
+			view.RequestBodyBytes = len(archive.BodyText(step.Request.Body))
+		}
 	}
 	if step.Response != nil {
 		view.Status = step.Response.Status
@@ -750,6 +795,9 @@ func buildShownStep(step *archive.StepRecord, id string, cleanup bool) shownStep
 	}
 	view.Resolutions = archive.StepResolutions(step)
 	view.Warnings = archive.SelectionTieWarnings(step.Selections)
+	for _, it := range step.Iterations {
+		view.Iterations = append(view.Iterations, newShownIterationRow(step, it))
+	}
 	return view
 }
 
@@ -873,13 +921,42 @@ func showStepPart(out, errOut io.Writer, step *archive.StepRecord, id string, op
 	if err != nil {
 		return err
 	}
+	return showPart(out, errOut, doc, partContentType(step.Request, step.Response, opts.Part), "step "+id, opts)
+}
+
+// partContentType returns the Content-Type of the body a part names, or "" for
+// a part that isn't a body.
+func partContentType(request *archive.RequestRecord, response *archive.ResponseRecord, part string) string {
+	switch {
+	case part == "request" && request != nil:
+		return archive.HeaderValue(request.Headers, "Content-Type")
+	case part == "response" && response != nil:
+		return archive.HeaderValue(response.Headers, "Content-Type")
+	}
+	return ""
+}
+
+// showPart prints a part of a step, or of one of its requests, as showStepPart
+// describes. what names whose part it is in an error, as in "step checkout".
+// contentType is the body's, so a form-encoded one prints as the text it was
+// sent as, and --path and --shape read the value its bracketed keys describe.
+func showPart(out, errOut io.Writer, doc []byte, contentType, what string, opts showOptions) error {
 	if len(doc) == 0 {
-		return fmt.Errorf("step %s has no %s", id, stepPartName(opts.Part))
+		return fmt.Errorf("%s has no %s", what, stepPartName(opts.Part))
+	}
+	var err error
+	if archive.IsFormMediaType(contentType) {
+		if opts.Path == "" && !opts.Shape {
+			return writeCapped(out, errOut, renderFormBody(doc, opts.Compact), opts.MaxBytes)
+		}
+		if doc, err = json.Marshal(archive.FormObject(doc)); err != nil {
+			return err
+		}
 	}
 	if opts.Path != "" {
 		result := gjson.GetBytes(doc, validate.NormalizeJSONPath(opts.Path))
 		if !result.Exists() {
-			return fmt.Errorf("--path %s matches nothing in the %s of step %s%s", opts.Path, stepPartName(opts.Part), id, topLevelHint(doc))
+			return fmt.Errorf("--path %s matches nothing in the %s of %s%s", opts.Path, stepPartName(opts.Part), what, topLevelHint(doc))
 		}
 		doc = []byte(result.Raw)
 	}
@@ -920,6 +997,30 @@ func showStepPart(out, errOut io.Writer, step *archive.StepRecord, id string, op
 		text = buf.Bytes()
 	}
 	return writeCapped(out, errOut, text, opts.MaxBytes)
+}
+
+// renderFormBody prints a form-encoded body as text: one decoded field per
+// line, or, compact, the body as it was sent.
+func renderFormBody(doc []byte, compact bool) []byte {
+	if compact {
+		return append([]byte(archive.BodyText(doc)), '\n')
+	}
+	var b strings.Builder
+	for _, field := range archive.FormFields(doc) {
+		b.WriteString(field.Name)
+		b.WriteByte('=')
+		b.WriteString(field.Value)
+		b.WriteByte('\n')
+	}
+	return []byte(b.String())
+}
+
+// formNote describes a form-encoded body beside its size.
+func formNote(form bool, fields int) string {
+	if !form {
+		return ""
+	}
+	return " (form, " + pluralize(fields, "field") + ")"
 }
 
 // stepPartJSON returns a part of a step as JSON, or nothing when the step has

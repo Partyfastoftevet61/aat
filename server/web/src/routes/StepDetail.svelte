@@ -15,6 +15,7 @@
   import ErrorPanel from '../components/ErrorPanel.svelte';
   import OASValidationPanel from '../components/OASValidationPanel.svelte';
   import VisualizerFrame from '../components/VisualizerFrame.svelte';
+  import IterationsPanel from '../components/IterationsPanel.svelte';
 
   interface Props {
     runId: string;
@@ -66,6 +67,8 @@
     const t: TabDef[] = [];
     if (step.request) t.push({ id: 'request', label: 'Request' });
     if (step.response) t.push({ id: 'response', label: 'Response' });
+    if (step.iterations && step.iterations.length > 0)
+      t.push({ id: 'iterations', label: `Requests (${step.iterations.length})` });
     if (step.visualizers && step.visualizers.length > 0) {
       for (const viz of step.visualizers) {
         t.push({ id: `viz-${viz.id}`, label: viz.name });
@@ -287,7 +290,10 @@
             <HeadersTable headers={step.request.headers} />
           </details>
         {/if}
-        {#if step.request.body !== undefined && step.request.body !== null}
+        {#if step.request.formFields && step.request.formFields.length > 0}
+          <h4 class="section-heading">Body ({step.request.formFields.length} form fields)</h4>
+          <HeadersTable headers={step.request.formFields} />
+        {:else if step.request.body !== undefined && step.request.body !== null}
           <h4 class="section-heading">Body</h4>
           <JsonViewer data={step.request.body} />
         {/if}
@@ -305,10 +311,17 @@
             <HeadersTable headers={step.response.headers} />
           </details>
         {/if}
-        {#if step.response.body !== undefined && step.response.body !== null}
+        {#if step.response.formFields && step.response.formFields.length > 0}
+          <h4 class="section-heading">Body ({step.response.formFields.length} form fields)</h4>
+          <HeadersTable headers={step.response.formFields} />
+        {:else if step.response.body !== undefined && step.response.body !== null}
           <h4 class="section-heading">Body</h4>
           <JsonViewer data={step.response.body} />
         {/if}
+      {/if}
+
+      {#if activeTab === 'iterations' && step.iterations}
+        <IterationsPanel {runId} {stepId} {attempt} iterations={step.iterations} repeatStop={step.repeatStop} />
       {/if}
 
       {#if step.visualizers && step.visualizers.length > 0}

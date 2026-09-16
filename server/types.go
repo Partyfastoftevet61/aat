@@ -10,9 +10,11 @@ import (
 
 // Sentinel errors for service methods.
 var (
-	ErrRunNotFound   = errors.New("run not found")
-	ErrStepNotFound  = errors.New("step not found")
-	ErrBatchNotFound = errors.New("batch not found")
+	ErrRunNotFound  = errors.New("run not found")
+	ErrStepNotFound = errors.New("step not found")
+	// ErrIterationNotFound is a request number that a step's repeat didn't send.
+	ErrIterationNotFound = errors.New("iteration not found")
+	ErrBatchNotFound     = errors.New("batch not found")
 )
 
 // RunListEntry is a summary of a single run for list display.
@@ -109,7 +111,9 @@ type StepDetail struct {
 	HasSelections        bool                     `json:"hasSelections,omitempty"`
 	HasResolutions       bool                     `json:"hasResolutions,omitempty"`
 	RetryCount           int                      `json:"retryCount,omitempty"`
-	RetriedOn            []string                 `json:"retriedOn,omitempty"` // error category of each retried attempt, in order
+	RetriedOn            []string                 `json:"retriedOn,omitempty"`  // error category of each retried attempt, in order
+	RepeatStop           string                   `json:"repeatStop,omitempty"` // why a repeated step stopped
+	Iterations           []IterationSummary       `json:"iterations,omitempty"` // a repeated step's requests, without their bodies
 	StartTime            time.Time                `json:"startTime,omitempty"`
 	Inputs               map[string]any           `json:"inputs,omitempty"`
 	Outputs              map[string]any           `json:"outputs,omitempty"`
@@ -165,13 +169,62 @@ type RequestDetail struct {
 	OriginalURL string          `json:"originalUrl,omitempty"`
 	Headers     []HeaderEntry   `json:"headers,omitempty"`
 	Body        json.RawMessage `json:"body,omitempty"`
+	// FormFields, on a form-encoded body, are its fields decoded, in the order
+	// they were sent.
+	FormFields []FormField `json:"formFields,omitempty"`
 }
 
 // ResponseDetail captures the HTTP response.
 type ResponseDetail struct {
-	Status  int             `json:"status"`
-	Headers []HeaderEntry   `json:"headers,omitempty"`
-	Body    json.RawMessage `json:"body,omitempty"`
+	Status     int             `json:"status"`
+	Headers    []HeaderEntry   `json:"headers,omitempty"`
+	Body       json.RawMessage `json:"body,omitempty"`
+	FormFields []FormField     `json:"formFields,omitempty"`
+}
+
+// FormField is one field of a form-encoded body, decoded.
+type FormField struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// IterationSummary is one request of a repeated step, as its step detail lists
+// it.
+type IterationSummary struct {
+	Index           int    `json:"index"`
+	Status          int    `json:"status,omitempty"`
+	DurationMs      int64  `json:"durationMs"`
+	DurationDisplay string `json:"durationDisplay"`
+	UntilMet        bool   `json:"untilMet,omitempty"`
+	RetryCount      int    `json:"retryCount,omitempty"`
+	Error           string `json:"error,omitempty"`
+	OASErrorCount   int    `json:"oasErrorCount,omitempty"`
+	// Outputs holds the request's scalar outputs; its IterationDetail has them
+	// all.
+	Outputs map[string]any `json:"outputs,omitempty"`
+}
+
+// IterationDetail is the full view of one request of a repeated step.
+type IterationDetail struct {
+	StepID          string    `json:"stepId"`
+	Index           int       `json:"index"`
+	Count           int       `json:"count"` // the requests the step sent
+	Status          int       `json:"status,omitempty"`
+	DurationMs      int64     `json:"durationMs"`
+	DurationDisplay string    `json:"durationDisplay"`
+	StartTime       time.Time `json:"startTime,omitempty"`
+	UntilMet        bool      `json:"untilMet,omitempty"`
+	RetryCount      int       `json:"retryCount,omitempty"`
+	Error           string    `json:"error,omitempty"`
+	// RepeatStop, on the step's last request, says why the step stopped.
+	RepeatStop string `json:"repeatStop,omitempty"`
+	// Inputs, on a step that pages with repeat.next, are the inputs this request
+	// sent, its cursors included.
+	Inputs        map[string]any       `json:"inputs,omitempty"`
+	Outputs       map[string]any       `json:"outputs,omitempty"`
+	Request       *RequestDetail       `json:"request,omitempty"`
+	Response      *ResponseDetail      `json:"response,omitempty"`
+	OASValidation *OASValidationDetail `json:"oasValidation,omitempty"`
 }
 
 // ValidationDetail captures the outcome of mechanical assertions.
