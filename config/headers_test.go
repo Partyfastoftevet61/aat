@@ -57,3 +57,40 @@ func TestRouteHeaders_Protected(t *testing.T) {
 	assert.Equal(t, "Bearer local-stub", payments.Headers["AUTHORIZATION"], "the overlay header still reaches the routed node")
 	assert.Equal(t, map[string]string{"X-API-Key": "pay-key", "X-Access-Group": "blue", "AUTHORIZATION": "Bearer local-stub"}, payments.Protected)
 }
+
+// TestCredentialHeader_ValuePrefix checks that an apikey's valuePrefix comes
+// before the key, so an API with an authentication scheme of its own is written
+// without the scheme becoming part of the secret. Shippo's own OpenAPI spec
+// declares this shape as x-token-format: "ShippoToken {token}".
+func TestCredentialHeader_ValuePrefix(t *testing.T) {
+	env := &Environment{
+		APIBaseURL: "https://api.goshippo.com",
+		Auth: AuthConfig{
+			Type:        "apikey",
+			HeaderName:  "Authorization",
+			ValuePrefix: "ShippoToken ",
+			Credentials: map[string]SecretRef{"key": {Source: "literal", Value: "shippo_test_abc123"}},
+		},
+	}
+
+	cfg := env.BuildAPIConfigFromToken(&OAuthToken{AccessToken: "shippo_test_abc123"}, env.Auth, nil)
+	assert.Equal(t, "ShippoToken shippo_test_abc123", cfg.Headers["Authorization"])
+	assert.Equal(t, map[string]string{"Authorization": "ShippoToken shippo_test_abc123"}, cfg.Protected,
+		"the prefixed credential is still protected from template headers")
+}
+
+// TestCredentialHeader_NoValuePrefix checks that the header is unchanged when no
+// prefix is set, and that bearer keeps writing its own "Bearer ".
+func TestCredentialHeader_NoValuePrefix(t *testing.T) {
+	apikey := AuthConfig{Type: "apikey", HeaderName: "X-API-Key"}
+	name, value, ok := credentialHeader(apikey, &OAuthToken{AccessToken: "plain"})
+	assert.True(t, ok)
+	assert.Equal(t, "X-API-Key", name)
+	assert.Equal(t, "plain", value)
+
+	bearer := AuthConfig{Type: "bearer"}
+	name, value, ok = credentialHeader(bearer, &OAuthToken{AccessToken: "tok"})
+	assert.True(t, ok)
+	assert.Equal(t, "Authorization", name)
+	assert.Equal(t, "Bearer tok", value)
+}

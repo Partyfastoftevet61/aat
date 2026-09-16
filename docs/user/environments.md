@@ -347,6 +347,24 @@ auth:
 
 Required: `credentials.key` and `headerName`.
 
+Some APIs put a scheme of their own before the key in the `Authorization` header.
+`valuePrefix` writes it, so the scheme never becomes part of the secret:
+
+```yaml
+auth:
+  type: apikey
+  headerName: Authorization
+  valuePrefix: "ShippoToken "          # sends: Authorization: ShippoToken <key>
+  credentials:
+    key:
+      source: env
+      var: SHIPPO_API_TOKEN
+```
+
+The prefix is written exactly as given, trailing space included, and takes `${var}`
+substitution like every other auth field. It is for `apikey` only — `bearer` already
+sends `Bearer ` before its token.
+
 ### Bearer Token
 
 A pre-obtained token sent as `Authorization: Bearer <token>`:
@@ -770,6 +788,7 @@ Overlays are useful for:
 - Auth type must be one of: `oauth2`, `apikey`, `bearer`, `none`
 - OAuth2 requires `tokenUrl` and all four credential fields
 - API key requires `credentials.key` and `headerName`
+- `valuePrefix` is for `apikey` only
 - Bearer requires `credentials.token`
 - Override entries must have a `match` pattern
 - `settings.oasValidation` must be `auto`, `strict`, or `off`
@@ -800,6 +819,7 @@ auth:                                     # authentication configuration
   type: oauth2                            #   oauth2 | apikey | bearer | none
   tokenUrl: https://auth.example.com/token  #   token endpoint (oauth2 only)
   headerName: X-API-Key                   #   custom header name (apikey only)
+  valuePrefix: "Token "                   #   text before the key in that header (apikey only)
   grantType: password                     #   oauth2 grant_type (default: "password")
   extraParams:                            #   extra form params for oauth2 token request
     realm: my-realm                       #     example: Auth0 realm

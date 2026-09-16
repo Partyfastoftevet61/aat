@@ -7,6 +7,11 @@ the graph and plan formats may still change before 1.0.
 ## [Unreleased]
 
 ### Added
+- An `apikey` auth can write a scheme of its own before the key with `valuePrefix`:
+  `headerName: Authorization` with `valuePrefix: "ShippoToken "` sends `Authorization: ShippoToken <key>`, so an API
+  that defines its own scheme doesn't force the scheme into the secret. The prefix is written exactly as given,
+  takes `${var}` substitution, and is inherited through `extends`. It is refused on any other auth type, and
+  `bearer` is told that it already sends `Bearer ` before its token.
 - An expression can put an offset on a reference, and a step value can read an earlier step's output:
   `amountToCapture: "{{authorize.amount - 500}}"`, `"{{order.totalAmount - 10.50}}"` on a decimal written as text, and
   `"{{clock.frozenTime + 32 days}}"` on Unix seconds. A number offset keeps whole numbers whole and decimal text at its
