@@ -208,6 +208,61 @@ func (s *Server) handleGetStep(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, step)
 }
 
+func (s *Server) handleGetStepIteration(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	stepID := chi.URLParam(r, "stepId")
+	index, ok := iterationParam(w, r)
+	if !ok {
+		return
+	}
+	it, err := s.service.GetStepIteration(runID, stepID, index)
+	writeIteration(w, it, err)
+}
+
+func (s *Server) handleGetAttemptStepIteration(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	attemptStr := chi.URLParam(r, "attempt")
+	stepID := chi.URLParam(r, "stepId")
+
+	attemptNum, err := strconv.Atoi(attemptStr)
+	if err != nil || attemptNum < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_parameter", fmt.Sprintf("invalid attempt number: %q", attemptStr))
+		return
+	}
+	index, ok := iterationParam(w, r)
+	if !ok {
+		return
+	}
+	it, err := s.service.GetAttemptStepIteration(runID, attemptNum, stepID, index)
+	writeIteration(w, it, err)
+}
+
+// iterationParam reads the {index} of a step iteration route, a request number
+// counting from 1, and writes a 400 response when it isn't one.
+func iterationParam(w http.ResponseWriter, r *http.Request) (int, bool) {
+	indexStr := chi.URLParam(r, "index")
+	index, err := strconv.Atoi(indexStr)
+	if err != nil || index < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_parameter", fmt.Sprintf("invalid request number: %q", indexStr))
+		return 0, false
+	}
+	return index, true
+}
+
+// writeIteration writes a step's request, or the error that kept it from
+// loading.
+func writeIteration(w http.ResponseWriter, it *IterationDetail, err error) {
+	if err != nil {
+		if errors.Is(err, ErrRunNotFound) || errors.Is(err, ErrStepNotFound) || errors.Is(err, ErrIterationNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, it)
+}
+
 func (s *Server) handleRenameRun(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 

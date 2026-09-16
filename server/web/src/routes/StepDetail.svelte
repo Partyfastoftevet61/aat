@@ -15,6 +15,7 @@
   import ErrorPanel from '../components/ErrorPanel.svelte';
   import OASValidationPanel from '../components/OASValidationPanel.svelte';
   import VisualizerFrame from '../components/VisualizerFrame.svelte';
+  import IterationsPanel from '../components/IterationsPanel.svelte';
 
   interface Props {
     runId: string;
@@ -66,6 +67,8 @@
     const t: TabDef[] = [];
     if (step.request) t.push({ id: 'request', label: 'Request' });
     if (step.response) t.push({ id: 'response', label: 'Response' });
+    if (step.iterations && step.iterations.length > 0)
+      t.push({ id: 'iterations', label: `Requests (${step.iterations.length})` });
     if (step.visualizers && step.visualizers.length > 0) {
       for (const viz of step.visualizers) {
         t.push({ id: `viz-${viz.id}`, label: viz.name });
@@ -309,6 +312,10 @@
           <h4 class="section-heading">Body</h4>
           <JsonViewer data={step.response.body} />
         {/if}
+      {/if}
+
+      {#if activeTab === 'iterations' && step.iterations}
+        <IterationsPanel {runId} {stepId} {attempt} iterations={step.iterations} repeatStop={step.repeatStop} />
       {/if}
 
       {#if step.visualizers && step.visualizers.length > 0}

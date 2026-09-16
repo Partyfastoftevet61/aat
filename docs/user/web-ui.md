@@ -104,6 +104,7 @@ Clicking a step opens the step detail. Tabs appear only when the step has that d
 |-----|----------|
 | Request | HTTP method, URL, headers, request body (formatted JSON), and a **Copy as cURL** button |
 | Response | Status code, response headers, response body (formatted JSON with expand/collapse) |
+| Requests | A [repeated step](plans.md#repeat)'s requests: each one's status, duration, whether `until` held, and outputs. The Request and Response tabs show the last one; selecting a request loads its own bodies, headers, inputs, outputs, and OpenAPI validation |
 | Extractions | Each output's value and the later steps that consumed it |
 | Lua Output | The step's outputs after its [Lua transform](lua-transforms.md) ran |
 | Assertions | Per-assertion results: pass or fail, type, message, path, and expression |
@@ -191,8 +192,10 @@ The web server exposes a REST API that you can use programmatically.
 | `PUT` | `/api/runs/{id}/name` | Rename or save a run |
 | `DELETE` | `/api/runs/{id}/name` | Restore the original run ID |
 | `GET` | `/api/runs/{id}/steps/{stepId}` | Get step detail |
+| `GET` | `/api/runs/{id}/steps/{stepId}/iterations/{index}` | Get one request of a repeated step, counting from 1 |
 | `GET` | `/api/runs/{id}/attempts/{attempt}` | Get a retry attempt |
 | `GET` | `/api/runs/{id}/attempts/{attempt}/steps/{stepId}` | Get step from a specific attempt |
+| `GET` | `/api/runs/{id}/attempts/{attempt}/steps/{stepId}/iterations/{index}` | Get one request of a repeated step from a specific attempt |
 | `GET` | `/api/runs/{id}/export` | Download the run as a `.aar` zip |
 | `GET` | `/api/batches` | List batches (same query parameters as runs) |
 | `GET` | `/api/batches/{id}` | Get batch detail |
