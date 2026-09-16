@@ -13,6 +13,11 @@ paths:
           schema:
             type: array
             items: {type: string}
+        - name: status[]
+          in: query
+          schema:
+            type: array
+            items: {type: string}
         - {name: sessionId, in: cookie, required: true, schema: {type: string}}
         - {name: theme, in: cookie, schema: {type: string}}
       responses:

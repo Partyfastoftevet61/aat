@@ -352,7 +352,7 @@ func formPair(key, value string) string {
 }
 
 // wholePlaceholderRe matches a template value that is exactly one placeholder.
-var wholePlaceholderRe = regexp.MustCompile(`^\{\{\s*([\w-]+)\s*\}\}$`)
+var wholePlaceholderRe = regexp.MustCompile(`^\{\{\s*(` + blockNamePat + `)\s*\}\}$`)
 
 // wholePlaceholder returns the input a template value names when the value is
 // exactly one placeholder, such as "{{customer}}". A form field or a header

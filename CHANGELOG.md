@@ -367,6 +367,12 @@ the graph and plan formats may still change before 1.0.
   object after an expected failure.
 
 ### Fixed
+- A block key may end in `[]`, so an input named for an array query parameter can gate its own block:
+  `{{?status[]}}?status[]={{status[]}}{{/status[]}}`. Block tags matched letters, digits, underscores, and hyphens only,
+  so the tags were never recognized: `aat validate --strict` rejected the template with `template requires placeholder
+  "status[]" but graph input is optional with no default`, and a request failed with `unresolved placeholders: ?status[],
+  /status[]`. `aat generate` writes exactly that shape for a parameter whose name ends in `[]`, so its own output failed
+  validation for any spec that has one.
 - A conditional block around an iteration block of the same list renders, as in the templates guide:
   `{{?ids}}, "ids": [{{#ids}}"{{.}}"{{/ids}}]{{/ids}}`. Both blocks close with `{{/ids}}`, and each block took the first
   one, so an absent list failed with `unresolved placeholders` and a present list rendered malformed JSON, such as

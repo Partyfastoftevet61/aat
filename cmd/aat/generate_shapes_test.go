@@ -58,6 +58,20 @@ func TestGenerateCommand_RequestShapesRender(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, url.Values{"q": {"tent"}, "tags": {"camp", "4 season"}}, u.Query())
 		assert.Equal(t, "sessionId=s1", req.Headers["Cookie"])
+	})
+
+	// A parameter whose own name ends in [], as Shippo's order_status[] does, is
+	// gated by a {{?status[]}} block; the scaffold must still validate and render.
+	t.Run("query parameter named with brackets", func(t *testing.T) {
+		req := build(t, "searchProducts", map[string]any{"q": "tent", "status[]": []any{"open", "closed"}, "sessionId": "s1"})
+		u, err := url.Parse(req.Path)
+		require.NoError(t, err)
+		assert.Equal(t, url.Values{"q": {"tent"}, "status[]": {"open", "closed"}}, u.Query())
+
+		omitted := build(t, "searchProducts", map[string]any{"q": "tent", "sessionId": "s1"})
+		u, err = url.Parse(omitted.Path)
+		require.NoError(t, err)
+		assert.Equal(t, url.Values{"q": {"tent"}}, u.Query())
 
 		req = build(t, "searchProducts", map[string]any{"q": "tent", "sessionId": "s1", "theme": "dark"})
 		assert.Equal(t, "sessionId=s1; theme=dark", req.Headers["Cookie"])
