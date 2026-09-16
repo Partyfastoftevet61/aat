@@ -1,0 +1,49 @@
+openapi: 3.1.0
+info: {title: OneOf body, version: "1.0"}
+paths:
+  /parcels:
+    post:
+      operationId: createParcel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/ParcelByDimensions'
+                - $ref: '#/components/schemas/ParcelFromTemplate'
+      responses:
+        "201":
+          description: Parcel
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object_id: {type: string}
+components:
+  schemas:
+    ParcelBase:
+      type: object
+      properties:
+        weight: {type: string}
+        mass_unit: {type: string}
+        metadata: {type: string}
+      required: [weight, mass_unit]
+    ParcelByDimensions:
+      allOf:
+        - $ref: '#/components/schemas/ParcelBase'
+        - type: object
+          properties:
+            length: {type: string}
+            width: {type: string}
+            height: {type: string}
+            distance_unit: {type: string}
+          required: [length, width, height, distance_unit]
+    ParcelFromTemplate:
+      allOf:
+        - $ref: '#/components/schemas/ParcelBase'
+        - type: object
+          properties:
+            template: {type: string}
+          required: [template]

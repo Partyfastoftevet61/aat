@@ -354,18 +354,48 @@ func collectInputNames(pathItem *v3high.PathItem, op *v3high.Operation) map[stri
 		names[param.Name] = true
 	}
 
-	// Request body properties
+	// Request body properties, from every branch the body can take
 	if op.RequestBody != nil && op.RequestBody.Content != nil {
 		for mediaType := range op.RequestBody.Content.ValuesFromOldest() {
 			if mediaType != nil && mediaType.Schema != nil {
-				props, _, _ := objectShape(mediaType.Schema.Schema())
-				for _, prop := range props {
-					names[prop.name] = true
+				for name := range bodyPropertyNames(mediaType.Schema.Schema()) {
+					names[name] = true
 				}
 			}
 		}
 	}
 
+	return names
+}
+
+// bodyPropertyNames returns every property name a request body schema can
+// carry, those under oneOf and anyOf branches included. A body whose schema is
+// composed is written by hand, and it draws from whichever branch it sends, so
+// an input matching a property of any branch is one the spec knows. Required
+// names are not collected this way: a property required in one branch is not
+// required of the body, which is why collectRequiredInputs still reads only
+// the schema and its allOf.
+func bodyPropertyNames(schema *base.Schema) map[string]bool {
+	names := make(map[string]bool)
+	seen := make(map[*base.Schema]bool)
+	var walk func(s *base.Schema, depth int)
+	walk = func(s *base.Schema, depth int) {
+		if s == nil || depth > maxShapeDepth || seen[s] {
+			return
+		}
+		seen[s] = true
+		for _, p := range resolveSchemaProperties(s) {
+			names[p.name] = true
+		}
+		for _, group := range [][]*base.SchemaProxy{s.AllOf, s.OneOf, s.AnyOf} {
+			for _, branch := range group {
+				if branch != nil {
+					walk(branch.Schema(), depth+1)
+				}
+			}
+		}
+	}
+	walk(schema, 0)
 	return names
 }
 

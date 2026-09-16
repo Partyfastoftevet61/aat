@@ -367,6 +367,12 @@ the graph and plan formats may still change before 1.0.
   object after an expected failure.
 
 ### Fixed
+- `aat validate --strict` knows the inputs of a node whose request body is a `oneOf` or `anyOf`. Only the schema and
+  its `allOf` were read, so a body written by hand for a composed schema had every one of its inputs reported as
+  `input "weight" not found in OAS parameters or request body`. `aat generate` declines to write such a body and says
+  so, so the operations it hands over were exactly the ones that then warned — six of them in Shippo's spec. Property
+  names are now collected from every branch the body can take; an input no branch declares is still reported, and what
+  counts as *required* is unchanged, since a property required in one branch is not required of the body.
 - A block key may end in `[]`, so an input named for an array query parameter can gate its own block:
   `{{?status[]}}?status[]={{status[]}}{{/status[]}}`. Block tags matched letters, digits, underscores, and hyphens only,
   so the tags were never recognized: `aat validate --strict` rejected the template with `template requires placeholder
