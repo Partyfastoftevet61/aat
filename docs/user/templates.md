@@ -171,7 +171,7 @@ Conditional blocks include or exclude sections of a template based on whether an
 
 **Syntax:** `{{?key}}...{{/key}}`
 
-When `key` is present in the step inputs and has a non-empty value (non-empty string, non-nil value), the block content is included. Otherwise, the entire block — including the tags — is removed. Block keys may contain letters, digits, underscores, and hyphens, so an input named after a header parameter works: `{{?X-Request-Id}}...{{/X-Request-Id}}`.
+When `key` is present in the step inputs and has a non-empty value (non-empty string, non-nil value), the block content is included. Otherwise, the entire block — including the tags — is removed. Block keys may contain letters, digits, underscores, and hyphens, and may end in `[]`, so an input named after a header parameter works — `{{?X-Request-Id}}...{{/X-Request-Id}}` — and so does one named after an array query parameter: `{{?status[]}}?status[]={{status[]}}{{/status[]}}`.
 
 ```yaml
 body: |

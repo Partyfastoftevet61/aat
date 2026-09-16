@@ -136,6 +136,32 @@ func TestValidateTemplateInputs(t *testing.T) {
 			wantErrMsg: `node "createPet": template requires placeholder "color" but graph input is optional with no default`,
 		},
 		{
+			name: "optional array input gated by a bracketed conditional passes",
+			graph: &graph.Graph{
+				Nodes: map[string]*graph.Node{
+					"listOrders": {
+						Name:    "listOrders",
+						Adapter: "listOrders",
+						Inputs: []graph.Input{
+							{Name: "status[]", Type: "string[]", Optional: true},
+						},
+					},
+				},
+			},
+			setup: func(r *adapter.Registry) {
+				tmpl := adapter.Template{
+					Adapter:  "listOrders",
+					Protocol: "http",
+					Request: adapter.TemplateRequest{
+						Method: "GET",
+						Path:   `/orders{{?status[]}}?status[]={{status[]}}{{/status[]}}`,
+					},
+				}
+				_ = r.Register("listOrders", adapter.NewTemplateAdapter(tmpl))
+			},
+			wantErr: false,
+		},
+		{
 			name: "non-template adapter skipped",
 			graph: &graph.Graph{
 				Nodes: map[string]*graph.Node{

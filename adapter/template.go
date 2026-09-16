@@ -152,17 +152,20 @@ type TemplateAdapter struct {
 // placeholderRe matches {{key}} with optional internal whitespace.
 var placeholderRe = regexp.MustCompile(`\{\{\s*([^}]+?)\s*\}\}`)
 
-// iterOpenRe matches {{#key}} iteration block opening tags. Keys may contain
-// hyphens, as input names taken from HTTP header parameters do (X-Request-Id).
-var iterOpenRe = regexp.MustCompile(`\{\{#([\w-]+)\}\}`)
+// blockNamePat matches one key of a block tag. A key may contain hyphens, as an
+// input name taken from an HTTP header parameter does (X-Request-Id), and may
+// end in [], as one taken from an array query parameter does (status[]).
+const blockNamePat = `[\w-]+(?:\[\])?`
+
+// iterOpenRe matches {{#key}} iteration block opening tags.
+var iterOpenRe = regexp.MustCompile(`\{\{#(` + blockNamePat + `)\}\}`)
 
 // condOpenRe matches {{?key}} and {{?key1|key2}} conditional block opening tags.
-// Keys may contain hyphens.
-var condOpenRe = regexp.MustCompile(`\{\{\?([\w|-]+)\}\}`)
+var condOpenRe = regexp.MustCompile(`\{\{\?(` + blockNamePat + `(?:\|` + blockNamePat + `)*)\}\}`)
 
 // blockTagRe matches a tag that opens or closes a block: {{?key}}, {{#key}}, or
 // {{/key}}. The key of a compound conditional, such as a|b, is one name.
-var blockTagRe = regexp.MustCompile(`\{\{([?#/])([\w|-]+)\}\}`)
+var blockTagRe = regexp.MustCompile(`\{\{([?#/])(` + blockNamePat + `(?:\|` + blockNamePat + `)*)\}\}`)
 
 // findBlockClose returns the index in s of the {{/key}} tag that closes a block
 // for key, where s starts just after the block's opening tag, or -1 when the

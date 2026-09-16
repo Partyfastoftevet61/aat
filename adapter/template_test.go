@@ -319,6 +319,18 @@ func TestExpandConditionalBlocks(t *testing.T) {
 			want:   `{{X-Request-Id}}`,
 		},
 		{
+			name:   "bracketed key, as from an array query parameter",
+			tmpl:   `/things{{?status[]}}?status[]={{status[]}}{{/status[]}}`,
+			inputs: map[string]any{"status[]": []any{"open", "closed"}},
+			want:   `/things?status[]={{status[]}}`,
+		},
+		{
+			name:   "absent bracketed key omits block",
+			tmpl:   `/things{{?status[]}}?status[]={{status[]}}{{/status[]}}`,
+			inputs: map[string]any{},
+			want:   `/things`,
+		},
+		{
 			name:   "absent key omits block",
 			tmpl:   `before{{?carrier}}, "carrier": "{{carrier}}"{{/carrier}} after`,
 			inputs: map[string]any{},
@@ -1092,6 +1104,16 @@ func TestClassifyInputs(t *testing.T) {
 			wantRequired:    []string{"destination", "origin", "version"},
 			wantConditional: []string{"carrierPreference"},
 			wantIterable:    []string{"productIds"},
+		},
+		{
+			name: "bracketed conditional key is not required",
+			tmpl: &Template{
+				Request: TemplateRequest{
+					Method: "GET",
+					Path:   `/orders{{?status[]}}?status[]={{status[]}}{{/status[]}}`,
+				},
+			},
+			wantConditional: []string{"status[]"},
 		},
 		{
 			name: "hyphenated conditional header",
