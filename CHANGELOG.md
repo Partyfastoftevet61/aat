@@ -6,6 +6,35 @@ the graph and plan formats may still change before 1.0.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-16
+
+The public launch release, and the one the three real-API projects ([aat-duffel](https://github.com/gburgyan/aat-duffel),
+[aat-stripe](https://github.com/gburgyan/aat-stripe), and [aat-shippo](https://github.com/gburgyan/aat-shippo)) were
+built on; they need this version or later.
+
+**Highlights.** Form-encoded request bodies end to end, including Stripe-style bracketed keys, validated against the
+spec and shown as fields in `aat run show`, the web UI, and MCP. `aat run show` reads a run or a whole batch from the
+terminal: the steps, or one step's request, response, inputs, outputs, resolutions, or response shape. `repeat` polls
+and pages with `until` and `next`, with request pacing (`minRequestInterval`), `Retry-After`, and a retry ceiling.
+Values and assertions reach across steps: `{{step.output}}` in predicates, offsets on references, `uuid`, `random`,
+`now`, lists and maps as step values, and header extraction. Cleanup chains, `when`, `releasedBy`, and guard plans.
+OpenAPI specs that used to be rejected (circular references, 3.1 type lists, `allOf`/`oneOf`/`anyOf` bodies) now load,
+validate, and scaffold. Credentials are redacted from `--dump-state` by default and from every archive. Validation and
+composition are stricter: literal value shapes, leftover `AUTOWIRE` markers, unknown assertion types, and bad
+expressions fail before a request is sent. The MCP server keeps parity with the CLI. The docs gain
+[Why AAT exists](https://gburgyan.github.io/aat/why/), [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/),
+and the AI assistant primer as `llms-full.txt`.
+
+**Breaking and noticeable.** `aat run plan --dump-state` redacts credentials; `--dump-state-secrets` keeps them.
+`aat run show --step --json` names a step's assertion results `validation`, not `assertions`; `summary.json` records
+OpenAPI results under `oas`; `--resolutions` reports a graph default's literal as `graph_default`, and `plan_default`
+now means a value the plan sets. A node's second cleanup step is `deleteCart_2` in archives and `--json` output. Exit
+code 2 for `aat generate` over existing files (use `--force`), for `--oas-validate strict` when a spec fails to load,
+and for a plan that ran as several runs. A list in a URL or form body is sent as repeated pairs or a comma-joined
+value, not as JSON text, and a form-encoded `body: |` no longer sends its final newline. `<`, `>`, `<=`, and `>=`
+compare two decimal strings as numbers; `uuid`, `now`, and `unixtime` are reserved words in expressions. A registered
+cleanup is skipped when a later main step already released the resource.
+
 ### Added
 - An `apikey` auth can write a scheme of its own before the key with `valuePrefix`:
   `headerName: Authorization` with `valuePrefix: "ShippoToken "` sends `Authorization: ShippoToken <key>`, so an API
@@ -249,6 +278,7 @@ the graph and plan formats may still change before 1.0.
   generates its own value, and a retried step resends the values its first attempt generated.
 
 ### Changed
+- The docs describe the three real-API projects on one page, [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/), the README says what people use AAT for, and the guide pages open with why each feature exists before how it works.
 - The documentation says why AAT exists, not only what it does. A new "Why AAT exists" page (`docs/user/why.md`) opens
   the Getting started section with the tool's origin — a pile of shared Postman collections that had stopped being
   trustworthy — maps each problem to what replaced it, and then covers what else turned out to be able to read the
@@ -910,7 +940,8 @@ The first tagged version.
   headers, and OAuth2 token caching.
 - The Petstore example, the user documentation, and the Apache 2.0 license.
 
-[Unreleased]: https://github.com/gburgyan/aat/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/gburgyan/aat/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/gburgyan/aat/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gburgyan/aat/compare/v0.0.4...v0.1.0
 [0.0.4]: https://github.com/gburgyan/aat/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/gburgyan/aat/compare/v0.0.2...v0.0.3

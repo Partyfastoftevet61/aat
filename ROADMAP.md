@@ -2,7 +2,7 @@
 
 ## Status
 
-AAT's first public release is v0.1.0. It was built and proven against a private 74-node airline
+AAT's public launch release is v0.2.0. It was built and proven against a private 74-node airline
 booking API with 63 workflows, 53 recipes, and 6 environments, so the core loop — graph, templates,
 plans, engine, archives, web UI, MCP server — has carried real traffic. Three further projects run
 against real, public APIs in test mode: [aat-duffel](https://github.com/gburgyan/aat-duffel),
