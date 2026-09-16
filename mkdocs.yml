@@ -40,6 +40,11 @@ theme:
 # No macros plugin: the docs contain template placeholders such as {{petId}} that must stay literal.
 plugins:
   - search
+  - blog:
+      blog_dir: blog
+      post_url_format: "{slug}"
+      archive: false
+      categories: false
 
 # Copies the AI assistant primer (internal/primer/llms.md, which llms.md includes) to the site root as llms-full.txt.
 hooks:
@@ -117,3 +122,4 @@ nav:
       - LLM-assisted planning: prompt.md
   - Reference:
       - Changelog: changelog.md
+  - Blog: blog/index.md
