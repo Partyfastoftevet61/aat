@@ -30,7 +30,7 @@ The goal here is to set honest expectations so nobody gets defensive. A PR that 
 
 AAT is organized into focused packages with one-way dependencies. See [CLAUDE.md](CLAUDE.md) for the full package map and dependency rules.
 
-Architecture notes live in `docs/internal/`; the decision history is in `docs/worklog/`.
+Architecture notes live in `docs/internal/`; the change history is in `CHANGELOG.md`, and what comes next in `ROADMAP.md`.
 
 Key entry points:
 - `cmd/aat/` — CLI binary

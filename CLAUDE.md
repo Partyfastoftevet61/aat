@@ -147,15 +147,15 @@ The environment file supports two formats: **single-environment** (legacy, one `
 
 ## Documentation
 
-- **`docs/internal/`** — progress tracker, architecture notes (for contributors)
-- **`docs/worklog/`** — decision log entries per stage (date, decisions, rationale)
+- **`docs/internal/`** — architecture notes (for contributors)
+- **Worklog** — decision log entries (date, decisions, rationale), kept out of the public tree in the private sibling repository `../aat-worklog` (`gburgyan/aat-worklog`)
 - **`docs/user/`** — user-facing docs, built into the site at https://gburgyan.github.io/aat/ (`mkdocs.yml`, Material for MkDocs; `.github/workflows/docs.yml` deploys it from main). Every page must be listed in the `mkdocs.yml` nav; links, anchors, and nav coverage are checked by `make docs`, so run it before committing doc changes. Keep pages readable on GitHub (plain Markdown); the one site-only construct is the `--8<--` snippet include in `changelog.md`, `examples/shop.md`, and `llms.md`, which pulls in `CHANGELOG.md`, the `examples/shop/README.md` section between its `[start:body]`/`[end:body]` markers, and the AI assistant primer, `internal/primer/llms.md`. The primer links to pages by site URL, which `make docs` does not check, so `internal/primer`'s tests check them; `docs/hooks/llms_txt.py` publishes the primer as `llms-full.txt` beside the static `docs/user/llms.txt` index
 
-Record user-visible changes in `CHANGELOG.md` under *Unreleased* as tasks complete. Add worklog entries for non-trivial decisions. The launch roadmap lives in `LAUNCH-PLAN.md`, a local working document.
+Record user-visible changes in `CHANGELOG.md` under *Unreleased* as tasks complete. Add worklog entries for non-trivial decisions in `../aat-worklog`. The launch roadmap lives in `LAUNCH-PLAN.md`, a local working document.
 
 ## Worklogs
 
-When making design decisions or completing stage milestones, add entries to `docs/worklog/stage-N.md`. Format:
+When making design decisions or completing milestones, add entries to the private sibling repository `../aat-worklog` (one file per milestone, such as `launch-m8.md`); nothing under this tree. Format:
 
 ```
 ## YYYY-MM-DD — Summary
@@ -326,4 +326,4 @@ If a task seems too aggressive to do in one operation, push back and offer to br
 
 ## Current Stage
 
-Public launch work is tracked milestone by milestone in the local `LAUNCH-PLAN.md`; feature status is in `ROADMAP.md` and `CHANGELOG.md`. The historical stage tracker is archived at `docs/worklog/progress-archive-2026-02.md`.
+Public launch work is tracked milestone by milestone in the local `LAUNCH-PLAN.md`; feature status is in `ROADMAP.md` and `CHANGELOG.md`. The historical stage tracker is archived in `../aat-worklog/progress-archive-2026-02.md`.
