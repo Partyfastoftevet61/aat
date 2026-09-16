@@ -98,6 +98,10 @@ func ResolveInputsWithContext(ctx context.Context, step plan.Step, node *graph.N
 			Values: make(map[string]any),
 			Random: rctx.Random,
 		}
+		// A value can read an earlier step's output, with an offset or without.
+		if state != nil {
+			ectx.Outputs = state.OutputValue
+		}
 	}
 
 	for _, input := range node.Inputs {

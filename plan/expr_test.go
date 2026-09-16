@@ -137,11 +137,47 @@ func TestEvalExpr(t *testing.T) {
 			wantErr: "not found in resolved values",
 		},
 		{
-			name:    "reference not a date string",
-			raw:     "{{departureDate + 1 day}}",
-			ctx:     ExprContext{Values: map[string]any{"departureDate": 42}},
-			wantErr: "not a date string",
+			name: "a whole-number reference plus days is Unix seconds",
+			raw:  "{{departureDate + 1 day}}",
+			ctx:  ExprContext{Values: map[string]any{"departureDate": 42}},
+			want: int64(86442),
 		},
+		{
+			name:    "a reference that is neither a date nor Unix seconds",
+			raw:     "{{departureDate + 1 day}}",
+			ctx:     ExprContext{Values: map[string]any{"departureDate": true}},
+			wantErr: `reference "departureDate" is bool, not a date string or Unix seconds`,
+		},
+		{
+			name: "a whole number plus a number",
+			raw:  "{{quantity + 1}}",
+			ctx:  ExprContext{Values: map[string]any{"quantity": 42}},
+			want: int64(43),
+		},
+		{
+			name: "decimal text minus a decimal keeps its places",
+			raw:  "{{price - 0.01}}",
+			ctx:  ExprContext{Values: map[string]any{"price": "19.99"}},
+			want: "19.98",
+		},
+		{
+			name: "Unix seconds plus hours",
+			raw:  "{{since + 2 hours}}",
+			ctx:  ExprContext{Values: map[string]any{"since": int64(1000)}},
+			want: int64(8200),
+		},
+		{
+			name:    "a date moves by whole days",
+			raw:     "{{departureDate + 2 hours}}",
+			ctx:     ExprContext{Values: map[string]any{"departureDate": "2026-03-01"}},
+			wantErr: `reference "departureDate" is a date, which moves by whole days`,
+		},
+		{name: "today takes days", raw: "{{today + 5}}", wantErr: "today takes an offset in days"},
+		{name: "today counts days", raw: "{{today + 2 hours}}", wantErr: "today counts days"},
+		{name: "now takes a unit", raw: "{{now + 5}}", wantErr: "now takes an offset with a unit"},
+		{name: "uuid takes no offset", raw: "{{uuid + 1}}", wantErr: "uuid takes no offset"},
+		{name: "an environment variable takes no offset", raw: "{{env.MY_VAR + 1}}", ctx: ExprContext{Env: testEnv}, wantErr: "an environment variable takes no offset"},
+		{name: "a time offset counts whole units", raw: "{{since + 1.5 hours}}", ctx: ExprContext{Values: map[string]any{"since": 0}}, wantErr: "a time offset counts whole units"},
 		{
 			name:    "reference bad date format",
 			raw:     "{{departureDate + 1 day}}",
@@ -184,9 +220,9 @@ func TestEvalExpr(t *testing.T) {
 			wantErr: "invalid expression syntax",
 		},
 		{
-			name:    "invalid expression base",
+			name:    "an output with an offset where no outputs can be read",
 			raw:     "{{foo.bar + 1 day}}",
-			wantErr: "invalid expression",
+			wantErr: "{{foo.bar}} reads a step's output, which can't be read here",
 		},
 	}
 

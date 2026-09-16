@@ -42,8 +42,17 @@ func pred(expr string) []MechanicalAssertion {
 func TestValidate_OutputRefs(t *testing.T) {
 	repeatReadsUnknownStep := outputRefsPlan(nil, nil, nil)
 	repeatReadsUnknownStep.Execution.Steps[3].Repeat = &RepeatConfig{Until: `amount >= "{{chekout.total}}"`}
-	stepValue := outputRefsPlan(nil, nil, nil)
-	stepValue.Execution.Steps[3].Values = map[string]StepValue{"amount": {Default: "{{checkout.total}}"}}
+	stepValueReads := func(expr string) *Plan {
+		p := outputRefsPlan(nil, nil, nil)
+		p.Execution.Steps[3].Values = map[string]StepValue{"amount": {Default: expr}}
+		return p
+	}
+	stepPoolReads := func(expr string) *Plan {
+		p := outputRefsPlan(nil, nil, nil)
+		p.Execution.Steps[3].Values = map[string]StepValue{"amount": {Pool: []any{expr}}}
+		return p
+	}
+	stepValue := stepValueReads("{{checkout.total - 66}}")
 	selectFilter := func(filter string) *Plan {
 		p := outputRefsPlan(nil, nil, nil)
 		p.Execution.Steps[3].Values = map[string]StepValue{"amount": {From: "getCart.lines", Select: &SelectionConfig{Strategy: "first", Field: "price", Filter: filter}}}
@@ -101,9 +110,18 @@ func TestValidate_OutputRefs(t *testing.T) {
 			want: `step 3 (refund): repeat.until reads {{chekout.total}}: "chekout" is not a step in this plan`,
 		},
 		{
-			name: "a step value",
+			name: "a step value reads an earlier step, with an offset",
 			plan: stepValue,
-			want: `step 3 (refund): invalid expression for "amount": {{checkout.total}} reads a step's output, which only assertions, repeat.until, and selection filters can; use from: checkout.total`,
+		},
+		{
+			name: "a step value that reads an unknown step",
+			plan: stepValueReads("{{chekout.total - 66}}"),
+			want: `step 3 (refund): value "amount" reads {{chekout.total}}: "chekout" is not a step in this plan`,
+		},
+		{
+			name: "a pool entry that reads a list output",
+			plan: stepPoolReads("{{getCart.lines}}"),
+			want: `step 3 (refund): pool entry 0 for "amount" reads {{getCart.lines}}, a cartLine[] output`,
 		},
 		{
 			name: "a selection filter reads an earlier step",
@@ -160,6 +178,17 @@ func TestInstantiate_OutputRefsImplyDependsOn(t *testing.T) {
 		inst, err := InstantiateAndValidate(p, g)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"getCart", "checkout"}, inst.Execution.Steps[2].DependsOn)
+	})
+
+	t.Run("a step value adds the step it reads", func(t *testing.T) {
+		p := &Plan{Execution: Execution{Steps: []Step{
+			{Node: "getCart"},
+			{ID: "checkout", Node: "checkoutCart"},
+			{ID: "refund", Node: "paymentRefund", Values: map[string]StepValue{"amount": {Default: "{{checkout.total - 66}}"}}},
+		}}}
+		inst, err := InstantiateAndValidate(p, g)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"checkout"}, inst.Execution.Steps[2].DependsOn)
 	})
 
 	t.Run("one that closes a cycle says so", func(t *testing.T) {

@@ -34,6 +34,9 @@ func TestEvalExpr_OutputRefs(t *testing.T) {
 			"paid":     true,
 			"lines":    []any{"a"},
 			"coupon":   nil,
+			"price":    "221.78",
+			"frozen":   json.Number("1789430400"),
+			"shipOn":   "2026-03-01",
 		},
 	})
 	withOutputs := ExprContext{Env: testEnv, Outputs: lookup}
@@ -51,14 +54,22 @@ func TestEvalExpr_OutputRefs(t *testing.T) {
 		{name: "in mixed text", raw: "{{checkout.total}} {{checkout.currency}}", ctx: withOutputs, want: "13066 USD"},
 		{name: "env still reads the environment", raw: "{{env.MY_VAR}}", ctx: withOutputs, want: "my-value"},
 		{
-			name:    "outside assertions",
+			name:    "where no step outputs can be read",
 			raw:     "{{checkout.total}}",
-			wantErr: "{{checkout.total}} reads a step's output, which only assertions and repeat.until can; in a step value use from: checkout.total",
+			wantErr: "{{checkout.total}} reads a step's output, which can't be read here",
 		},
 		{name: "a null output", raw: "{{checkout.coupon}}", ctx: withOutputs, wantErr: `step "checkout" output "coupon" is null`},
 		{name: "a list output", raw: "{{checkout.lines}}", ctx: withOutputs, wantErr: `step "checkout" output "lines" is a list`},
 		{name: "a lookup error", raw: "{{cart.total}}", ctx: withOutputs, wantErr: "no outputs for cart"},
-		{name: "no date arithmetic on an output", raw: "{{checkout.total + 3 days}}", ctx: withOutputs, wantErr: "invalid expression base"},
+		{name: "a whole number minus a whole number", raw: "{{checkout.total - 66}}", ctx: withOutputs, want: int64(13000)},
+		{name: "a decimal number plus a decimal", raw: "{{checkout.subtotal + 0.25}}", ctx: withOutputs, want: 120.75},
+		{name: "decimal text keeps its places", raw: "{{checkout.price - 21.78}}", ctx: withOutputs, want: "200.00"},
+		{name: "decimal text plus a whole number", raw: "{{checkout.price + 1}}", ctx: withOutputs, want: "222.78"},
+		{name: "Unix seconds plus days", raw: "{{checkout.frozen + 32 days}}", ctx: withOutputs, want: int64(1789430400 + 32*86400)},
+		{name: "a date plus days", raw: "{{checkout.shipOn + 3 days}}", ctx: withOutputs, want: "2026-03-04"},
+		{name: "an offset in mixed text", raw: "refund {{checkout.total - 13000}} of {{checkout.total}}", ctx: withOutputs, want: "refund 66 of 13066"},
+		{name: "text is not a number", raw: "{{checkout.currency + 1}}", ctx: withOutputs, wantErr: `{{checkout.currency}} value "USD" is not a number`},
+		{name: "a boolean is not a number", raw: "{{checkout.paid - 1}}", ctx: withOutputs, wantErr: "{{checkout.paid}} is bool, not a number"},
 		{name: "a hyphenated step ID", raw: "{{pay--declined.total}}", ctx: withOutputs, wantErr: "step IDs in {{step.output}} use letters, digits, and underscores"},
 	}
 	for _, tt := range tests {
@@ -78,6 +89,9 @@ func TestEvalExpr_OutputRefs(t *testing.T) {
 func TestExprOutputRefs(t *testing.T) {
 	assert.Equal(t, []OutputRef{{Step: "checkout", Output: "total"}, {Step: "getCart", Output: "subtotal"}},
 		ExprOutputRefs("{{checkout.total}} of {{ getCart.subtotal }} on {{today}} from {{env.HOME}} for {{quantity}}"))
+	assert.Equal(t, []OutputRef{{Step: "authorize", Output: "amount"}, {Step: "clock", Output: "frozenTime"}},
+		ExprOutputRefs("{{authorize.amount - 500}} until {{ clock.frozenTime + 32 days }} for {{quantity + 1}}"),
+		"a reference with an offset is a reference; an input's offset isn't")
 	assert.Nil(t, ExprOutputRefs("no expressions"))
 	assert.Equal(t, []OutputRef{{Step: "a", Output: "b"}}, ExprValueOutputRefs([]any{"x", map[string]any{"k": "{{a.b}}"}}))
 	assert.Equal(t, "{{checkout.total}}", OutputRef{Step: "checkout", Output: "total"}.String())
@@ -91,6 +105,9 @@ func TestRewriteExprRefs(t *testing.T) {
 
 	assert.Equal(t, `totalAmount == "{{inc0_price.totalAmount}}" && owner == "{{offer.owner}}" && key == "{{env.KEY}}"`, got,
 		"a step idMap names is renamed; another step and the environment are left as they are")
+	assert.Equal(t, "{{inc0_price.totalAmount - 10.50}} by {{inc0_price.dueAt + 2 days}}",
+		RewriteExprRefs("{{price.totalAmount - 10.50}} by {{ price.dueAt + 2 days }}", idMap),
+		"an offset stays with its reference")
 }
 
 func TestRewriteAssertionRefs(t *testing.T) {
