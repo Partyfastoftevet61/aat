@@ -2,6 +2,7 @@ package archive
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -334,4 +335,26 @@ func fillWithSecret(v reflect.Value, secret string, underTag bool) fillCounts {
 		v.SetMapIndex(key, elem)
 	}
 	return c
+}
+
+// TestRedact_APIKeyValuePrefix checks that an apikey written behind a scheme of
+// its own keeps the key out of the archive. Under Authorization the whole value
+// goes, name-matched; under a header name AAT does not know, the secret is
+// replaced by value and the scheme stays readable.
+func TestRedact_APIKeyValuePrefix(t *testing.T) {
+	const key = "apikey_EXAMPLE_0123456789abcdef"
+
+	headers := RedactHeaders(map[string]string{
+		"Authorization":  "ShippoToken " + key,
+		"X-Shippo-Token": "ShippoToken " + key,
+	})
+	assert.Equal(t, Redacted, headers["Authorization"], "a known credential header is redacted whole")
+	assert.Equal(t, "ShippoToken "+key, headers["X-Shippo-Token"], "RedactHeaders only knows well-known names")
+
+	out, err := Redact(&headers, map[string]bool{key: true})
+	require.NoError(t, err)
+	assert.Equal(t, Redacted, (*out)["Authorization"])
+	assert.Equal(t, "ShippoToken "+Redacted, (*out)["X-Shippo-Token"],
+		"the key is replaced inside the value; the scheme stays readable")
+	assert.NotContains(t, fmt.Sprint(*out), key)
 }

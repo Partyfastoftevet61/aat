@@ -158,6 +158,14 @@ func ValidateAuth(auth *AuthConfig) []string {
 		errs = append(errs, fmt.Sprintf("unknown auth type %q (expected oauth2, apikey, bearer, or none)", auth.Type))
 	}
 
+	if auth.ValuePrefix != "" && auth.Type != "apikey" {
+		if auth.Type == "bearer" {
+			errs = append(errs, `auth.valuePrefix is only for apikey; bearer already sends "Bearer " before the token`)
+		} else {
+			errs = append(errs, fmt.Sprintf("auth.valuePrefix is only for apikey, not %q", auth.Type))
+		}
+	}
+
 	return errs
 }
 

@@ -1487,3 +1487,45 @@ func TestLoadEnvironment_WithoutValues_NilValues(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, env.Values)
 }
+
+// TestValidateAuth_ValuePrefix checks that valuePrefix is accepted for apikey
+// and refused for every other type, with bearer named for what it already does.
+func TestValidateAuth_ValuePrefix(t *testing.T) {
+	tests := []struct {
+		name    string
+		auth    AuthConfig
+		wantErr string
+	}{
+		{
+			name: "apikey accepts it",
+			auth: AuthConfig{
+				Type: "apikey", HeaderName: "Authorization", ValuePrefix: "ShippoToken ",
+				Credentials: map[string]SecretRef{"key": {Source: "literal", Value: "k"}},
+			},
+		},
+		{
+			name: "bearer is told what it already sends",
+			auth: AuthConfig{
+				Type: "bearer", ValuePrefix: "Bearer ",
+				Credentials: map[string]SecretRef{"token": {Source: "literal", Value: "t"}},
+			},
+			wantErr: `auth.valuePrefix is only for apikey; bearer already sends "Bearer " before the token`,
+		},
+		{
+			name:    "none is refused",
+			auth:    AuthConfig{Type: "none", ValuePrefix: "Token "},
+			wantErr: `auth.valuePrefix is only for apikey, not "none"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := ValidateAuth(&tt.auth)
+			if tt.wantErr == "" {
+				assert.Empty(t, errs)
+				return
+			}
+			assert.Contains(t, errs, tt.wantErr)
+		})
+	}
+}

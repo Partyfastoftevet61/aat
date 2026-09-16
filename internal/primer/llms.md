@@ -357,7 +357,7 @@ That is the single-environment format. A multi-environment file has top-level `s
 | Type | Credentials | Description |
 |------|-------------|-------------|
 | `none` | — | No authentication |
-| `apikey` | `key` | Sent in the header specified by `headerName` |
+| `apikey` | `key` | Sent in the header specified by `headerName`. `valuePrefix` adds text before the key, for an API with a scheme of its own: `headerName: Authorization` with `valuePrefix: "ShippoToken "` sends `Authorization: ShippoToken <key>`, so the scheme never becomes part of the secret |
 | `bearer` | `token` | Sent as `Authorization: Bearer <token>` |
 | `oauth2` | `username`, `password`, `clientId`, `clientSecret` | Token request to `tokenUrl`. `grantType` defaults to `password`; `client_credentials` also works, but all four credentials are still required and sent, so give unused ones a placeholder such as `{source: literal, value: unused}`. `extraParams` adds form fields |
 

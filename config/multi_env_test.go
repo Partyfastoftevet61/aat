@@ -855,3 +855,34 @@ func writeTempYAML(t *testing.T, content string) string {
 	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
 	return path
 }
+
+// TestLoadNamedEnvironment_AuthValuePrefix checks that an apikey's valuePrefix
+// survives extends and takes ${var} substitution like every other auth string.
+func TestLoadNamedEnvironment_AuthValuePrefix(t *testing.T) {
+	yaml := `
+environments:
+  _shippo:
+    apiBaseUrl: https://api.goshippo.com
+    vars:
+      scheme: ShippoToken
+    auth:
+      type: apikey
+      headerName: Authorization
+      valuePrefix: "${scheme} "
+      credentials:
+        key:
+          source: literal
+          value: shippo_test_abc123
+  test:
+    extends: _shippo
+`
+	path := writeTempYAML(t, yaml)
+
+	env, err := LoadNamedEnvironment(path, "test")
+	require.NoError(t, err)
+	assert.Equal(t, "apikey", env.Auth.Type)
+	assert.Equal(t, "ShippoToken ", env.Auth.ValuePrefix, "the prefix is inherited and its var resolved")
+
+	cfg := env.BuildAPIConfigFromToken(&OAuthToken{AccessToken: "shippo_test_abc123"}, env.Auth, nil)
+	assert.Equal(t, "ShippoToken shippo_test_abc123", cfg.Headers["Authorization"])
+}

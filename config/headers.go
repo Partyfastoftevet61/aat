@@ -23,13 +23,16 @@ func (c *APIConfig) addProtected(headers map[string]string) {
 }
 
 // credentialHeader returns the header that carries an authentication token, and
-// false when there is no token (auth type none).
+// false when there is no token (auth type none). An apikey's valuePrefix comes
+// before the key, so an API with a scheme of its own, such as Shippo's
+// "Authorization: ShippoToken <key>", is written without the scheme becoming
+// part of the secret.
 func credentialHeader(auth AuthConfig, token *OAuthToken) (name, value string, ok bool) {
 	if token == nil {
 		return "", "", false
 	}
 	if auth.Type == "apikey" {
-		return auth.HeaderName, token.AccessToken, true
+		return auth.HeaderName, auth.ValuePrefix + token.AccessToken, true
 	}
 	return "Authorization", "Bearer " + token.AccessToken, true
 }
