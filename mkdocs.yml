@@ -80,12 +80,13 @@ nav:
   - Getting started:
       - Why AAT: why.md
       - Install: install.md
-      - Petstore Quickstart: quickstart.md
+      - "Shop: the 60-second demo": examples/shop.md
+      - Quickstart from an OpenAPI spec: quickstart.md
       - Petstore walkthrough: petstore-walkthrough.md
       - Tutorial: tutorial.md
   - Examples:
       - examples/index.md
-      - Shop: examples/shop.md
+      - Real APIs: examples/real-apis.md
       - Airline case study: examples/airline-case-study.md
   - Core guides:
       - Project setup: project-setup.md

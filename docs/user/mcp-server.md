@@ -1,5 +1,7 @@
 # MCP Server
 
+The graph your tests run is also the most precise description of your API a coding assistant can get: each call's exact request, the order calls go in, what each needs from the ones before it, and what a real response looks like. `aat mcp serve` hands it over as tools. LLMs are optional and authoring-time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API. Execution never calls an LLM.
+
 AAT exposes a Model Context Protocol (MCP) server that integrates your API project into IDE-based AI tools like Claude Code, Cursor, and VS Code Copilot. The server provides tools, resources, and prompts that let AI assistants browse your API graph, author plans, run tests, and debug failures — over stdio or HTTP.
 
 ## Quick Start

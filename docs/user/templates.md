@@ -1,5 +1,7 @@
 # Templates
 
+A graph says what an operation takes and returns; a template says how that becomes an HTTP request and where in the response the outputs live. One small file per operation is what lets a reviewer, or an AI tool, read exactly the call in question and nothing else.
+
 Templates define how AAT translates graph node inputs into HTTP requests and extracts outputs from responses. Each template is a YAML file that maps to one graph node via its `adapter` name.
 
 ## Overview

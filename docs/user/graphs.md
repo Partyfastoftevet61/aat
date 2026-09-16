@@ -1,5 +1,7 @@
 # API Graphs
 
+Everything AAT does starts from one description of your API: which operations exist, what each takes and returns, which must run before which, and which undoes which. Write it once; tests, matrices, the MCP server, and generated docs all read the same file.
+
 A graph is the foundational data model in AAT. It declares what API operations exist, what data they accept and produce, and how they relate to each other through ordering rules. Everything else in AAT — templates, plans, workflows, validation — builds on the graph.
 
 ## Overview

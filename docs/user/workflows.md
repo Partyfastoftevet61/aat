@@ -1,6 +1,6 @@
 # Workflows and Composition
 
-Workflows are reusable plan templates that capture common test patterns. Instead of writing the same ten steps for every booking test, you write the pattern once as a workflow and instantiate it through [recipes](plans.md). Workflows reduce duplication and let you focus on what varies between tests.
+Workflows are reusable plan templates that capture common test patterns. Instead of writing the same ten steps for every booking test, you write the pattern once as a workflow and instantiate it through [recipes](plans.md). Workflows reduce duplication and let you focus on what varies between tests. On the 74-node airline API, 53 recipes share 10 base workflows, so a change to a base reaches every recipe built on it.
 
 ## Overview
 

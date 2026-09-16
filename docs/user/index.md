@@ -14,12 +14,16 @@ aat run plan full-lifecycle
 
 AAT started as a pile of Postman collections: everyone's own copy, none of them reliable, none in source control, and the chaining buried in pre-request scripts. The knowledge of how an API works belongs in your repository, in small files you review like code and an AI coding tool can read one at a time. See [Why AAT exists](why.md).
 
+AAT keeps three things apart. **API knowledge** is a [graph](graphs.md) of operations and request templates, written once. **Test intent** is a [plan](plans.md) that lists steps, not wiring. **Variation** is [layers](batch-layers.md) and [environments](environments.md) that turn one plan into a matrix. Describing the API that precisely turned out to be worth more than the tests: the question stopped being *what else should this run?* and became *what else can read this?* The [MCP server](mcp-server.md) and the [run archives](archives.md) fell out of having the graph, and three projects against [Duffel, Stripe, and Shippo](examples/real-apis.md) are the proof that it runs.
+
 ## Start Here
 
+- **[Why AAT exists](why.md)** — the Postman pile it replaced, the three things it keeps apart, and what else reads the graph
 - **[Shop example](examples/shop.md)** — watch AAT drive a realistic API in a minute, offline: an order through every state, a layer matrix, two regions, negative tests
-- **[Petstore Quickstart](quickstart.md)** — go from an OpenAPI spec to a passing, self-cleaning test in five minutes
+- **[Quickstart from an OpenAPI spec](quickstart.md)** — go from the Petstore spec to a passing, self-cleaning test in five minutes
 - **[MCP Server](mcp-server.md)** — give Claude Code or another MCP client your graph and the tools to write and run tests
 - **[Share your API with integrators](integration-kit.md)** — package part of the project your tests use, so your integrators' AI tools learn the API from it
+- **[Real APIs](examples/real-apis.md)** — Duffel, Stripe, and Shippo, each a project you can run against your own test account
 
 Install with Homebrew, a release archive, Docker, or `go install`, or build from source: see [Install](install.md).
 
@@ -27,9 +31,10 @@ Install with Homebrew, a release archive, Docker, or `go install`, or build from
 
 | Guide | Time | What you get |
 |-------|------|--------------|
+| [Why AAT](why.md) | 5 minutes | What the graph is for, and why plans list steps instead of wiring |
 | [Install](install.md) | 2 minutes | `aat` and `aat-sandbox` from a release, Homebrew, Docker, or source |
 | [Shop example](examples/shop.md) | 1 minute | A complete project running against the offline sandbox |
-| [Petstore Quickstart](quickstart.md) | 5 minutes | Your first graph, templates, and plan, scaffolded from the Petstore spec |
+| [Quickstart from an OpenAPI spec](quickstart.md) | 5 minutes | Your first graph, templates, and plan, scaffolded from the Petstore spec |
 | [Petstore Walkthrough](petstore-walkthrough.md) | 15 minutes | Every file of a small working project, explained |
 | [Tutorial](tutorial.md) | 45 minutes | A project built by hand: environments, plans, workflows, recipes, layers |
 
@@ -83,7 +88,12 @@ Progressive reading order — each builds on the previous.
 | [Examples](examples/index.md) | The example projects and what each one shows |
 | [Shop example](examples/shop.md) | The offline quick start: slots and addons, a layer matrix with dedup, `us`/`eu` environments, negative tests, checkpoints, and MCP configuration |
 | [Petstore Walkthrough](petstore-walkthrough.md) | A line-by-line tour of a working example: graph, templates, workflows, recipes, and how they compose |
-| [Airline case study](examples/airline-case-study.md) | The 74-operation project AAT was built for, and the features that scale relies on |
+| [Real APIs](examples/real-apis.md) | Three projects against Duffel, Stripe, and Shippo: what each covers, proves, and leaves out |
+| [Airline case study](examples/airline-case-study.md) | The private 74-node airline booking API AAT was built for, and the features that scale relies on |
+
+## Status
+
+Pre-1.0, with one maintainer. AAT was built and proven against a private 74-node airline booking API with 63 workflows, 53 recipes, and 6 environments, and against the [three public projects](examples/real-apis.md). The graph and plan formats may still change before 1.0; breaking changes are listed in the [changelog](changelog.md).
 
 ## Concepts Glossary
 

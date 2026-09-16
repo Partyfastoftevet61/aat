@@ -1,5 +1,7 @@
 # Value Resolution
 
+Most steps never state where their inputs come from: the graph already says a cart ID comes from `createCart`, and the plan lists steps. This page is for the moment you need to know why a step got the value it did; the archive records the answer for every input, and the rules below are what it applied.
+
 Every step input needs a value. AAT resolves values through a priority-based chain that tries each source in order, from the most specific (plan-provided) to the most general (graph defaults). Understanding this chain is key to writing effective plans and debugging unexpected results.
 
 ## Resolution Priority

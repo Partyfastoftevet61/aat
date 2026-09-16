@@ -29,15 +29,17 @@ The two numbers in that last row are measured, not rhetorical. The private airli
 
 Once the API was described well enough for the engine to run it — typed operations, where each value comes from, what has to happen first, what undoes what — the description turned out to be worth more than the tests it was written for. The question stopped being *what else should this run?* and became *what else can read this?*
 
-**AI coding tools.** [`aat mcp serve`](mcp-server.md) hands an assistant the same graph the engine runs: each operation's exact request, the order calls go in, what each one needs from the calls before it, the composed flows, and sample responses from real runs. It is a form a machine can act on, rather than prose it has to interpret. Package a subset as an [integration kit](integration-kit.md) and your integrators' assistants read it too — on a 74-node airline API, that was enough for a working client in a single prompt, in six languages.
+**AI coding tools.** [`aat mcp serve`](mcp-server.md) hands an assistant the same graph the engine runs: each operation's exact request, the order calls go in, what each one needs from the calls before it, the composed flows, and sample responses from real runs. It is a form a machine can act on, rather than prose it has to interpret. Package a subset as an [integration kit](integration-kit.md) and your integrators' assistants read it too — on a 74-node airline API, that was enough for a working client in a single prompt, in six languages. LLMs are optional and authoring-time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API. Execution never calls an LLM.
 
 **Evidence you can send someone.** Every run writes an [archive](archives.md): each request and response, how every input got its value, every retry, every assertion, and the cleanup, with secrets redacted. The [web UI](web-ui.md) exports a run as a single `.aar` file, and whoever you send it to opens it in the same viewer with `aat web view` or `aat import`. It is how you show that something works — or that it doesn't — with the actual exchange instead of a screenshot of one pane, and it is the difference between "the sandbox rejects this" and a file the other team can open and step through.
+
+![The shop's checkout step in the web UI: node, status, and display outputs, the Request tab with the method and URL, the Copy as cURL button, the headers with Authorization redacted, and the JSON body](assets/ui-step-request-curl.png)
 
 **Reference documentation.** [`aat docs generate`](docs-generate.md) writes Markdown for every operation from the graph, so the description that runs the tests is also the page someone reads.
 
 **Whatever comes next in your pipeline.** [`--stop-after`](checkpoints.md) stops a run at a named step and leaves the resources it created alive; `--dump-state` writes their IDs, base URLs, and headers for a pytest suite, a load test, or a `curl` session to pick up. For [CI](ci-cd.md) there are exit codes 0/1/2/130, `--json`, `--quiet`, JUnit XML, and a Docker image.
 
-None of that was a roadmap. It is what one good description of an API turned out to be good for, and it is what the *toolkit* in the name means.
+None of that was a roadmap. It is what one good description of an API turned out to be good for, and it is what the *toolkit* in the name means. *Adaptive* is the other half: the many ways one graph runs — layers, environments, per-operation overrides, checkpoints, batch matrices, the MCP server — without a copy of anything.
 
 ## It is legible both ways
 
@@ -49,13 +51,13 @@ Three complete projects against real, public APIs, each built openly and each ru
 
 | Project | Scale | What it shows |
 |---|---|---|
-| [aat-duffel](https://github.com/gburgyan/aat-duffel) | 66 endpoints, 47 plans, 14 layers; the full batch passes 47/47 in about 3½ minutes | An API with **no official OpenAPI spec**. Everything the README says about Duffel came from runs |
+| [aat-duffel](https://github.com/gburgyan/aat-duffel) | 66 operations, 47 plans, 14 layers; the full batch passes 47/47 in about 3½ minutes | An API with **no official OpenAPI spec**. Everything the README says about Duffel came from runs |
 | [aat-stripe](https://github.com/gburgyan/aat-stripe) | 82 operations, 53 plans, 14 layers; 53/53 in about 5 minutes | About 6,300 lines of graph and templates against Stripe's **205,000-line** vendored spec, with every request and response checked against it as it goes |
 | [aat-shippo](https://github.com/gburgyan/aat-shippo) | 46 of 70 operations, 28 plans, 9 layers; 28/28 in about 2½ minutes | Layers as the headline — a lane × parcel matrix and six deterministic tracking fixtures — with real shipping labels rendered in the web UI |
 
 `aat-shippo` makes the argument on this page in one command. Its lane × parcel matrix runs eight combinations from two plan files. A second matrix, over an axis those plans never read, expands to fourteen runs — seven execute, seven are skipped as duplicates, ten seconds, nothing bought. A layer only multiplies the plans it actually reaches. With collections, every one of those combinations is a copy you maintain by hand.
 
-Two smaller projects ship in this repository and need no account at all: the [shop](examples/shop.md), which runs offline against `aat-sandbox`, and the [petstore](petstore-walkthrough.md). See [Examples](examples/index.md).
+[Real APIs](examples/real-apis.md) says what each covers, proves, and leaves out. Two smaller projects ship in this repository and need no account at all: the [shop](examples/shop.md), which runs offline against `aat-sandbox`, and the [petstore](petstore-walkthrough.md). See [Examples](examples/index.md).
 
 ## If you already have API tooling
 

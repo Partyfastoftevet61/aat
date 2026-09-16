@@ -1,5 +1,7 @@
 # Plans and Recipes
 
+A plan is a test: the steps to run, the values that make it this test rather than another, and what must be true afterwards. It does not say how data moves between steps — the graph does — which is why most plans are a few lines.
+
 Plans are concrete test specifications — they tell AAT exactly what to execute, what values to use, and what to assert. AAT supports two plan formats: **recipes** (compact, workflow-based) and **full plans** (explicit step-by-step). Both use the same `aat run plan` command.
 
 ## Overview

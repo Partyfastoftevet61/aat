@@ -1,5 +1,7 @@
 # Validation
 
+A plan should fail because the API did something, not because a template misspelled an input. `aat validate --strict` checks every file, wire, workflow, and, with a spec, every node against it, before a single request is sent, so the first run is the API's answer rather than yours.
+
 AAT validates projects at multiple levels — graph structure, OpenAPI alignment, template consistency, plan correctness, and workflow compatibility. You can validate the entire project with a single command or focus on a specific scope with subcommands.
 
 ## Full Project Validation

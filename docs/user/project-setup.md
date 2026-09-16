@@ -1,5 +1,7 @@
 # Project Setup and Manifest
 
+A project is a directory of small YAML files: one graph, one template per operation, environments, plans. The manifest is the one file that says where they are, so every command — run, validate, serve to an AI tool — finds them the same way.
+
 The project manifest (`aat-project.yaml`) marks your project root and tells AAT where all its artifacts live, so most CLI flags become optional.
 
 ## Overview

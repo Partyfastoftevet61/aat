@@ -51,20 +51,14 @@ PASSED (15/15 steps, 2.9s)
 
 Nobody wired the data by hand: the graph says where each input comes from, and the plan only lists steps. The [shop README](examples/shop/README.md) walks through what each command shows.
 
-## Pick your demo
+## Use it to
 
-| Example | What it shows | Needs |
-|---------|---------------|-------|
-| [Shop](examples/shop/README.md) | Everything: an 18-operation graph, workflows with slots and addons, layers and matrices, two regions, a separately hosted payments API, negative tests, retries, checkpoints, an integration kit, MCP | Nothing: it runs offline against `aat-sandbox` |
-| [Petstore](examples/petstore/README.md) | The smallest working project: four operations, two workflows, cleanup pairing | Network access to the public Petstore |
-
-Three complete projects against real, public APIs live in their own repositories. Each was built against the API's live test mode, and every claim in its README is something a run recorded:
-
-| Project | Scale | What it shows |
-|---------|-------|---------------|
-| [aat-duffel](https://github.com/gburgyan/aat-duffel) | 66 endpoints, 47 plans, 14 layers; 47/47 in ~3½ min | Flight booking against an API with **no official OpenAPI spec** — everything in the README came from runs |
-| [aat-stripe](https://github.com/gburgyan/aat-stripe) | 82 operations, 53 plans, 14 layers; 53/53 in ~5 min | ~6,300 lines of graph and templates against Stripe's **205,000-line** vendored spec, with every exchange checked against it |
-| [aat-shippo](https://github.com/gburgyan/aat-shippo) | 46 of 70 operations, 28 plans, 9 layers; 28/28 in ~2½ min | Layers as the headline — a lane × parcel matrix and six deterministic tracking fixtures — with real shipping labels rendered in the web UI |
+- **Test your own API's real flows in CI.** An order through cart, checkout, payment, shipping, and refund, cleaned up afterwards, with exit codes and JUnit for the pipeline: the [shop](examples/shop/README.md) and [CI/CD](https://gburgyan.github.io/aat/ci-cd/).
+- **Test the third-party APIs you depend on.** Clone a project, export your test key, run it: [Stripe, Shippo, and Duffel](https://gburgyan.github.io/aat/examples/real-apis/). Each plan asserts the exact status and error body, so a rerun says what changed.
+- **Run one plan across every configuration.** Regions, card brands, parcel sizes: layers multiply plans into a matrix, and permutations that would send the same requests are skipped: [Matrix testing](https://gburgyan.github.io/aat/batch-layers/).
+- **Give integrators a kit their AI tools can code against.** The graph your tests keep true, served over MCP; a working client has taken a single prompt: [Share your API with integrators](https://gburgyan.github.io/aat/integration-kit/).
+- **Send a run instead of a screenshot.** One file with every request, response, resolved value, retry, and assertion, opened in the same viewer by whoever you send it to: [Archives](https://gburgyan.github.io/aat/archives/).
+- **Point one call at your laptop.** Route a single operation to a local build, with the environment's auth intact, without editing the project: [Local development](https://gburgyan.github.io/aat/local-dev/).
 
 ## Why
 
@@ -80,7 +74,24 @@ So the knowledge moved into the repository. AAT keeps three things apart. **API 
 
 Describing the API that precisely turned out to be worth more than the tests it was written for. The question stopped being *what else should this run?* and became *what else can read this?* The same graph is what `aat mcp serve` hands an AI coding tool, so it calls the API correctly instead of guessing at it — and it is what makes a run archive worth sending: every request, response, resolved value, retry, and assertion in one file the other team opens in the same viewer, rather than a screenshot of one pane. Neither was a roadmap; both fell out of having the graph.
 
-The point is not that the files are tidy. It is that they run: every claim in this repository and in the three example projects above is something `aat` executed and recorded. [Why AAT exists](https://gburgyan.github.io/aat/why/) tells the longer version.
+The point is not that the files are tidy. It is that they run: every claim in this repository and in the three projects below is something `aat` executed and recorded. [Why AAT exists](https://gburgyan.github.io/aat/why/) tells the longer version.
+
+## Pick your demo
+
+| Example | What it shows | Needs |
+|---------|---------------|-------|
+| [Shop](examples/shop/README.md) | Everything: an 18-operation graph, workflows with slots and addons, layers and matrices, two regions, a separately hosted payments API, negative tests, retries, checkpoints, an integration kit, MCP | Nothing: it runs offline against `aat-sandbox` |
+| [Petstore](examples/petstore/README.md) | The smallest working project: four operations, two workflows, cleanup pairing | Network access to the public Petstore |
+
+Three complete projects against real, public APIs live in their own repositories. Each was built against the API's live test mode, and every claim in its README is something a run recorded:
+
+| Project | Scale | What it shows |
+|---------|-------|---------------|
+| [aat-duffel](https://github.com/gburgyan/aat-duffel) | 66 operations, 47 plans, 14 layers; 47/47 in ~3½ min | **Flight search and booking**, against an API with **no official OpenAPI spec**; everything in the README came from runs |
+| [aat-stripe](https://github.com/gburgyan/aat-stripe) | 82 operations, 53 plans, 14 layers; 53/53 in ~5 min | **Card and bank payments, saved cards, refunds**: ~6,300 lines of graph and templates against Stripe's **205,000-line** vendored spec, with every exchange checked against it |
+| [aat-shippo](https://github.com/gburgyan/aat-shippo) | 46 of 70 operations, 28 plans, 9 layers; 28/28 in ~2½ min | **Rating, buying, refunding, and tracking shipments**: layers as the headline, with a lane × parcel matrix, six deterministic tracking fixtures, and real shipping labels rendered in the web UI |
+
+Each is a complete AAT project in its own repository: clone it, export a free test-mode key, and it runs against your account. [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/) says what each covers and leaves out.
 
 ## What it does
 
@@ -116,6 +127,8 @@ A layer is a named set of input values. Each `--layer-group` adds a dimension, s
 ```bash
 aat run plan full-lifecycle --override checkoutCart=http://localhost:9000/us/v1
 ```
+
+One graph, run many ways: that is the *adaptive* in the name.
 
 <img src="https://raw.githubusercontent.com/gburgyan/aat/main/docs/user/assets/ui-batch-matrix.png" alt="The shop batch in the web UI's By Test view: one row per plan, one column per layer permutation, and a filter for each layer group" width="820">
 
@@ -270,6 +283,7 @@ Release binaries are not notarized. If macOS blocks one you downloaded with a br
 The full documentation is at **[gburgyan.github.io/aat](https://gburgyan.github.io/aat/)**. Good places to start:
 
 - [Shop example](https://gburgyan.github.io/aat/examples/shop/): every command above, explained
+- [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/): Duffel, Stripe, and Shippo, and what each project covers
 - [Tutorial](https://gburgyan.github.io/aat/tutorial/): build a project by hand against the sandbox
 - [Matrix testing](https://gburgyan.github.io/aat/batch-layers/): layers, layer groups, and dedup
 - [Environments](https://gburgyan.github.io/aat/environments/): auth, `extends`, `vars`, and per-operation routing

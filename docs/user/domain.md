@@ -1,5 +1,7 @@
 # Domain Knowledge
 
+A graph says what an operation takes; it does not say that a refund cannot exceed the charge, or which currency codes are real. The domain file holds that kind of knowledge for the tools that write plans — `aat prompt`, an assistant through the MCP server — and for the docs `aat docs generate` writes. Runs never read it.
+
 Domain knowledge teaches AAT about your API's business domain — the concepts, data types, and representative values that make generated plans realistic and meaningful.
 
 ## Overview

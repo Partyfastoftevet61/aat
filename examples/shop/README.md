@@ -100,6 +100,8 @@ Batch: 27/63 PASSED, 36 SKIPPED
 | `coupon-save10`, `coupon-freeship` | `applyCoupon.code` |
 | `delivery-soon`, `delivery-later` | `checkoutCart.deliveryDate` (`{{today + 3 days}}`, `+ 14 days`) |
 
+<img src="https://raw.githubusercontent.com/gburgyan/aat/main/docs/user/assets/ui-batch-matrix.png" alt="The shop batch in the web UI's By Test view: one row per plan, one column per layer permutation, and a filter for each layer group" width="820">
+
 ## Two regions
 
 `env.yaml` holds two environments that share everything through `_base` and differ only in

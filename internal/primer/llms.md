@@ -63,6 +63,10 @@ Both run as MCP servers (stdio transport) that you configure alongside your codi
 
 AAT also has its own MCP server (`aat mcp serve`) that exposes graph introspection, workflow listing, validation, and plan scaffolding tools. See [MCP Server](https://gburgyan.github.io/aat/mcp-server/).
 
+### Reference Projects
+
+Three complete projects against public APIs are the reference for idioms: [aat-duffel](https://github.com/gburgyan/aat-duffel) (66 operations, no official spec), [aat-stripe](https://github.com/gburgyan/aat-stripe) (82 operations, strict validation against a vendored spec), and [aat-shippo](https://github.com/gburgyan/aat-shippo) (46 operations, layer matrices). Before inventing a pattern — cleanup chains, guards, polling with `repeat`, form bodies, layers — read the matching row of a project's "AAT features on display" table, which names the file that uses it. [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/) compares the three.
+
 ### Starting from an OpenAPI Spec
 
 When the API publishes an OpenAPI 3.0 or 3.1 spec, scaffold from it, and let AAT check your project and your runs against it.
