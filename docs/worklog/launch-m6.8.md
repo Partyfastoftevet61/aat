@@ -65,3 +65,59 @@ running test suite for Shippo, a worked MCP example, and launch marketing that l
   pacing becomes the next PR. Observed separately: UPS rate-limits *itself* during a fast sweep and
   simply returns no rates, which is why a rating plan must not assert that a given carrier is present
   unless it pins that carrier.
+
+## 2026-09-15 — Phases 2 and 3: rating and labels
+
+**What:**
+
+- **Phase 2, rating** (`aat-shippo` 191939a): six nodes, three plans, and the `rates` visualizer,
+  which draws the carrier × service table with the carriers' own logos and the CHEAPEST / FASTEST /
+  BESTVALUE chips. The same file serves a rates listing, a currency-converted listing, and the rates
+  a shipment carries inline — and for a shipment it also lists the reason every silent carrier gave.
+- **Phase 3, labels** (`aat-shippo` 75054b7): six nodes, three plans, the `label` visualizer, and
+  the second guard. The visualizer draws a PNG label as the label itself: the real USPS sheet with
+  its barcode and QR code, rendered in the web UI, because the visualizer CSP allows `img-src
+  https:`. A PDF or ZPL gets a link instead.
+- **PR #32 opened:** an input can name a property nested inside the request body. Follows #31.
+- 15 plans, `aat validate --strict` clean, 15/15 green on `test-ci`, 0 cleanup failures.
+
+**Decisions:**
+
+- **Every label node is paired with `createRefund` under `when: status == "SUCCESS"`.** A label
+  cannot be deleted, so cleanup is a refund. The batch proves the pairing: three plans buy four
+  labels between them and the account ends with none of them bought. When a plan refunds explicitly,
+  AAT reports the pairing as `skipped: released by refund`.
+- **Both guards assert `ourCount > 0`,** so neither can pass by finding nothing.
+  `no-unrefunded-labels` checks that no label the package bought is still in `SUCCESS`, since a
+  refunded one reads `REFUNDPENDING` and then `REFUNDED`.
+- **Label plans pin USPS rather than buying the cheapest rate.** Rating and buying are separate
+  permissions on this account, and pinning is the honest way to say so in the plan.
+- **A rating plan never asserts that a named carrier answered** unless the shipment pinned that
+  carrier, because a carrier's absence is normal and explained in `messages`.
+
+**What the phases found, each now pinned by a plan:**
+
+- **A 201 does not mean a label was bought.** Buying a UPS rate answers `201` with
+  `status: ERROR` and `ups_registration_error`; the account can rate with UPS but not purchase. The
+  status, not the HTTP code, is the evidence.
+- **Shippo does not echo `label_file_type`.** The format delivered is readable only from the label
+  URL's extension, so the graph exposes `labelFormat`, parsed from the URL, rather than the type
+  that was asked for.
+- **A refund does not settle quickly in test mode** — one stayed `PENDING` for at least 90 seconds,
+  which is what a carrier taking days to accept a refund looks like through an API. The label's own
+  status becomes `REFUNDPENDING` at once, so that is what a plan waits for.
+- **`GET /refunds/` needs its trailing slash,** and the spec declares no `page` or `results`
+  parameters for it, alone among the listings.
+- **Rating is synchronous in test mode** despite the documented async default: every lane probed
+  answered `SUCCESS` with its rates already attached. The poll stays because it is what the API asks
+  for and a slower lane would need it.
+- **`GET /carrier_accounts/{id}` omits `service_levels` entirely;** the listing with
+  `service_levels=true` is the only source.
+- **An address created with `validate: true` is corrected and loses its `metadata`,** so a validated
+  address carries no tag.
+
+**Open questions:**
+
+- Whether other carriers besides USPS can buy. Only USPS was needed for Phases 1–3; the answer
+  shapes the per-region purchase matrix in Phase 9, and the coverage map will need a *can rate* /
+  *can buy* distinction.
