@@ -649,6 +649,8 @@ type shownStep struct {
 	Outputs           map[string]any            `json:"outputs,omitempty"`
 	Validation        *shownValidation          `json:"validation,omitempty"`
 	RequestBodyBytes  int                       `json:"request_body_bytes,omitempty"`
+	RequestBodyForm   bool                      `json:"request_body_form,omitempty"`   // the request body is form-encoded
+	RequestFormFields int                       `json:"request_form_fields,omitempty"` // its fields, decoded
 	ResponseBodyBytes int                       `json:"response_body_bytes,omitempty"`
 	Resolutions       []archive.InputResolution `json:"resolutions,omitempty"`
 	Warnings          []string                  `json:"warnings,omitempty"`
@@ -744,7 +746,7 @@ func showStep(out io.Writer, step *archive.StepRecord, id string, cleanup bool, 
 		}
 	}
 	writeShownIterations(&b, view.Iterations)
-	fmt.Fprintf(&b, "request body: %s\n", showSize(view.RequestBodyBytes))
+	fmt.Fprintf(&b, "request body: %s%s\n", showSize(view.RequestBodyBytes), formNote(view.RequestBodyForm, view.RequestFormFields))
 	fmt.Fprintf(&b, "response body: %s\n", showSize(view.ResponseBodyBytes))
 	switch {
 	case len(view.Iterations) > 0:
@@ -775,6 +777,11 @@ func buildShownStep(step *archive.StepRecord, id string, cleanup bool) shownStep
 	if step.Request != nil {
 		view.Method, view.URL = step.Request.Method, step.Request.URL
 		view.RequestBodyBytes = compactSize(step.Request.Body)
+		if archive.IsFormMediaType(archive.HeaderValue(step.Request.Headers, "Content-Type")) {
+			view.RequestBodyForm = true
+			view.RequestFormFields = len(archive.FormFields(step.Request.Body))
+			view.RequestBodyBytes = len(archive.BodyText(step.Request.Body))
+		}
 	}
 	if step.Response != nil {
 		view.Status = step.Response.Status
@@ -914,16 +921,38 @@ func showStepPart(out, errOut io.Writer, step *archive.StepRecord, id string, op
 	if err != nil {
 		return err
 	}
-	return showPart(out, errOut, doc, "step "+id, opts)
+	return showPart(out, errOut, doc, partContentType(step.Request, step.Response, opts.Part), "step "+id, opts)
+}
+
+// partContentType returns the Content-Type of the body a part names, or "" for
+// a part that isn't a body.
+func partContentType(request *archive.RequestRecord, response *archive.ResponseRecord, part string) string {
+	switch {
+	case part == "request" && request != nil:
+		return archive.HeaderValue(request.Headers, "Content-Type")
+	case part == "response" && response != nil:
+		return archive.HeaderValue(response.Headers, "Content-Type")
+	}
+	return ""
 }
 
 // showPart prints a part of a step, or of one of its requests, as showStepPart
 // describes. what names whose part it is in an error, as in "step checkout".
-func showPart(out, errOut io.Writer, doc []byte, what string, opts showOptions) error {
+// contentType is the body's, so a form-encoded one prints as the text it was
+// sent as, and --path and --shape read the value its bracketed keys describe.
+func showPart(out, errOut io.Writer, doc []byte, contentType, what string, opts showOptions) error {
 	if len(doc) == 0 {
 		return fmt.Errorf("%s has no %s", what, stepPartName(opts.Part))
 	}
 	var err error
+	if archive.IsFormMediaType(contentType) {
+		if opts.Path == "" && !opts.Shape {
+			return writeCapped(out, errOut, renderFormBody(doc, opts.Compact), opts.MaxBytes)
+		}
+		if doc, err = json.Marshal(archive.FormObject(doc)); err != nil {
+			return err
+		}
+	}
 	if opts.Path != "" {
 		result := gjson.GetBytes(doc, validate.NormalizeJSONPath(opts.Path))
 		if !result.Exists() {
@@ -968,6 +997,30 @@ func showPart(out, errOut io.Writer, doc []byte, what string, opts showOptions) 
 		text = buf.Bytes()
 	}
 	return writeCapped(out, errOut, text, opts.MaxBytes)
+}
+
+// renderFormBody prints a form-encoded body as text: one decoded field per
+// line, or, compact, the body as it was sent.
+func renderFormBody(doc []byte, compact bool) []byte {
+	if compact {
+		return append([]byte(archive.BodyText(doc)), '\n')
+	}
+	var b strings.Builder
+	for _, field := range archive.FormFields(doc) {
+		b.WriteString(field.Name)
+		b.WriteByte('=')
+		b.WriteString(field.Value)
+		b.WriteByte('\n')
+	}
+	return []byte(b.String())
+}
+
+// formNote describes a form-encoded body beside its size.
+func formNote(form bool, fields int) string {
+	if !form {
+		return ""
+	}
+	return " (form, " + pluralize(fields, "field") + ")"
 }
 
 // stepPartJSON returns a part of a step as JSON, or nothing when the step has

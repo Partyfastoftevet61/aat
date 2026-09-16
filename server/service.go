@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1131,6 +1132,7 @@ func toRequestDetail(r *archive.RequestRecord) *RequestDetail {
 		OriginalURL: r.OriginalURL,
 		Headers:     toHeaderEntries(r.Headers),
 		Body:        r.Body,
+		FormFields:  toFormFields(r.Headers, r.Body),
 	}
 }
 
@@ -1139,10 +1141,29 @@ func toResponseDetail(r *archive.ResponseRecord) *ResponseDetail {
 		return nil
 	}
 	return &ResponseDetail{
-		Status:  r.Status,
-		Headers: toHeaderEntries(r.Headers),
-		Body:    r.Body,
+		Status:     r.Status,
+		Headers:    toHeaderEntries(r.Headers),
+		Body:       r.Body,
+		FormFields: toFormFields(r.Headers, r.Body),
 	}
+}
+
+// toFormFields decodes a form-encoded body into its fields, so the web UI shows
+// them as they were sent rather than as one escaped string. A body of any other
+// type has none.
+func toFormFields(headers map[string]string, body json.RawMessage) []FormField {
+	if !archive.IsFormMediaType(archive.HeaderValue(headers, "Content-Type")) {
+		return nil
+	}
+	decoded := archive.FormFields(body)
+	if len(decoded) == 0 {
+		return nil
+	}
+	fields := make([]FormField, len(decoded))
+	for i, field := range decoded {
+		fields[i] = FormField{Name: field.Name, Value: field.Value}
+	}
+	return fields
 }
 
 func toValidationDetail(v *archive.ValidationRecord) *ValidationDetail {

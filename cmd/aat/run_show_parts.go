@@ -74,6 +74,13 @@ func shownPartRows(a *archive.Archive, opts showOptions) []shownPartRow {
 		if err != nil || len(doc) == 0 {
 			return
 		}
+		// A form body reads as the value its bracketed keys describe, so a path
+		// selects from it and the line prints its fields rather than escapes.
+		if archive.IsFormMediaType(partContentType(step.Request, step.Response, opts.Part)) {
+			if doc, err = json.Marshal(archive.FormObject(doc)); err != nil {
+				return
+			}
+		}
 		if opts.Path != "" {
 			result := gjson.GetBytes(doc, validate.NormalizeJSONPath(opts.Path))
 			if !result.Exists() {

@@ -987,6 +987,7 @@ aat run show latest --step checkout --response --shape  # the response's structu
 aat run show latest --step checkout --response --path lines.0.sku
 aat run show latest --step checkout --outputs           # what the template extracted
 aat run show latest --step listOrders --iteration 2     # one request of a repeated step
+aat run show latest --step checkout --request           # a form body prints as its decoded fields
 aat run show latest --step checkout --resolutions       # where each input's value came from, and why one failed
 aat run show latest --json --compact                    # the step list as one JSON line, for a script
 aat run show latest --response --path error.code        # one part of every step that has it

@@ -2598,3 +2598,32 @@ func createDir(path string) error {
 func writeFile(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o644)
 }
+
+func TestGetStep_FormBody(t *testing.T) {
+	dir := t.TempDir()
+	body, err := json.Marshal("amount=2000&currency=usd&metadata[source]=aat-stripe")
+	require.NoError(t, err)
+	step := makeStepWithID("createPayment", "createPaymentIntent", 200, 20)
+	step.Request = &archive.RequestRecord{
+		Method:  "POST",
+		URL:     "https://api.example.com/v1/payment_intents",
+		Headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+		Body:    body,
+	}
+	writeArchive(t, dir, makeArchive("run-20260101-100000-aaaa0001", "passed", step, makeStepFull("SearchOffers", 200)))
+
+	svc := NewArchiveService(dir)
+	detail, err := svc.GetStep("run-20260101-100000-aaaa0001", "createPayment")
+	require.NoError(t, err)
+	require.NotNil(t, detail.Request)
+	assert.Equal(t, []FormField{
+		{Name: "amount", Value: "2000"},
+		{Name: "currency", Value: "usd"},
+		{Name: "metadata[source]", Value: "aat-stripe"},
+	}, detail.Request.FormFields, "a form body's fields, in the order they were sent")
+
+	detail, err = svc.GetStep("run-20260101-100000-aaaa0001", "SearchOffers")
+	require.NoError(t, err)
+	require.NotNil(t, detail.Request)
+	assert.Nil(t, detail.Request.FormFields, "a JSON body has no form fields")
+}

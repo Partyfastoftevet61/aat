@@ -169,13 +169,23 @@ type RequestDetail struct {
 	OriginalURL string          `json:"originalUrl,omitempty"`
 	Headers     []HeaderEntry   `json:"headers,omitempty"`
 	Body        json.RawMessage `json:"body,omitempty"`
+	// FormFields, on a form-encoded body, are its fields decoded, in the order
+	// they were sent.
+	FormFields []FormField `json:"formFields,omitempty"`
 }
 
 // ResponseDetail captures the HTTP response.
 type ResponseDetail struct {
-	Status  int             `json:"status"`
-	Headers []HeaderEntry   `json:"headers,omitempty"`
-	Body    json.RawMessage `json:"body,omitempty"`
+	Status     int             `json:"status"`
+	Headers    []HeaderEntry   `json:"headers,omitempty"`
+	Body       json.RawMessage `json:"body,omitempty"`
+	FormFields []FormField     `json:"formFields,omitempty"`
+}
+
+// FormField is one field of a form-encoded body, decoded.
+type FormField struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 // IterationSummary is one request of a repeated step, as its step detail lists

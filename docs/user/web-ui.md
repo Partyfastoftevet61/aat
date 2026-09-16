@@ -102,7 +102,7 @@ Clicking a step opens the step detail. Tabs appear only when the step has that d
 
 | Tab | Contents |
 |-----|----------|
-| Request | HTTP method, URL, headers, request body (formatted JSON), and a **Copy as cURL** button |
+| Request | HTTP method, URL, headers, request body (formatted JSON, or a form-encoded body's decoded fields), and a **Copy as cURL** button |
 | Response | Status code, response headers, response body (formatted JSON with expand/collapse) |
 | Requests | A [repeated step](plans.md#repeat)'s requests: each one's status, duration, whether `until` held, and outputs. The Request and Response tabs show the last one; selecting a request loads its own bodies, headers, inputs, outputs, and OpenAPI validation |
 | Extractions | Each output's value and the later steps that consumed it |

@@ -193,12 +193,20 @@ export interface RequestDetail {
   originalUrl?: string;
   headers?: HeaderEntry[];
   body?: unknown;
+  formFields?: FormField[]; // a form-encoded body's fields, in the order they were sent
 }
 
 export interface ResponseDetail {
   status: number;
   headers?: HeaderEntry[];
   body?: unknown;
+  formFields?: FormField[];
+}
+
+// One field of a form-encoded body, decoded.
+export interface FormField {
+  name: string;
+  value: string;
 }
 
 export interface ValidationDetail {

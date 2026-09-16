@@ -290,7 +290,10 @@
             <HeadersTable headers={step.request.headers} />
           </details>
         {/if}
-        {#if step.request.body !== undefined && step.request.body !== null}
+        {#if step.request.formFields && step.request.formFields.length > 0}
+          <h4 class="section-heading">Body ({step.request.formFields.length} form fields)</h4>
+          <HeadersTable headers={step.request.formFields} />
+        {:else if step.request.body !== undefined && step.request.body !== null}
           <h4 class="section-heading">Body</h4>
           <JsonViewer data={step.request.body} />
         {/if}
@@ -308,7 +311,10 @@
             <HeadersTable headers={step.response.headers} />
           </details>
         {/if}
-        {#if step.response.body !== undefined && step.response.body !== null}
+        {#if step.response.formFields && step.response.formFields.length > 0}
+          <h4 class="section-heading">Body ({step.response.formFields.length} form fields)</h4>
+          <HeadersTable headers={step.response.formFields} />
+        {:else if step.response.body !== undefined && step.response.body !== null}
           <h4 class="section-heading">Body</h4>
           <JsonViewer data={step.response.body} />
         {/if}
