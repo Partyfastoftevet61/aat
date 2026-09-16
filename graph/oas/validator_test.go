@@ -679,6 +679,43 @@ func TestValidate_OneOfRequestBodyInputs(t *testing.T) {
 	assert.Contains(t, got[0], `input "colour"`)
 }
 
+// A template routinely flattens a nested body into one input per leaf, so an
+// input matching a property of an object inside the body is one the spec knows.
+func TestValidate_NestedRequestBodyInputs(t *testing.T) {
+	v := NewValidator()
+	require.NoError(t, v.LoadSpec("oneof_body.yaml", filepath.Join("testdata", "oneof_body.yaml")))
+	node := &graph.Node{
+		Name:    "createInstant",
+		Adapter: "createInstant",
+		OAS:     &graph.OASRef{OperationID: "createInstant"},
+		Inputs: []graph.Input{
+			{Name: "address_from", Type: "string"}, // one level down
+			{Name: "address_to", Type: "string"},   //
+			{Name: "parcel_id", Type: "string"},    // inside an array's items
+		},
+	}
+	g := &graph.Graph{Version: "1.0.0", OAS: "oneof_body.yaml", Nodes: map[string]*graph.Node{"createInstant": node}}
+
+	var unknown []string
+	for _, issue := range v.Validate(g).Issues {
+		if issue.Severity == graph.SpecWarning && contains(issue.Message, "not found in OAS parameters") {
+			unknown = append(unknown, issue.Message)
+		}
+	}
+	assert.Empty(t, unknown, "every input names a property somewhere in the body")
+
+	// A name the body carries nowhere is still reported.
+	node.Inputs = append(node.Inputs, graph.Input{Name: "colour", Type: "string", Optional: true})
+	var got []string
+	for _, issue := range v.Validate(g).Issues {
+		if issue.Severity == graph.SpecWarning && contains(issue.Message, "not found in OAS parameters") {
+			got = append(got, issue.Message)
+		}
+	}
+	require.Len(t, got, 1)
+	assert.Contains(t, got[0], `input "colour"`)
+}
+
 func TestValidate_RequiredRequestBodyProp(t *testing.T) {
 	v := newValidatorWithPetstore(t)
 	g := &graph.Graph{
