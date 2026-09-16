@@ -2,9 +2,12 @@
 
 ## Status
 
-AAT's first public release is v0.1.0. It was built and proven against a 74-node
-airline API, so the core loop — graph, templates, plans, engine, archives, web UI, MCP server — has
-carried real traffic. It is maintained by one person.
+AAT's first public release is v0.1.0. It was built and proven against a private 74-node airline
+booking API with 63 workflows, 53 recipes, and 6 environments, so the core loop — graph, templates,
+plans, engine, archives, web UI, MCP server — has carried real traffic. Three further projects run
+against real, public APIs in test mode: [aat-duffel](https://github.com/gburgyan/aat-duffel),
+[aat-stripe](https://github.com/gburgyan/aat-stripe), and
+[aat-shippo](https://github.com/gburgyan/aat-shippo). It is maintained by one person.
 
 The graph and plan YAML formats may still change before 1.0. Breaking changes will be listed in
 `CHANGELOG.md` with migration notes.
@@ -24,8 +27,9 @@ Roughly in priority order. None of these have dates.
   graph. See [Share Your API with Integrators](docs/user/integration-kit.md).
 - **An MCP oracle for client code.** A tool that renders the concrete request for an operation from
   input values, and `execute_plan` results that include the exchanges.
-- **More example integrations.** Duffel flight booking in test mode, GitHub, and Stripe graphs, with
-  the setup chains needed to run them end to end.
+- **More example integrations.** Duffel, Stripe, and Shippo have shipped as sister repositories. Still
+  wanted: an API with no sandbox, where cleanup matters and rate limits bite, and nightly CI for the
+  projects that exist, so their published numbers are reproducible from the repository.
 - **Docs site on Zensical.** The site is built with Material for MkDocs, which gets critical fixes
   only until 2026-11-05; its successor, Zensical, aims to build existing Material projects.
 

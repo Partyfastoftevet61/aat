@@ -12,6 +12,8 @@ aat run plan full-lifecycle
 
 ![aat run plan full-lifecycle against the shop sandbox: fifteen steps stream in with their status codes and durations, two steps retry, cleanup deletes the order and the cart, and the run passes](assets/demo-plan.gif)
 
+AAT started as a pile of Postman collections: everyone's own copy, none of them reliable, none in source control, and the chaining buried in pre-request scripts. The knowledge of how an API works belongs in your repository, in small files you review like code and an AI coding tool can read one at a time. See [Why AAT exists](why.md).
+
 ## Start Here
 
 - **[Shop example](examples/shop.md)** — watch AAT drive a realistic API in a minute, offline: an order through every state, a layer matrix, two regions, negative tests
