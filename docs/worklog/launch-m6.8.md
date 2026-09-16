@@ -155,3 +155,40 @@ running test suite for Shippo, a worked MCP example, and launch marketing that l
 
 - The README will need a pass per phase as tracking, customs and batches land; its *Not covered yet*
   section is the list to work down.
+
+## 2026-09-16 — `aat-shippo` published, and the three packages brought level
+
+**What:**
+
+- **`gburgyan/aat-shippo` is public,** 70 files over 6 commits. GitHub's push protection blocked the
+  first attempt: Shippo's own published spec carries an AWS access key **ID**
+  (`AKIAJTHP3LLFMYAWALIA`) in three example URLs whose pre-signed expiries are 2013–2015. The author
+  allowed it rather than redact, so the vendored spec stays byte-identical and the README's SHA-256 pin
+  still means something.
+- **Apache 2.0 in all three published packages,** byte-identical to AAT's own. None had a license, so
+  default copyright applied and nobody could reuse what they are published to demonstrate.
+- **Descriptions and topics** on all three; `aat-duffel` and `aat-shippo` had none.
+- **`docs/api/` committed in all three** from `aat docs generate --split` — 25, 67 and 83 files.
+- **PR #33 merged,** the sixth AAT gap this milestone found.
+
+**Decisions:**
+
+- **`the private airline project` was left alone.** It is private, has 90 commits and uncommitted work, and is the
+  author's production project. Asked rather than assumed.
+- **PR #33: the docs diagram draws the wiring between nodes.** `GenerateMermaid` read
+  `requires`/`satisfies` tokens and cleanup pairings only. These packages use neither much — they wire
+  the ordinary way, with an input defaulting `from: otherNode.output` — so every diagram was a wall of
+  unconnected boxes: `aat-duffel` had 4 edges for 66 nodes, all cleanup. Wiring edges now come last, so
+  a create/delete or buy/refund pair keeps its dashed cleanup arrow instead of being flattened. The
+  three projects went from 0 solid edges to 13, 39 and 63, and `aat-shippo`'s diagram is now the API's
+  real flow: address → shipment → rates → transaction → refund.
+  - **Found by trying to use the feature, not by reading the code.** Generating the docs for a public
+    repo was the first time anyone looked at what the diagram actually renders as.
+- **Generated docs are committed rather than built on demand,** so GitHub renders them and the Mermaid
+  diagram draws inline. They are regenerated with one command and should leave no diff.
+
+**Open questions:**
+
+- Whether `the private airline project` should get the same license and metadata treatment.
+- Nightly CI still needs a repository secret per package, and a social preview image still needs an
+  author upload.
