@@ -75,7 +75,7 @@ When the API publishes an OpenAPI 3.0 or 3.1 spec, scaffold from it, and let AAT
   ```
 
   The warnings list what each template leaves to write by hand, such as a multipart body. A form body becomes a `form:` mapping. Specs with circular references load. See [Large Specs](https://gburgyan.github.io/aat/generate/#large-specs).
-- **Validate the project against it.** `aat validate --strict` checks that each node's `operationId` exists, that its inputs are parameters or body properties (an input the template sends only in a header, such as an idempotency key, is exempt, and an input that is the whole value of a `form:` field counts as that field), that required fields are inputs or written by the template, and that outputs exist in the 2xx response schema.
+- **Validate the project against it.** `aat validate --strict` checks that each node's `operationId` exists, that its inputs are parameters or body properties (an input the template sends only in a header, such as an idempotency key, is exempt, and an input that is the whole value of a `form:` field, a query parameter, or a path segment counts as that field: `/orders/{{orderId}}` fills the spec's `/orders/{order}`), that required fields are inputs or written by the template, and that outputs exist in the 2xx response schema.
 - **Validate every run against it.** `--oas-validate strict` checks each step's request body, JSON or form-encoded, and its response body against the schema for its status code or the spec's `default` response, and fails a step on a violation. Cleanup steps are checked too: an invalid exchange fails the cleanup step, and the rest of its cleanup chain still runs. A request body of another type, or a schema the validator can't compile, shows `OAS: request not validated` or `OAS: response not validated` and never fails a step. Under `strict`, a spec that fails to load stops the run with exit code 2. Only the operations the graph's nodes name are compiled, so a large spec loads quickly. See [OAS Validation](https://gburgyan.github.io/aat/running/#oas-validation).
 
 ## Graph Schema
@@ -458,7 +458,7 @@ A string containing `{{…}}` is an expression.
 | `{{today}}`, `{{today + 7 days}}`, `{{today - 7 days}}` | A `YYYY-MM-DD` date in the local time zone of the machine running `aat` |
 | `{{env.KEY}}` | The OS environment variable `KEY`, else the environment file's `values:` entry; fails when both are empty |
 | `{{name}}`, `{{name + 3 days}}` | Another input of the same step, declared earlier on the node; date arithmetic needs a `YYYY-MM-DD` value |
-| `{{step.output}}` | An earlier main step's output, such as `{{checkout.total}}`, in assertions and `repeat.until` only; a step value uses `from:` |
+| `{{step.output}}` | An earlier main step's output, such as `{{checkout.total}}`, in assertions, `repeat.until`, and selection filters; a step value uses `from:` |
 | `{{uuid}}` | A random version 4 UUID |
 | `{{random N}}` | `N` random characters from `0-9a-z`, with `N` from 1 to 64 |
 | `{{now}}`, `{{now + 90 minutes}}` | The time in UTC, RFC 3339 to the second. Units: `seconds`, `minutes`, `hours`, `days` |
@@ -466,8 +466,8 @@ A string containing `{{…}}` is an expression.
 
 - **Types.** A value that is one whole expression keeps the result's type. Mixed text, such as `"Deliver on {{deliveryDate}}"`, becomes a string.
 - **Generated values.** Each occurrence is its own value, so two inputs set to `{{uuid}}` differ; reuse one with `fromResolved` or `fromInput`. A step's values are resolved once, so a retried step resends the same ones, and a new run generates new ones. `uuid`, `now`, and `unixtime` are reserved words, and `{{today}}` counts days only.
-- **Where they are evaluated:** step values, pools, graph defaults, layers, recipe overrides, slot `inject`, and mutation `set`, including strings inside a list or map value, at any depth. Also a `fieldEquals` `value` and a quoted string in a `predicate` `expr` or `repeat.until`, where they can name the step's inputs and read earlier steps' outputs: `expr: 'quantity == "{{quantity}}"'`, `expr: 'amount == "{{checkout.total}}"'`. A quoted expression that yields a number or a boolean compares as one. A `{{step.output}}` implies `dependsOn`; a step that stored no outputs, a missing output, or a null or list value fails the assertion.
-- **Where they are not:** templates (where `{{name}}` is a placeholder for an input), overlay `values:`, `rawBody`, selection filters, and cleanup `when`.
+- **Where they are evaluated:** step values, pools, graph defaults, layers, recipe overrides, slot `inject`, and mutation `set`, including strings inside a list or map value, at any depth. Also a `fieldEquals` `value` and a quoted string in a `predicate` `expr` or `repeat.until`, where they can name the step's inputs and read earlier steps' outputs: `expr: 'quantity == "{{quantity}}"'`, `expr: 'amount == "{{checkout.total}}"'`. A quoted expression that yields a number or a boolean compares as one. A `{{step.output}}` implies `dependsOn`; a step that stored no outputs, a missing output, or a null or list value fails the assertion. A selection `filter` expands its quoted strings the same way before it narrows the array: `filter: 'objectId == "{{create.customerId}}"'`.
+- **Where they are not:** templates (where `{{name}}` is a placeholder for an input), overlay `values:`, `rawBody`, and cleanup `when`.
 - **Checking.** `aat validate` checks expression syntax in step values (list and map items included), pools, and assertions. An expression that fails to evaluate fails its step, or its assertion.
 
 ### Assertion Types
@@ -478,11 +478,12 @@ Assertions live under `assertions.mechanical` on each step.
 |------|--------|-------------|
 | `status` | `expect` | HTTP status: an integer code (`201`, not `"201"`) or a class (`2xx`, `4xx`) |
 | `fieldExists` | `path` | Path exists and is not null |
+| `fieldAbsent` | `path` | Path is missing or null: how to assert that a response leaves a field out, which a predicate can't name |
 | `fieldEquals` | `path`, `value` | Value at the path equals `value`; a string matches only a string, and a number only a number |
 | `predicate` | `expr` | Boolean expression over the same data, such as `total > 0 && currency == "USD"` |
 | `schema` | — | Validate response body against the node's OAS response schema. Requires the project to have OAS specs configured on its graph nodes; otherwise the assertion is reported as `skipped`. |
 
-`fieldExists`, `fieldEquals`, and `predicate` read the step's **extracted outputs**, keyed by output name, not the raw HTTP body (they fall back to the body only on a response with status 400 or above). Add `raw: true` to check the raw response body instead. A predicate cannot see the HTTP status: `status >= 200` reads an output named `status`. Check the status with `type: status`:
+`fieldExists`, `fieldAbsent`, `fieldEquals`, and `predicate` read the step's **extracted outputs**, keyed by output name, not the raw HTTP body (they fall back to the body only on a response with status 400 or above). Add `raw: true` to check the raw response body instead. A predicate cannot see the HTTP status: `status >= 200` reads an output named `status`. Check the status with `type: status`:
 
 ```yaml
 assertions:
@@ -499,10 +500,11 @@ assertions:
   - parentheses, quoted strings, numbers, `true`, and `false`
   - dots for nested fields
   - two decimal numbers written as text, such as `"221.78"`, order as numbers with `< > <= >=`; `==` compares text
-  - no `null`, arithmetic, or indexing
+  - no `null` (check a missing or null field with a `fieldAbsent` assertion), arithmetic, or indexing
   - write `!(a == b)`, not `!a == b`
 - **An output the step didn't produce.** A predicate reads outputs by name, and a name the step has no output for fails the assertion with `unknown field "trackingNumber"`; it doesn't read as "not equal". An `optional` output is missing whenever the response lacks its path, and one extracted as null fails too, with `cannot compare type <nil>`. When an output may be absent:
   - assert presence with `{type: fieldExists, path: trackingNumber}` when the output must be there; it fails on a missing or null output
+  - assert absence with `{type: fieldAbsent, path: trackingNumber}` when it must not be there, as with an error body that leaves out `code`
   - keep the name out of predicates on steps whose response may not hold it
   - or set a flag in a transform, so every run has the output: `outputs.shipped = outputs.trackingNumber ~= nil`, with `shipped` declared on the node, then `shipped == false`
 - **Array length:** a predicate can't count, but a path can.
@@ -1069,7 +1071,7 @@ The archive is the primary debugging artifact. Read it to understand what happen
     "passed": true,
     "results": [
       {
-        "type": "status | fieldExists | fieldEquals | predicate | schema",
+        "type": "status | fieldExists | fieldAbsent | fieldEquals | predicate | schema",
         "passed": true,
         "skipped": false,
         "message": "string",
