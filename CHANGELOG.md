@@ -367,6 +367,10 @@ the graph and plan formats may still change before 1.0.
   object after an expected failure.
 
 ### Fixed
+- `aat docs generate`'s diagram draws the wiring between nodes. It read `requires`/`satisfies` tokens and cleanup
+  pairings only, so a graph that wires its nodes the usual way — an input defaulting `from: otherNode.output` — came
+  out as a wall of unconnected boxes. An input's `from:` is now an edge too, after the tokens and the cleanup arrows,
+  so an explicit pairing keeps its own style. On the example projects the diagrams go from 0 edges to 13, 39, and 63.
 - An input sent as a JSON body property the spec names otherwise counts as that property, as one sent as a form
   field, a query parameter, or a path segment already did. `"mass_unit": "{{massUnit}}"` now matches the spec's
   `mass_unit`, quoted or bare and inside a conditional block, in both the unknown-input and the required-property
