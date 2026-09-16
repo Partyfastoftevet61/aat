@@ -7,6 +7,10 @@ the graph and plan formats may still change before 1.0.
 ## [Unreleased]
 
 ### Added
+- A selection `filter` can read an earlier step's output, as an assertion can:
+  `filter: 'objectId == "{{create.customerId}}"'` picks the element about the object an earlier step made. The reference
+  implies `dependsOn`, `aat validate` checks it, and the step's selection record shows the filter with the value it
+  compared.
 - A `fieldAbsent` assertion passes when its path is missing or null, the counterpart of `fieldExists`. A plan can assert
   that a response leaves a field out, such as an error body without a `code`, which a predicate can't name.
 - An assertion can compare with an earlier step's output, written `{{step.output}}`: `amount == "{{checkout.total}}"` in a
