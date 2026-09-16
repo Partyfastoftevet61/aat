@@ -1,6 +1,7 @@
 package oas
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -600,6 +601,55 @@ func TestValidate_RequestBodyInputs(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 0, inputWarnings)
+}
+
+// A body whose schema is oneOf is written by hand, drawing from whichever
+// branch it sends, so an input matching a property of any branch is known.
+func TestValidate_OneOfRequestBodyInputs(t *testing.T) {
+	v := NewValidator()
+	require.NoError(t, v.LoadSpec("oneof_body.yaml", filepath.Join("testdata", "oneof_body.yaml")))
+	g := &graph.Graph{
+		Version: "1.0.0",
+		OAS:     "oneof_body.yaml",
+		Nodes: map[string]*graph.Node{
+			"createParcel": {
+				Name:    "createParcel",
+				Adapter: "createParcel",
+				OAS:     &graph.OASRef{OperationID: "createParcel"},
+				Inputs: []graph.Input{
+					{Name: "weight", Type: "string"},                 // shared base
+					{Name: "mass_unit", Type: "string"},              // shared base
+					{Name: "length", Type: "string", Optional: true}, // dimensions branch
+					{Name: "distance_unit", Type: "string", Optional: true},
+					{Name: "template", Type: "string", Optional: true}, // template branch
+				},
+			},
+		},
+	}
+
+	result := v.Validate(g)
+	assert.False(t, result.HasErrors())
+
+	var unknown []string
+	for _, issue := range result.Issues {
+		if issue.Severity == graph.SpecWarning && contains(issue.Message, "not found in OAS parameters") {
+			unknown = append(unknown, issue.Message)
+		}
+	}
+	assert.Empty(t, unknown, "every input names a property of some branch")
+
+	// An input no branch declares is still reported.
+	g.Nodes["createParcel"].Inputs = append(g.Nodes["createParcel"].Inputs,
+		graph.Input{Name: "colour", Type: "string", Optional: true})
+	result = v.Validate(g)
+	var got []string
+	for _, issue := range result.Issues {
+		if issue.Severity == graph.SpecWarning && contains(issue.Message, "not found in OAS parameters") {
+			got = append(got, issue.Message)
+		}
+	}
+	require.Len(t, got, 1)
+	assert.Contains(t, got[0], `input "colour"`)
 }
 
 func TestValidate_RequiredRequestBodyProp(t *testing.T) {
