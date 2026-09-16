@@ -249,6 +249,16 @@ the graph and plan formats may still change before 1.0.
   generates its own value, and a retried step resends the values its first attempt generated.
 
 ### Changed
+- The documentation says why AAT exists, not only what it does. A new "Why AAT exists" page (`docs/user/why.md`) opens
+  the Getting started section with the tool's origin — a pile of shared Postman collections that had stopped being
+  trustworthy — maps each problem to what replaced it, and then covers what else turned out to be able to read the
+  graph once it existed: the MCP server, run archives as evidence you can send someone, generated reference docs, and
+  handing off mid-run to CI or another tool. It also says plainly what an on-ramp from an existing OpenAPI spec or
+  Postman collection looks like. The README's `Why` and the docs home carry the short version.
+- The README, the examples index, and `ROADMAP.md` list the three projects built against real, public APIs in test
+  mode — [aat-duffel](https://github.com/gburgyan/aat-duffel), [aat-stripe](https://github.com/gburgyan/aat-stripe),
+  and [aat-shippo](https://github.com/gburgyan/aat-shippo) — with their coverage and batch results. They were listed
+  as planned work before.
 - A predicate's `<`, `>`, `<=`, and `>=` compare two strings that are both decimal numbers as numbers, so
   `"1000.00" > "999.50"` holds; before, they compared as text. `==` and `!=` still compare text, and dates and other
   strings still order as text. This applies wherever predicates are read: assertions, selection filters, constraints,

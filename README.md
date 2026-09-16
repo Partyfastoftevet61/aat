@@ -14,14 +14,6 @@
 
 </div>
 
-## Why
-
-Real integrations are not one call. Buying something means browse, cart, checkout, pay, ship, and maybe return and refund: 8 to 20 calls, each needing IDs from the calls before it, leaving state behind that someone has to clean up.
-
-Request runners test one call at a time and leave the chaining to scripts. Test code welds the intent ("a registered customer pays with PayPal and returns the order") to HTTP details, so every variation is another copy of the same calls.
-
-AAT keeps three things apart. **API knowledge** is a graph of operations and request templates, written once. **Test intent** is a plan that lists steps, not wiring. **Variation** is layers (named sets of test data) and environments that turn one plan into a matrix. The API knowledge that runs your tests also teaches AI coding tools, yours and your integrators', how to use the API.
-
 ## 60-second quick start
 
 With `aat` and `aat-sandbox` [installed](#install) and on your `PATH`, the offline shop example runs with no signup and no network:
@@ -67,7 +59,29 @@ Nobody wired the data by hand: the graph says where each input comes from, and t
 | [Shop](examples/shop/README.md) | Everything: an 18-operation graph, workflows with slots and addons, layers and matrices, two regions, a separately hosted payments API, negative tests, retries, checkpoints, an integration kit, MCP | Nothing: it runs offline against `aat-sandbox` |
 | [Petstore](examples/petstore/README.md) | The smallest working project: four operations, two workflows, cleanup pairing | Network access to the public Petstore |
 
-Examples against real APIs (Duffel flight booking, GitHub, Stripe) are next on the [roadmap](ROADMAP.md).
+Three complete projects against real, public APIs live in their own repositories. Each was built against the API's live test mode, and every claim in its README is something a run recorded:
+
+| Project | Scale | What it shows |
+|---------|-------|---------------|
+| [aat-duffel](https://github.com/gburgyan/aat-duffel) | 66 endpoints, 47 plans, 14 layers; 47/47 in ~3½ min | Flight booking against an API with **no official OpenAPI spec** — everything in the README came from runs |
+| [aat-stripe](https://github.com/gburgyan/aat-stripe) | 82 operations, 53 plans, 14 layers; 53/53 in ~5 min | ~6,300 lines of graph and templates against Stripe's **205,000-line** vendored spec, with every exchange checked against it |
+| [aat-shippo](https://github.com/gburgyan/aat-shippo) | 46 of 70 operations, 28 plans, 9 layers; 28/28 in ~2½ min | Layers as the headline — a lane × parcel matrix and six deterministic tracking fixtures — with real shipping labels rendered in the web UI |
+
+## Why
+
+AAT started as a pile of Postman collections.
+
+They worked, at first. Then the team grew. Everyone had their own copy with their own tweaks, and none of them were reliable. Nothing was in source control, so there was no diff, no review, and no way to tell whose version was right. Every new test case meant editing a collection in place, so the case it replaced was gone. The chaining lived in pre-request scripts, which put the interesting part of a flow — what depends on what — inside JavaScript instead of in front of you. And none of it was legible to an AI coding tool: the export was one file too large to read, in a shape nothing else consumes.
+
+The underlying problem is that real integrations are not one call. Buying something means browse, cart, checkout, pay, ship, and maybe return and refund: 8 to 20 calls, each needing IDs from the calls before it, leaving state behind that someone has to clean up. A collection is a folder of single requests. Everything that makes those requests a *flow* has to live somewhere else, and that somewhere was scripts.
+
+Postman is good at what it is for: exploring an API by hand, one request at a time. It is a poor place to *keep* the knowledge of how an API works. That knowledge ends up in a format only Postman reads, in a workspace rather than your repository, and it scales by copying.
+
+So the knowledge moved into the repository. AAT keeps three things apart. **API knowledge** is a graph of operations and request templates, written once. **Test intent** is a plan that lists steps, not wiring. **Variation** is layers (named sets of test data) and environments that turn one plan into a matrix. Small files, reviewed like code, that an AI coding tool can read one at a time and a person can follow without opening a debugger.
+
+Describing the API that precisely turned out to be worth more than the tests it was written for. The question stopped being *what else should this run?* and became *what else can read this?* The same graph is what `aat mcp serve` hands an AI coding tool, so it calls the API correctly instead of guessing at it — and it is what makes a run archive worth sending: every request, response, resolved value, retry, and assertion in one file the other team opens in the same viewer, rather than a screenshot of one pane. Neither was a roadmap; both fell out of having the graph.
+
+The point is not that the files are tidy. It is that they run: every claim in this repository and in the three example projects above is something `aat` executed and recorded. [Why AAT exists](https://gburgyan.github.io/aat/why/) tells the longer version.
 
 ## What it does
 
@@ -266,7 +280,7 @@ The full documentation is at **[gburgyan.github.io/aat](https://gburgyan.github.
 
 ## Status
 
-Pre-1.0, with one maintainer. AAT was built and proven against a 74-node airline API with 63 workflows, 38 addons, and 6 layers. The graph and plan formats may still change before 1.0; breaking changes are listed in the [changelog](CHANGELOG.md), and the [roadmap](ROADMAP.md) says what's next.
+Pre-1.0, with one maintainer. AAT was built and proven against a private 74-node airline booking API with 63 workflows, 53 recipes, and 6 environments, and against the three public projects above. The graph and plan formats may still change before 1.0; breaking changes are listed in the [changelog](CHANGELOG.md), and the [roadmap](ROADMAP.md) says what's next.
 
 ## Contributing
 
