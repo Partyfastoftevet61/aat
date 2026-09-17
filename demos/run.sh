@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Regenerates the docs site's recordings and screenshots against a fresh
 # aat-sandbox: the hero GIF of `aat run plan full-lifecycle`, the batch-matrix
-# GIF, three web UI screenshots, an MP4 of the hero for posts, and the
-# repository's social preview.
+# GIF, three web UI screenshots, an MP4 of the hero for posts, the repository's
+# social preview, and the launch cards (demos/cards.mjs, which also runs on its
+# own — it needs no sandbox).
 #
 # Usage: demos/run.sh (or `make demos`, which builds both binaries and the web UI
 # first). The binaries default to the repository root builds; set AAT and
@@ -131,11 +132,15 @@ node "$demos/screenshots.mjs" "http://127.0.0.1:$web_port" "$run_id" "$batch_id"
 kill "$web_pid" 2>/dev/null || true
 web_pid=""
 
+step "Rendering the launch cards"
+node "$demos/cards.mjs" "$work/out/cards"
+
 step "Optimizing GIFs"
 for gif in demo-plan demo-batch; do
   gifsicle -O3 --lossy=60 --colors 64 -o "$work/final/$gif.gif" "$work/out/$gif.gif"
 done
 cp "$work/out/ui-run-gantt.png" "$work/out/ui-step-request-curl.png" "$work/out/ui-batch-matrix.png" "$work/final/"
+cp "$work/out/cards/three-files.png" "$work/final/"
 
 step "Checking size budgets"
 (( $(size "$work/final/demo-plan.gif") <= hero_budget )) ||
@@ -149,10 +154,11 @@ done
 (( total <= images_budget )) || fail "the committed images total $total bytes, over $images_budget"
 
 step "Writing docs/user/assets and demos/out"
-mkdir -p "$root/docs/user/assets" "$demos/out"
+mkdir -p "$root/docs/user/assets" "$demos/out/cards"
 cp "$work/final"/* "$root/docs/user/assets/"
 cp "$work/out/demo-plan.mp4" "$work/out/social-preview.png" "$demos/out/"
-for file in "$work/final"/* "$demos/out/demo-plan.mp4" "$demos/out/social-preview.png"; do
+cp "$work/out/cards"/*.png "$demos/out/cards/"
+for file in "$work/final"/* "$demos/out/demo-plan.mp4" "$demos/out/social-preview.png" "$demos/out/cards"/*.png; do
   printf '  %-26s %8d KB\n' "$(basename "$file")" $(($(size "$file") / 1024)) >&2
 done
 printf '  %-26s %8d KB\n' "committed total" $((total / 1024)) >&2

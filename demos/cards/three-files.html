@@ -1,0 +1,198 @@
+<!doctype html>
+<!--
+  The "three files" explainer card, embedded in the launch post and used as the
+  second image of the X thread. Rendered by demos/cards.mjs at 1200x675 (16:9)
+  with deviceScaleFactor 2, and committed to docs/user/assets/three-files.png.
+
+  The snippets are trimmed from examples/shop; the matrix numbers are the ones
+  demos/run.sh asserts for the recorded batch (27 run, 36 skipped of 63).
+  Colours are the web UI's (server/web/src/app.css).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>aat — three files</title>
+<style>
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #0f1117;
+    color: #e4e4e7;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+  }
+  .card {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 1200px;
+    height: 675px;
+    box-sizing: border-box;
+    padding: 46px 40px 40px;
+    display: flex;
+    flex-direction: column;
+    transform-origin: center center;
+  }
+  .head {
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+  }
+  .wordmark {
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-weight: 800;
+    font-size: 34px;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    color: #818cf8;
+  }
+  .title { font-size: 34px; font-weight: 600; letter-spacing: -0.01em; }
+  .sub { margin-left: auto; font-size: 21px; color: #9ca3af; }
+
+  .panels {
+    margin-top: 34px;
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    flex: 1;
+  }
+  .panel {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 22px 24px 20px;
+    border: 1px solid #2a2d3a;
+    border-radius: 14px;
+    background: #1a1d27;
+    display: flex;
+    flex-direction: column;
+  }
+  .arrow {
+    flex: 0 0 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 34px;
+    color: #4b5563;
+  }
+  .filename {
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    white-space: nowrap;
+    font-size: 22px;
+    font-weight: 700;
+    color: #a5b4fc;
+  }
+  .role {
+    margin-top: 6px;
+    font-size: 18px;
+    line-height: 1.35;
+    color: #9ca3af;
+    height: 52px;
+  }
+  .code {
+    margin-top: 16px;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 14px;
+    line-height: 1.7;
+    white-space: pre;
+    color: #e4e4e7;
+    flex: 1;
+  }
+  .key { color: #93c5fd; }
+  .val { color: #fcd34d; }
+  .cmt { color: #6b7280; }
+  .note {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #2a2d3a;
+    font-size: 17px;
+    color: #e4e4e7;
+  }
+  .note b { color: #22c55e; }
+  .passed { color: #22c55e; font-weight: 700; }
+  .foot {
+    margin-top: 26px;
+    display: flex;
+    font-size: 20px;
+    color: #9ca3af;
+  }
+  .foot .url { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="head">
+    <div class="wordmark">aat</div>
+    <div class="title">Three files, not three hundred</div>
+    <div class="sub">one graph · many runs</div>
+  </div>
+
+  <div class="panels">
+    <div class="panel">
+      <div class="filename">graph.yaml</div>
+      <div class="role">API knowledge, written once</div>
+      <div class="code"><span class="key">checkoutCart:</span>
+  <span class="key">inputs:</span>
+  - <span class="key">name:</span> cartId
+    <span class="key">default:</span>
+      <span class="key">from:</span> <span class="val">createCart.cartId</span>
+  - <span class="key">name:</span> shippingTier
+    <span class="key">type:</span> <span class="val">enum[standard, express]</span>
+  <span class="key">outputs:</span> [orderId]
+  <span class="key">cleanup:</span> <span class="val">deleteOrder</span>
+  <span class="key">requires:</span> [cartPopulated]</div>
+      <div class="note">what it takes, returns,<br>needs first, and undoes</div>
+    </div>
+
+    <div class="arrow">&rarr;</div>
+
+    <div class="panel">
+      <div class="filename">plans/*.yaml</div>
+      <div class="role">Test intent: steps, not wiring</div>
+      <div class="code"><span class="key">kind:</span> recipe
+<span class="key">selection:</span>
+  <span class="key">workflow:</span> <span class="val">Checkout</span>
+  <span class="key">choices:</span>
+    customer: <span class="val">Registered</span>
+    payment: <span class="val">PayPal</span>
+  <span class="key">addons:</span>
+  - <span class="val">Apply Coupon</span>
+  - <span class="val">Return After Delivery</span></div>
+      <div class="note">nine lines; the engine<br>composes every step</div>
+    </div>
+
+    <div class="arrow">&rarr;</div>
+
+    <div class="panel">
+      <div class="filename">layers/</div>
+      <div class="role">Variation: one plan, every combination</div>
+      <div class="code"><span class="cmt">$ aat run batch \
+  --layer-group shipping-* \
+  --layer-group basket-* \
+  --parallel 4</span>
+
+7 plans x 9 permutations = <span class="val">63</span>
+dedup: <span class="val">36</span> would repeat requests
+
+Batch: <span class="passed">27/63 PASSED</span>, 36 SKIPPED</div>
+      <div class="note"><b>27 run &middot; 36 skipped</b><br>one command, nothing copied</div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div>Written once · Listed per scenario · Multiplied by layers</div>
+    <div class="url">github.com/gburgyan/aat</div>
+  </div>
+</div>
+<script>
+  function fit() {
+    const card = document.getElementById('card');
+    const scale = Math.min(window.innerWidth / 1240, window.innerHeight / 705);
+    card.style.transform = `translate(-50%, -50%) scale(${scale})`;
+  }
+  fit();
+  window.addEventListener('resize', fit);
+</script>
+</body>
+</html>
