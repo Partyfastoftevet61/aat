@@ -136,3 +136,28 @@ func TestExpectedStatuses_Helpers(t *testing.T) {
 	assert.Equal(t, ExpectedStatuses{{Code: 404}, {Code: 409}}, HTTPStatuses([]int{404, 409}))
 	assert.Nil(t, HTTPStatuses(nil))
 }
+
+func TestContradictsFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		v    any
+		want bool
+	}{
+		{"success code", 200, true},
+		{"success class", "2xx", true},
+		{"failure code", 404, false},
+		{"failure class", "4xx", false},
+		{"gRPC OK", "OK", true},
+		{"gRPC OK, lowercase", "ok", true},
+		{"gRPC NOT_FOUND", "NOT_FOUND", false},
+		{"gRPC INVALID_ARGUMENT", "INVALID_ARGUMENT", false},
+		// CANCELLED maps to 499, a failure, so it agrees with expectFailure.
+		{"gRPC CANCELLED", "CANCELLED", false},
+		{"unrecognized", "abc", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, ContradictsFailure(tt.v))
+		})
+	}
+}

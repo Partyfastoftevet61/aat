@@ -2084,6 +2084,60 @@ func TestValidate_ExpectFailure(t *testing.T) {
 		assert.Contains(t, err.Error(), "contradicts expectFailure")
 	})
 
+	t.Run("contradicting gRPC status name assertion", func(t *testing.T) {
+		p := &Plan{
+			Execution: Execution{
+				Steps: []Step{
+					{
+						Node: "searchFlights",
+						Values: map[string]StepValue{
+							"origin":        {Default: "DEN"},
+							"destination":   {Default: "SFO"},
+							"departureDate": {Default: "2026-03-15"},
+						},
+						ExpectFailure: &ExpectFailure{
+							Status: ExpectedStatuses{{Code: 404, Name: "NOT_FOUND"}},
+						},
+						Assertions: &Assertions{
+							Mechanical: []MechanicalAssertion{
+								{Type: "status", Expect: "OK"},
+							},
+						},
+					},
+				},
+			},
+		}
+		err := Validate(p, g)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "contradicts expectFailure")
+	})
+
+	t.Run("agreeing gRPC status name assertion ok", func(t *testing.T) {
+		p := &Plan{
+			Execution: Execution{
+				Steps: []Step{
+					{
+						Node: "searchFlights",
+						Values: map[string]StepValue{
+							"origin":        {Default: "DEN"},
+							"destination":   {Default: "SFO"},
+							"departureDate": {Default: "2026-03-15"},
+						},
+						ExpectFailure: &ExpectFailure{
+							Status: ExpectedStatuses{{Code: 404, Name: "NOT_FOUND"}},
+						},
+						Assertions: &Assertions{
+							Mechanical: []MechanicalAssertion{
+								{Type: "status", Expect: "NOT_FOUND"},
+							},
+						},
+					},
+				},
+			},
+		}
+		assert.NoError(t, Validate(p, g))
+	})
+
 	t.Run("non-contradicting error status assertion ok", func(t *testing.T) {
 		p := &Plan{
 			Execution: Execution{

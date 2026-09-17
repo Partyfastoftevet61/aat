@@ -9,7 +9,6 @@ import (
 
 	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/graph"
-	"github.com/gburgyan/aat/internal/httpstatus"
 	"github.com/gburgyan/aat/internal/predicate"
 )
 
@@ -780,7 +779,7 @@ func Validate(p *Plan, g *graph.Graph) error {
 			// Check for contradicting status assertion
 			if step.Assertions != nil {
 				for _, ma := range step.Assertions.Mechanical {
-					if ma.Type == "status" && httpstatus.ContradictsFailure(ma.Expect) {
+					if ma.Type == "status" && ContradictsFailure(ma.Expect) {
 						errs = append(errs, fmt.Sprintf("step %d (%s): status assertion expecting %v contradicts expectFailure", i, sid, ma.Expect))
 					}
 				}

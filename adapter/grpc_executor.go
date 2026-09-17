@@ -3,9 +3,11 @@ package adapter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gburgyan/aat/internal/grpcstatus"
 	"github.com/gburgyan/aat/internal/protoreg"
@@ -26,6 +28,9 @@ type GRPCExecutor struct {
 	reg    *protoreg.Registry
 	secure bool
 	tls    TLSConfig
+	// timeout bounds one call, as http.Client.Timeout bounds one request. It
+	// is DefaultRequestTimeout; tests shorten it.
+	timeout time.Duration
 }
 
 var _ Executor = (*GRPCExecutor)(nil)
@@ -44,7 +49,7 @@ func NewGRPCExecutor(target string, pool *ConnPool, reg *protoreg.Registry, tlsC
 	if pool == nil {
 		pool = NewConnPool()
 	}
-	return &GRPCExecutor{target: target, pool: pool, reg: reg, secure: secure, tls: tlsCfg}, nil
+	return &GRPCExecutor{target: target, pool: pool, reg: reg, secure: secure, tls: tlsCfg, timeout: DefaultRequestTimeout}, nil
 }
 
 // Protocol names the wire protocol: gRPC.
@@ -103,12 +108,27 @@ func (e *GRPCExecutor) Execute(ctx context.Context, req *Request) (*Response, er
 		ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
 	}
 
+	// The call gets the same deadline an HTTP request gets from the client's
+	// Timeout. grpc.NewClient does not connect, so the first RPC dials too,
+	// and without this a wedged server or an unreachable host would hang the
+	// step for as long as the run lasts.
+	callCtx, cancel := context.WithTimeout(ctx, e.timeout)
+	defer cancel()
+
 	out := dynamicpb.NewMessage(md.Output())
 	var header, trailer metadata.MD
-	invokeErr := conn.Invoke(ctx, fullMethod(service, method), in, out,
+	start := time.Now()
+	invokeErr := conn.Invoke(callCtx, fullMethod(service, method), in, out,
 		grpc.Header(&header), grpc.Trailer(&trailer))
 
 	if invokeErr != nil {
+		// A DEADLINE_EXCEEDED the caller never asked for reads as a server
+		// behaviour rather than aat's limit, so the limit says so itself. A
+		// cancelled run, or a deadline the server hit on its own terms before
+		// ours, is left alone.
+		if callTimedOut(ctx, callCtx, start, e.timeout) {
+			return nil, fmt.Errorf("executing %s: no response within aat's %s request timeout", req.Path, e.timeout)
+		}
 		return e.errorResponse(invokeErr, header, trailer)
 	}
 
@@ -124,6 +144,15 @@ func (e *GRPCExecutor) Execute(ctx context.Context, req *Request) (*Response, er
 		Body:       respBody,
 		GRPC:       &GRPCStatus{Code: grpcstatus.OK, Name: grpcstatus.Name(grpcstatus.OK)},
 	}, nil
+}
+
+// callTimedOut reports whether the call ran out of aat's request timeout
+// rather than the caller's own context: the call's deadline passed, the whole
+// limit had elapsed, and the run itself was still live.
+func callTimedOut(ctx, callCtx context.Context, start time.Time, limit time.Duration) bool {
+	return ctx.Err() == nil &&
+		errors.Is(callCtx.Err(), context.DeadlineExceeded) &&
+		time.Since(start) >= limit
 }
 
 // errorResponse turns a failed call into a response.

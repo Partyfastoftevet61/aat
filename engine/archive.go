@@ -184,14 +184,20 @@ func convertRequest(req *adapter.Request, actualBaseURL, defaultBaseURL, origina
 		rec.Method = "GRPC"
 	}
 
-	// Compute what the URL would have been without the override/rewrite
-	origPath := req.Path
-	if originalPath != "" {
-		origPath = originalPath
-	}
-	originalURL := joinArchivedURL(defaultBaseURL, origPath)
-	if originalURL != actualURL {
-		rec.OriginalURL = originalURL
+	// Compute what the URL would have been without the override/rewrite. A
+	// gRPC step routed away from an HTTP default has no such URL: joining its
+	// method onto the default base would name something that could not have
+	// been called, and is not even a gRPC target. Better to show no original
+	// than an invented one.
+	if !req.IsGRPC() || adapter.IsGRPCTarget(defaultBaseURL) {
+		origPath := req.Path
+		if originalPath != "" {
+			origPath = originalPath
+		}
+		originalURL := joinArchivedURL(defaultBaseURL, origPath)
+		if originalURL != actualURL {
+			rec.OriginalURL = originalURL
+		}
 	}
 
 	return rec

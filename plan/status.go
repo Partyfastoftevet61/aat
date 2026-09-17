@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gburgyan/aat/internal/grpcstatus"
+	"github.com/gburgyan/aat/internal/httpstatus"
 	"gopkg.in/yaml.v3"
 )
 
@@ -170,4 +171,24 @@ func HTTPStatuses(codes []int) ExpectedStatuses {
 		out[i] = HTTPStatus(c)
 	}
 	return out
+}
+
+// ContradictsFailure reports whether a status assertion's expected value can
+// never hold on a step that expects to fail: a success code, a success class,
+// or a gRPC status name that maps to one.
+//
+// internal/httpstatus answers the first two and imports nothing, so it cannot
+// know the names; a name is resolved here, where grpcstatus is already in
+// scope. OK contradicts an expectFailure, and CANCELLED does not, because it
+// maps to 499.
+func ContradictsFailure(v any) bool {
+	if httpstatus.ContradictsFailure(v) {
+		return true
+	}
+	if name, ok := v.(string); ok {
+		if code, known := grpcstatus.CodeByName(name); known {
+			return grpcstatus.HTTPStatus(code) < 400
+		}
+	}
+	return false
 }

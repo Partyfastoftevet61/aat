@@ -1061,3 +1061,32 @@ func TestToArchive_RedactsSecretsFromRequestData(t *testing.T) {
 	assert.Equal(t, "RCPT for "+key, outputs["receipt"], "the run result is not modified")
 	assert.Equal(t, "sent with "+key, p.Execution.Steps[0].Values["note"].Default)
 }
+
+func TestConvertRequest_GRPCStepRoutedFromHTTPDefaultHasNoOriginalURL(t *testing.T) {
+	req := &adapter.Request{
+		Protocol: adapter.ProtocolGRPC,
+		Path:     "shop.v1.Payments/Charge",
+	}
+	rec := convertRequest(req, "grpc://localhost:8767", "http://localhost:8765/us/v1", "")
+
+	assert.Equal(t, "grpc://localhost:8767/shop.v1.Payments/Charge", rec.URL)
+	assert.Empty(t, rec.OriginalURL, "the HTTP default was never a URL this call could have used")
+}
+
+func TestConvertRequest_GRPCStepRoutedBetweenGRPCTargetsKeepsOriginalURL(t *testing.T) {
+	req := &adapter.Request{
+		Protocol: adapter.ProtocolGRPC,
+		Path:     "shop.v1.Payments/Charge",
+	}
+	rec := convertRequest(req, "grpc://localhost:8767", "grpc://payments.internal:443", "")
+
+	assert.Equal(t, "grpc://payments.internal:443/shop.v1.Payments/Charge", rec.OriginalURL)
+}
+
+func TestConvertRequest_HTTPOverrideStillRecordsOriginalURL(t *testing.T) {
+	req := &adapter.Request{Method: "POST", Path: "/charges"}
+	rec := convertRequest(req, "http://localhost:9999", "http://localhost:8765", "")
+
+	assert.Equal(t, "http://localhost:9999/charges", rec.URL)
+	assert.Equal(t, "http://localhost:8765/charges", rec.OriginalURL)
+}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gburgyan/aat/internal/grpcstatus"
 	"github.com/gburgyan/aat/internal/protoreg"
@@ -403,4 +404,58 @@ func TestResponse_HeaderValuesWithoutTrailers(t *testing.T) {
 	resp := &Response{Headers: http.Header{"Content-Type": []string{"application/json"}}}
 	assert.Equal(t, []string{"application/json"}, resp.HeaderValues("content-type"))
 	assert.Nil(t, resp.Trailers, "an HTTP response carries no trailers")
+}
+
+func TestNewGRPCExecutor_DefaultTimeout(t *testing.T) {
+	exec, err := NewGRPCExecutor("grpc://localhost:9090", nil, exec_reg(t), TLSConfig{})
+	require.NoError(t, err)
+	assert.Equal(t, DefaultRequestTimeout, exec.timeout, "a gRPC call is bounded like an HTTP request")
+}
+
+// A server that accepts the call and never replies must not hang the step.
+func TestGRPCExecutor_TimeoutNamesTheLimit(t *testing.T) {
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
+
+	exec := startShopServer(t, func(ctx context.Context, _ *dynamicpb.Message) (proto.Message, error) {
+		select {
+		case <-block:
+		case <-ctx.Done():
+		}
+		return nil, ctx.Err()
+	})
+	exec.timeout = 100 * time.Millisecond
+
+	_, err := exec.Execute(context.Background(), grpcRequest(`{}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no response within aat's 100ms request timeout")
+}
+
+// A run the user interrupted is not blamed on the timeout.
+func TestGRPCExecutor_CancelledContextDoesNotBlameTheTimeout(t *testing.T) {
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
+
+	exec := startShopServer(t, func(ctx context.Context, _ *dynamicpb.Message) (proto.Message, error) {
+		select {
+		case <-block:
+		case <-ctx.Done():
+		}
+		return nil, ctx.Err()
+	})
+	exec.timeout = time.Minute
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	resp, err := exec.Execute(ctx, grpcRequest(`{}`))
+	if err != nil {
+		assert.NotContains(t, err.Error(), "request timeout")
+	} else {
+		require.NotNil(t, resp.GRPC)
+		assert.Equal(t, "CANCELLED", resp.GRPC.Name)
+	}
 }

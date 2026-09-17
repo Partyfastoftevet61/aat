@@ -180,6 +180,12 @@ func validateOverrides(overrides []HostOverride) []string {
 				errs = append(errs, fmt.Sprintf("overrides[%d]: %s", i, e))
 			}
 		}
+		// A gRPC route's path is a method name, so a strip-and-prefix rewrite
+		// cannot mean anything for it. Saying so is better than skipping the
+		// rewrite at request time, where nothing would report it.
+		if ov.PathRewrite != nil && isGRPCBaseURL(ov.BaseURL) {
+			errs = append(errs, fmt.Sprintf("overrides[%d]: pathRewrite has no meaning for the gRPC target %s, where a path is a method name; drop one of them", i, ov.BaseURL))
+		}
 		if ov.ExpectFailure != nil {
 			if len(ov.ExpectFailure.Status) == 0 {
 				errs = append(errs, fmt.Sprintf("overrides[%d]: expectFailure must have at least one status", i))

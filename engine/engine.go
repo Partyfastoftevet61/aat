@@ -14,7 +14,6 @@ import (
 	"github.com/gburgyan/aat/domain"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/graph/oas"
-	"github.com/gburgyan/aat/internal/httpstatus"
 	"github.com/gburgyan/aat/internal/predicate"
 	"github.com/gburgyan/aat/plan"
 	"github.com/gburgyan/aat/validate"
@@ -754,7 +753,8 @@ func (e *Engine) executeStepWith(ctx context.Context, step plan.Step, node *grap
 
 	// Apply path rewriting if configured for this node. A gRPC request's path
 	// is its method, which a strip-and-prefix rewrite cannot mean anything
-	// for, so it is left alone; config rejects the combination outright.
+	// for; config rejects that combination when an environment names both, and
+	// the guard here holds for a route assembled any other way.
 	originalPath := req.Path
 	if rewrite != nil && !req.IsGRPC() {
 		req.Path = adapter.RewritePath(req.Path, rewrite)
@@ -869,7 +869,7 @@ func (e *Engine) runStepAssertions(step plan.Step, node *graph.Node, state *RunS
 			// or one written before an overlay added expectFailure) can never
 			// hold on a negative step, so it is reported as skipped. One that
 			// agrees with expectFailure, such as 409 or 4xx, is evaluated.
-			if step.ExpectFailure != nil && a.Type == string(validate.AssertStatus) && httpstatus.ContradictsFailure(a.Expect) {
+			if step.ExpectFailure != nil && a.Type == string(validate.AssertStatus) && plan.ContradictsFailure(a.Expect) {
 				merged.Results = append(merged.Results, validate.AssertionResult{
 					Type:    validate.AssertStatus,
 					Passed:  true,

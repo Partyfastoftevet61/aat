@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // SecretRef holds a reference to a secret value, resolved either from an
@@ -413,4 +414,12 @@ func (env *Environment) BuildAPIConfigFromToken(token *OAuthToken, auth AuthConf
 	}
 
 	return cfg
+}
+
+// isGRPCBaseURL reports whether a route's base URL names a gRPC target.
+// config is a leaf package and does not import adapter, which owns the
+// authoritative parser; the scheme test is the whole of what is needed here,
+// and adapter.IsGRPCTarget does the same.
+func isGRPCBaseURL(baseURL string) bool {
+	return strings.HasPrefix(baseURL, "grpc://") || strings.HasPrefix(baseURL, "grpcs://")
 }

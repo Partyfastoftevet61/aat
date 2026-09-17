@@ -32,9 +32,9 @@ func NewConnPool() *ConnPool {
 // asked for.
 //
 // It uses grpc.NewClient, which does not connect: the first RPC does, under
-// that step's own context. AAT's request timeout therefore covers dialing,
-// and an unreachable host fails the step that needed it rather than the run
-// that set it up.
+// the deadline GRPCExecutor.Execute puts on the call. Dialing is therefore
+// covered by aat's request timeout, and an unreachable host fails the step
+// that needed it rather than the run that set it up.
 func (p *ConnPool) Get(target string, secure bool, tlsCfg TLSConfig) (*grpc.ClientConn, error) {
 	dialTarget, _, err := ParseGRPCTarget(target)
 	if err != nil {

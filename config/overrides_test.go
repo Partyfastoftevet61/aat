@@ -274,3 +274,37 @@ func TestLoadOverlayFile_RejectsEmptyExpectFailureStatus(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at least one status")
 }
+
+func TestValidateOverrides_PathRewriteOnGRPCTarget(t *testing.T) {
+	errs := validateOverrides([]HostOverride{{
+		Match:       "payment*",
+		BaseURL:     "grpc://localhost:8767",
+		PathRewrite: &PathRewrite{Strip: "/v1"},
+	}})
+	require.Len(t, errs, 1)
+	assert.Contains(t, errs[0], "pathRewrite has no meaning for the gRPC target")
+	assert.Contains(t, errs[0], "grpc://localhost:8767")
+}
+
+func TestValidateOverrides_PathRewriteOnGRPCSTarget(t *testing.T) {
+	errs := validateOverrides([]HostOverride{{
+		Match:       "payment*",
+		BaseURL:     "grpcs://api.example.com:443",
+		PathRewrite: &PathRewrite{Prefix: "/v2"},
+	}})
+	require.Len(t, errs, 1)
+}
+
+func TestValidateOverrides_PathRewriteOnHTTPTargetIsFine(t *testing.T) {
+	errs := validateOverrides([]HostOverride{{
+		Match:       "payment*",
+		BaseURL:     "http://localhost:8766",
+		PathRewrite: &PathRewrite{Strip: "/v1"},
+	}})
+	assert.Empty(t, errs)
+}
+
+func TestValidateOverrides_GRPCTargetWithoutPathRewriteIsFine(t *testing.T) {
+	errs := validateOverrides([]HostOverride{{Match: "payment*", BaseURL: "grpc://localhost:8767"}})
+	assert.Empty(t, errs)
+}
