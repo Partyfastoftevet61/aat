@@ -346,10 +346,7 @@ func NewTemplateAdapter(tmpl Template) *TemplateAdapter {
 // every request starts with.
 func (a *TemplateAdapter) BuildRequest(inputs map[string]any, config *EnvironmentConfig) (*Request, error) {
 	if a.tmpl.Protocol == ProtocolGRPC {
-		// The graph validates gRPC nodes against their descriptors, but
-		// nothing sends one yet. Fail here rather than build an HTTP request
-		// out of a template that describes an RPC.
-		return nil, fmt.Errorf("adapter %q is a gRPC template: aat validates gRPC nodes but cannot run them yet", a.tmpl.Adapter)
+		return a.buildGRPCRequest(inputs, config)
 	}
 
 	path, err := substitutePlaceholders(a.tmpl.Request.Path, inputs, renderPath)
@@ -425,6 +422,60 @@ func (a *TemplateAdapter) BuildRequest(inputs map[string]any, config *Environmen
 		Headers: merged,
 		Body:    body,
 	}, nil
+}
+
+// buildGRPCRequest renders a gRPC request: the message, which is JSON, and
+// the metadata, which is what headers are to HTTP.
+//
+// The credential reaches a gRPC call the same way it reaches an HTTP one. The
+// environment resolves auth to a header pair, and metadata carries it, so
+// oauth2, apikey, and bearer all work with no gRPC-specific machinery.
+func (a *TemplateAdapter) buildGRPCRequest(inputs map[string]any, config *EnvironmentConfig) (*Request, error) {
+	message, err := substitutePlaceholders(a.tmpl.Request.Message, inputs, renderJSON)
+	if err != nil {
+		return nil, fmt.Errorf("message substitution: %w", err)
+	}
+
+	metadata := make(map[string]string)
+	if config != nil {
+		for k, v := range config.Headers {
+			setHeader(metadata, k, v)
+		}
+	}
+	for k, v := range a.tmpl.Request.Metadata {
+		rendered, err := substitutePlaceholders(v, inputs, renderRaw)
+		if err != nil {
+			return nil, fmt.Errorf("metadata substitution for %q: %w", k, err)
+		}
+		setHeader(metadata, k, rendered)
+	}
+	// Protected entries go last: a template cannot replace the credential.
+	if config != nil {
+		for k, v := range config.Protected {
+			setHeader(metadata, k, v)
+		}
+	}
+	// A gRPC call carries no body media type, and an Accept has no meaning
+	// when the descriptors decide the encoding.
+	for _, name := range []string{"Content-Type", "Accept"} {
+		deleteHeaderFold(metadata, name)
+	}
+
+	return &Request{
+		Protocol: ProtocolGRPC,
+		Path:     a.tmpl.Request.RPC,
+		Headers:  metadata,
+		Body:     []byte(strings.TrimSpace(message)),
+	}, nil
+}
+
+// deleteHeaderFold removes every entry named name, whatever its case.
+func deleteHeaderFold(headers map[string]string, name string) {
+	for existing := range headers {
+		if strings.EqualFold(existing, name) {
+			delete(headers, existing)
+		}
+	}
 }
 
 // ExtractOutputs parses the response body as JSON and extracts values using

@@ -846,7 +846,7 @@ func TestExpectFailure_MatchingStatus_Passes(t *testing.T) {
 						"input": {Default: "test"},
 					},
 					ExpectFailure: &plan.ExpectFailure{
-						Status:      []int{401, 403},
+						Status:      plan.HTTPStatuses([]int{401, 403}),
 						Description: "Unauthenticated request must be rejected",
 					},
 				},
@@ -863,7 +863,7 @@ func TestExpectFailure_MatchingStatus_Passes(t *testing.T) {
 	require.NotNil(t, efr)
 	assert.True(t, efr.Passed)
 	assert.Equal(t, 401, efr.ActualStatus)
-	assert.Equal(t, []int{401, 403}, efr.ExpectedStatuses)
+	assert.Equal(t, []int{401, 403}, efr.ExpectedStatuses.Codes())
 	assert.Equal(t, "Unauthenticated request must be rejected", efr.Description)
 }
 
@@ -912,7 +912,7 @@ func TestExpectFailure_NonMatchingStatus_Fails(t *testing.T) {
 						"input": {Default: "test"},
 					},
 					ExpectFailure: &plan.ExpectFailure{
-						Status: []int{401, 403},
+						Status: plan.HTTPStatuses([]int{401, 403}),
 					},
 				},
 			},
@@ -978,7 +978,7 @@ func TestExpectFailure_SkipsRetry(t *testing.T) {
 					},
 					Retry: &plan.RetryConfig{Max: 3},
 					ExpectFailure: &plan.ExpectFailure{
-						Status: []int{400},
+						Status: plan.HTTPStatuses([]int{400}),
 					},
 				},
 			},
@@ -1066,7 +1066,7 @@ func TestExpectFailure_NoOutputsStored(t *testing.T) {
 						"input": {Default: "test"},
 					},
 					ExpectFailure: &plan.ExpectFailure{
-						Status: []int{401},
+						Status: plan.HTTPStatuses([]int{401}),
 					},
 				},
 				{
@@ -1137,7 +1137,7 @@ func TestExpectFailure_MechanicalAssertions(t *testing.T) {
 						"input": {Default: "test"},
 					},
 					ExpectFailure: &plan.ExpectFailure{
-						Status: []int{401},
+						Status: plan.HTTPStatuses([]int{401}),
 					},
 					Assertions: &plan.Assertions{
 						Mechanical: []plan.MechanicalAssertion{

@@ -292,7 +292,7 @@ func TestFormatFailureAnalysis_ValidationFailure(t *testing.T) {
 func TestFormatFailureAnalysis_ExpectFailurePassed_NotListed(t *testing.T) {
 	step := testStep("badRequest", 400, 50)
 	step.ExpectFailure = &archive.ExpectFailureRecord{
-		Expected: []int{400},
+		Expected: plan.HTTPStatuses([]int{400}),
 		Actual:   400,
 		Passed:   true,
 	}

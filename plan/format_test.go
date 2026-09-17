@@ -258,7 +258,7 @@ func TestFormatNarrative(t *testing.T) {
 					Steps: []Step{
 						{
 							Node:          "deleteBooking",
-							ExpectFailure: &ExpectFailure{Status: []int{404, 410}},
+							ExpectFailure: &ExpectFailure{Status: HTTPStatuses([]int{404, 410})},
 						},
 					},
 				},

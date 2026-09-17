@@ -113,7 +113,7 @@ func TestOASStrict_ExpectFailureStepsAreExempt(t *testing.T) {
 	// A 400 with a body the spec does not describe is an OAS violation, but the
 	// step expects that failure, so strict mode must not turn it into a red run.
 	eng, p := strictEngine(t, true, http.StatusBadRequest, `{"oops": true}`)
-	p.Execution.Steps[0].ExpectFailure = &plan.ExpectFailure{Status: []int{400}}
+	p.Execution.Steps[0].ExpectFailure = &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{400})}
 	result := eng.Run(context.Background(), p)
 
 	assert.Equal(t, OutcomePassed, result.Outcome, "error: %v", result.Error)

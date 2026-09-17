@@ -17,6 +17,7 @@ import (
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/graph/oas"
 	"github.com/gburgyan/aat/intent"
+	"github.com/gburgyan/aat/internal/protoreg"
 	"github.com/gburgyan/aat/internal/version"
 	"github.com/gburgyan/aat/plan"
 	"github.com/gburgyan/aat/validate"
@@ -399,7 +400,9 @@ func addHostOverrides(ctx context.Context, router *engine.ExecutorRouter, apiBas
 		return err
 	}
 	for _, ov := range resolved {
-		router.AddResolvedOverride(ov)
+		if err := router.AddResolvedOverride(ov); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -682,6 +685,13 @@ type runContext struct {
 	OASCache        *oas.SpecCache // loaded specs for runtime validation (nil if none)
 	OASValidateMode string         // effective mode: "auto", "strict", "off"
 
+	// ProtoRegistry holds the descriptors a graph's gRPC nodes are built and
+	// read with (nil when the graph has none).
+	ProtoRegistry *protoreg.Registry
+	// GRPCTLS secures grpcs:// routes; the zero value verifies against the
+	// system roots.
+	GRPCTLS adapter.TLSConfig
+
 	// Pacer spaces requests across every run of this invocation, including the
 	// runs of a parallel batch (nil = no pacing).
 	Pacer *engine.Pacer
@@ -796,6 +806,16 @@ func loadRunContext(ctx context.Context, args *runArgs, logf func(string, ...any
 	}
 
 	// Load OAS specs for runtime validation (unless disabled)
+	protoRegistry, err := loadProtoRegistry(g, args.GraphPath)
+	if err != nil {
+		return nil, err
+	}
+	rctx.ProtoRegistry = protoRegistry
+	rctx.GRPCTLS = engine.GRPCTLS(rctx.Env, filepath.Dir(args.EnvPath))
+	if protoRegistry != nil {
+		logf("aat: loaded descriptors for %d gRPC service(s)\n", len(protoRegistry.Services()))
+	}
+
 	oasCache, err := loadOASCache(g, args.GraphPath, oasMode, os.Stderr)
 	if err != nil {
 		return nil, err
@@ -936,14 +956,20 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 		apiConfig.AddOverlayHeaders(envOverlayFile.Headers)
 	}
 
-	// 6. Create executor, environment config, and router
-	executor := adapter.NewHTTPExecutor(apiConfig.BaseURL)
+	// 6. Create executor, environment config, and router. The factory decides
+	// by target scheme whether a route goes over HTTP or gRPC, so one run can
+	// span both.
+	factory := adapter.NewExecutorFactory(rctx.ProtoRegistry).WithTLS(rctx.GRPCTLS)
+	executor, err := factory.For(apiConfig.BaseURL)
+	if err != nil {
+		return &runResult{setupErr: true, err: fmt.Errorf("creating executor: %w", err)}
+	}
 	envConfig := &adapter.EnvironmentConfig{
 		BaseURL:   apiConfig.BaseURL,
 		Headers:   apiConfig.Headers,
 		Protected: apiConfig.Protected,
 	}
-	router := engine.NewExecutorRouter(executor, envConfig)
+	router := engine.NewExecutorRouter(executor, envConfig).WithFactory(factory)
 	// The run owns its executors; closing the router releases what they hold open.
 	defer func() { _ = router.Close() }()
 

@@ -6,6 +6,30 @@ the graph and plan formats may still change before 1.0.
 
 ## [Unreleased]
 
+### Added
+- **gRPC, for unary methods (experimental).** A graph node names a gRPC method with `proto:`, a
+  template declares `protocol: grpc` and describes the call with `rpc:`, `metadata:`, and `message:`,
+  and an environment routes to it with a `grpc://` or `grpcs://` target. Descriptors come from a
+  descriptor set — what `protoc --descriptor_set_out` and `buf build -o` write — named by `proto:` in
+  `aat-project.yaml` or the graph.
+
+  Messages cross into the rest of AAT as JSON, so extract rules, predicates, assertions, error
+  detection, archives, and `aat run show` work exactly as they do for HTTP; `metadata:` carries what
+  headers carry, credentials included, so `oauth2`, `apikey`, and `bearer` need no new configuration.
+  `expectFailure` and `expectStatus` accept gRPC status names — `status: [NOT_FOUND]` — which match
+  more precisely than a code can, because several gRPC statuses share one HTTP status. Numbers still
+  work, so a plan can read against either protocol. `aat validate` checks gRPC nodes against the
+  descriptors offline, catching an unknown or misspelled method, a streaming method, and an extract
+  path written with a field's proto name when the response encodes it under its JSON name.
+
+  Streaming methods are rejected: a step is one request and one response. Server-streaming may come
+  later; bidirectional will not. The web UI, MCP tools, and `aat generate` do not understand gRPC
+  yet, so a gRPC run is readable in the terminal and in its archive but renders plainly in the
+  browser.
+
+  This adds `google.golang.org/grpc` and `google.golang.org/protobuf`, which take a `go install`
+  build from about 28 MB to about 44 MB.
+
 ### Fixed
 - The Homebrew cask clears the macOS quarantine attribute with a declarative `postflight_steps` stanza, so `brew` no
   longer warns that `postflight` is deprecated and asks users to report it to the tap. The published cask in

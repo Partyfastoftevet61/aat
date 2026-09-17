@@ -965,7 +965,7 @@ func TestGetStep_ExpectFailure(t *testing.T) {
 
 	step := makeStep("node", 404, 100)
 	step.ExpectFailure = &archive.ExpectFailureRecord{
-		Expected: []int{404, 410},
+		Expected: plan.HTTPStatuses([]int{404, 410}),
 		Actual:   404,
 		Passed:   true,
 	}

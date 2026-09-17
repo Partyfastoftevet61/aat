@@ -62,7 +62,7 @@ func TestOverlayValueOverride_InjectsMalformedValue(t *testing.T) {
 	router := NewExecutorRouter(executor, &adapter.EnvironmentConfig{})
 
 	// Overlay: rewrite query to empty, declare expected 400.
-	router.AddValueOverride("search", map[string]any{"query": ""}, &plan.ExpectFailure{Status: []int{400}})
+	router.AddValueOverride("search", map[string]any{"query": ""}, &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{400})})
 
 	engine := NewEngine(g, registry, router)
 
@@ -119,7 +119,7 @@ func TestOverlayExpectFailure_SkipsStatusAssertion(t *testing.T) {
 	registry := adapter.NewRegistry()
 	require.NoError(t, registry.Register("test.charge", &stubAdapter{method: "POST", path: "/charges"}))
 	router := NewExecutorRouter(adapter.NewHTTPExecutor(server.URL), &adapter.EnvironmentConfig{})
-	router.AddValueOverride("charge", map[string]any{"card": "4000000000000002"}, &plan.ExpectFailure{Status: []int{402}})
+	router.AddValueOverride("charge", map[string]any{"card": "4000000000000002"}, &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{402})})
 
 	p := &plan.Plan{
 		Metadata: plan.Metadata{GraphVersion: "1.0.0"},
@@ -174,7 +174,7 @@ func TestExpectFailure_StatusAssertionRule(t *testing.T) {
 		{name: "overlay, different failure code fails", status: 402, expect: 404, wantOutcome: OutcomeFailed},
 		{
 			name: "plan, narrower code within the expected list", status: 409,
-			stepFailure: &plan.ExpectFailure{Status: []int{404, 409}},
+			stepFailure: &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{404, 409})},
 			expect:      409, wantOutcome: OutcomePassed,
 		},
 	}
@@ -191,7 +191,7 @@ func TestExpectFailure_StatusAssertionRule(t *testing.T) {
 			require.NoError(t, registry.Register("test.charge", &stubAdapter{method: "POST", path: "/charges"}))
 			router := NewExecutorRouter(adapter.NewHTTPExecutor(server.URL), &adapter.EnvironmentConfig{})
 			if tt.stepFailure == nil {
-				router.AddValueOverride("charge", nil, &plan.ExpectFailure{Status: []int{402}})
+				router.AddValueOverride("charge", nil, &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{402})})
 			}
 
 			p := &plan.Plan{
@@ -247,7 +247,7 @@ func TestOverlayValueOverride_StepExpectFailureWins(t *testing.T) {
 
 	router := NewExecutorRouter(adapter.NewHTTPExecutor(server.URL), &adapter.EnvironmentConfig{})
 	// Overlay declares 400 expected; plan step declares 404 expected — plan wins.
-	router.AddValueOverride("search", nil, &plan.ExpectFailure{Status: []int{400}})
+	router.AddValueOverride("search", nil, &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{400})})
 
 	engine := NewEngine(g, registry, router)
 
@@ -258,7 +258,7 @@ func TestOverlayValueOverride_StepExpectFailureWins(t *testing.T) {
 				{
 					Node:          "search",
 					Values:        map[string]plan.StepValue{"query": {Default: "x"}},
-					ExpectFailure: &plan.ExpectFailure{Status: []int{404}},
+					ExpectFailure: &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{404})},
 				},
 			},
 		},
@@ -268,6 +268,6 @@ func TestOverlayValueOverride_StepExpectFailureWins(t *testing.T) {
 	require.Len(t, result.Steps, 1)
 	sr := result.Steps[0]
 	require.NotNil(t, sr.ExpectFailure)
-	assert.Equal(t, []int{404}, sr.ExpectFailure.ExpectedStatuses, "plan step expectFailure takes precedence over overlay")
+	assert.Equal(t, []int{404}, sr.ExpectFailure.ExpectedStatuses.Codes(), "plan step expectFailure takes precedence over overlay")
 	assert.True(t, sr.ExpectFailure.Passed)
 }

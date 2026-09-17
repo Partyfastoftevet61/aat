@@ -1384,13 +1384,58 @@ func TestSplitRPC(t *testing.T) {
 	}
 }
 
-func TestTemplateAdapter_GRPCCannotRunYet(t *testing.T) {
-	// A gRPC template must not quietly build an HTTP request out of an RPC.
-	tmpl, err := ParseTemplate([]byte("adapter: createCart\nprotocol: grpc\nrequest:\n  rpc: shop.v1.Carts/CreateCart\n  message: \"{}\"\n"))
+func TestTemplateAdapter_BuildGRPCRequest(t *testing.T) {
+	tmpl, err := ParseTemplate([]byte(`adapter: createCart
+protocol: grpc
+request:
+  rpc: shop.v1.Carts/CreateCart
+  metadata:
+    x-tenant: "{{tenant}}"
+  message: |
+    {"customerId": "{{customerId}}"}
+`))
 	require.NoError(t, err)
 
-	_, err = NewTemplateAdapter(*tmpl).BuildRequest(map[string]any{}, &EnvironmentConfig{})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot run them yet")
-	assert.Contains(t, err.Error(), "createCart", "the error names the adapter")
+	req, err := NewTemplateAdapter(*tmpl).BuildRequest(
+		map[string]any{"tenant": "acme", "customerId": "c-1"},
+		&EnvironmentConfig{
+			Headers:   map[string]string{"Accept": "application/json", "X-Trace": "on"},
+			Protected: map[string]string{"Authorization": "Bearer tok"},
+		})
+	require.NoError(t, err)
+
+	assert.Equal(t, ProtocolGRPC, req.Protocol)
+	assert.True(t, req.IsGRPC())
+	assert.Equal(t, "shop.v1.Carts/CreateCart", req.Path)
+	assert.Empty(t, req.Method, "a gRPC request has no verb")
+	assert.JSONEq(t, `{"customerId":"c-1"}`, string(req.Body))
+
+	// The credential reaches a gRPC call as metadata, and a template cannot
+	// replace it.
+	assert.Equal(t, "Bearer tok", req.Headers["Authorization"])
+	assert.Equal(t, "acme", req.Headers["x-tenant"])
+	assert.Equal(t, "on", req.Headers["X-Trace"], "environment headers still travel")
+	assert.NotContains(t, req.Headers, "Accept", "Accept has no meaning when descriptors decide the encoding")
+}
+
+func TestTemplateAdapter_GRPCMessageEscapesValues(t *testing.T) {
+	// The message is JSON, so a value carrying a quote must not break it.
+	tmpl, err := ParseTemplate([]byte("adapter: t\nprotocol: grpc\nrequest:\n  rpc: s.S/M\n  message: '{\"note\": \"{{note}}\"}'\n"))
+	require.NoError(t, err)
+
+	req, err := NewTemplateAdapter(*tmpl).BuildRequest(map[string]any{"note": `he said "hi"`}, &EnvironmentConfig{})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"note":"he said \"hi\""}`, string(req.Body))
+}
+
+func TestTemplateAdapter_GRPCProtectedMetadataWinsOverTheTemplate(t *testing.T) {
+	tmpl, err := ParseTemplate([]byte("adapter: t\nprotocol: grpc\nrequest:\n  rpc: s.S/M\n  metadata:\n    authorization: Bearer template\n  message: \"{}\"\n"))
+	require.NoError(t, err)
+
+	req, err := NewTemplateAdapter(*tmpl).BuildRequest(nil, &EnvironmentConfig{
+		Protected: map[string]string{"Authorization": "Bearer real"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "Bearer real", req.Headers["Authorization"])
+	assert.NotContains(t, req.Headers, "authorization", "the protected entry replaces the template's, whatever its case")
 }

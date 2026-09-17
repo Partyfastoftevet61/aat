@@ -45,7 +45,7 @@ func TestResolveValueOverride_ExactMatchValues(t *testing.T) {
 
 func TestResolveValueOverride_ExpectFailure(t *testing.T) {
 	router := NewExecutorRouter(adapter.NewHTTPExecutor("http://x"), &adapter.EnvironmentConfig{})
-	ef := &plan.ExpectFailure{Status: []int{400, 422}, Description: "invalid input"}
+	ef := &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{400, 422}), Description: "invalid input"}
 	router.AddValueOverride("createBooking", nil, ef)
 
 	values, gotEF := router.ResolveValueOverride("createBooking")
@@ -67,14 +67,14 @@ func TestResolveValueOverride_ExactWinsOverGlob(t *testing.T) {
 func TestResolveValueOverride_ExactBeforeGlob_ExpectFailure(t *testing.T) {
 	// First matching expectFailure wins (exact match applied first).
 	router := NewExecutorRouter(adapter.NewHTTPExecutor("http://x"), &adapter.EnvironmentConfig{})
-	globEF := &plan.ExpectFailure{Status: []int{500}}
-	exactEF := &plan.ExpectFailure{Status: []int{400}}
+	globEF := &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{500})}
+	exactEF := &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{400})}
 	router.AddValueOverride("create*", nil, globEF)
 	router.AddValueOverride("createBooking", nil, exactEF)
 
 	_, ef := router.ResolveValueOverride("createBooking")
 	require.NotNil(t, ef)
-	assert.Equal(t, []int{400}, ef.Status, "exact match applied before glob, first non-nil wins")
+	assert.Equal(t, []int{400}, ef.Status.Codes(), "exact match applied before glob, first non-nil wins")
 }
 
 func TestHasOverrides_IncludesValueOverrides(t *testing.T) {

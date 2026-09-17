@@ -38,7 +38,7 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 | `cmd/aat-sandbox/` | Demo API binary: `serve` runs the offline shop sandbox, `init` extracts `examples/shop` |
 | `graph/` | API graph model, YAML parsing, traversal, backward chaining, diffing |
 | `graph/proto/` | Validates gRPC nodes against protobuf descriptors (implements `graph.SpecValidator`) |
-| `adapter/` | Adapter interface, HTTP executor, Tier 1/3 loaders |
+| `adapter/` | Adapter and Executor interfaces, HTTP and gRPC executors, Tier 1/3 loaders |
 | `domain/` | Domain knowledge: concepts, types, value pools |
 | `plan/` | Plan model, expression evaluator, validation, persistence |
 | `intent/` | LLM-powered prompt → plan transformation |
@@ -54,6 +54,7 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 | `internal/yamlx/` | Strict YAML decoding for project files: unknown keys are errors with line, key, and suggestion |
 | `internal/predicate/` | Predicate expressions (`status == "open" && total > 100`): parsing, evaluation, and the fields they name, for selection filters, constraints, assertions, and cleanup `when` |
 | `internal/protoreg/` | Protobuf descriptor sets and the protobuf-to-JSON codec; shared by `adapter` and `graph/proto` |
+| `internal/grpcstatus/` | gRPC status codes: their names, and the HTTP statuses they map to so one engine serves both protocols |
 | `internal/primer/` | The AI assistant primer (`llms.md`): embedded for `aat docs primer`, included by `docs/user/llms.md`, and published as `llms-full.txt` |
 | `internal/testutil/` | Shared test helpers and fixtures |
 | `internal/version/` | Build version info |
@@ -63,7 +64,7 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 
 Dependencies flow in one direction. No cycles. No lateral imports within a tier.
 
-**Foundation packages** (stdlib and third-party imports only; importable from any tier): `internal/httpstatus`, `internal/yamlx`, `internal/predicate`, `internal/version`, `internal/primer`, `internal/protoreg`
+**Foundation packages** (stdlib and third-party imports only; importable from any tier): `internal/httpstatus`, `internal/yamlx`, `internal/predicate`, `internal/version`, `internal/primer`, `internal/protoreg`, `internal/grpcstatus`
 **Leaf packages** (no aat imports other than foundation packages): `config`, `graph`, `domain`, `adapter`, `validate`, `internal/sandbox/shop`
 **Mid-tier**: `graph/oas` → graph; `graph/proto` → graph; `llm` → config; `plan` → graph, config; `archive` → plan
 **Orchestrators**: `engine` → graph, graph/oas, adapter, plan, domain, validate, archive, config

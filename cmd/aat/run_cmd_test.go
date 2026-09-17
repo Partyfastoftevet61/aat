@@ -1132,7 +1132,7 @@ func TestPlannedStepCount_IncludesVerificationAndMutations(t *testing.T) {
 			Node:   "create",
 			Values: map[string]plan.StepValue{"qty": {Default: 1}},
 			Mutations: []plan.Mutation{
-				{Name: "zero", Set: map[string]any{"qty": 0}, ExpectStatus: []int{400}},
+				{Name: "zero", Set: map[string]any{"qty": 0}, ExpectStatus: plan.HTTPStatuses([]int{400})},
 			},
 		}},
 		Verification: []plan.VerificationStep{{Node: "get"}},

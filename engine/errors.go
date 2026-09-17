@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/plan"
 )
 
@@ -146,7 +147,7 @@ func classifyStepResult(result *StepResult) *ErrorClassification {
 	if cat, isErr := classifyStatusCode(result.StatusCode); isErr {
 		return &ErrorClassification{
 			Category: cat,
-			Detail:   statusCodeDetail(result.StatusCode),
+			Detail:   statusDetail(result.Response, result.StatusCode),
 		}
 	}
 
@@ -158,6 +159,20 @@ func classifyStepResult(result *StepResult) *ErrorClassification {
 	}
 
 	return nil
+}
+
+// statusDetail describes the status a response failed with. A gRPC response is
+// described by the code it actually carries and the message the server sent,
+// rather than by the HTTP status it maps to, which the caller never wrote and
+// would not recognise.
+func statusDetail(resp *adapter.Response, code int) string {
+	if resp != nil && resp.GRPC != nil {
+		if resp.GRPC.Message != "" {
+			return fmt.Sprintf("gRPC %s: %s", resp.GRPC.Name, resp.GRPC.Message)
+		}
+		return "gRPC " + resp.GRPC.Name
+	}
+	return statusCodeDetail(code)
 }
 
 // statusCodeDetail returns a human-readable description for an HTTP status code.
@@ -250,4 +265,35 @@ func retryRuleMatches(rule string, cat ErrorCategory, status int) bool {
 		return status != 0 && code == status
 	}
 	return strings.EqualFold(rule, cat.String())
+}
+
+// grpcStatusName returns a gRPC response's status name, and "" for an HTTP one.
+func grpcStatusName(resp *adapter.Response) string {
+	if resp == nil || resp.GRPC == nil {
+		return ""
+	}
+	return resp.GRPC.Name
+}
+
+// actualStatusText renders the status a step came back with, naming a gRPC
+// code rather than the HTTP status it maps to.
+func actualStatusText(resp *adapter.Response, code int) string {
+	if name := grpcStatusName(resp); name != "" {
+		return name
+	}
+	return strconv.Itoa(code)
+}
+
+// failureStatusText describes the status a step failed with, for the message
+// that ends a run. A gRPC step names its code and the server's message, which
+// is where the reason for an unreachable host or a refused call lives; an HTTP
+// step reads as it always has.
+func failureStatusText(resp *adapter.Response, code int) string {
+	if resp != nil && resp.GRPC != nil {
+		if resp.GRPC.Message != "" {
+			return fmt.Sprintf("gRPC %s: %s", resp.GRPC.Name, resp.GRPC.Message)
+		}
+		return "gRPC " + resp.GRPC.Name
+	}
+	return fmt.Sprintf("status %d", code)
 }

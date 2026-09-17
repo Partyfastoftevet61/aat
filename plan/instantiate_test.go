@@ -431,7 +431,7 @@ func TestInputDefaultToStepValue(t *testing.T) {
 // --- DefaultRefStep tests ---
 
 func TestDefaultRefStep(t *testing.T) {
-	failing := &ExpectFailure{Status: []int{400}}
+	failing := &ExpectFailure{Status: HTTPStatuses([]int{400})}
 	tests := []struct {
 		name  string
 		steps []Step

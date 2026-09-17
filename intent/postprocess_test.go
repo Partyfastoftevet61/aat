@@ -852,7 +852,7 @@ func TestFixAssertions_ExpectFailure_NoDefaultStatus(t *testing.T) {
 				{
 					Node: "step1",
 					ExpectFailure: &plan.ExpectFailure{
-						Status:      []int{401, 403},
+						Status:      plan.HTTPStatuses([]int{401, 403}),
 						Description: "Should be rejected",
 					},
 				},
@@ -874,7 +874,7 @@ func TestFixAssertions_ExpectFailure_PreservesExistingStatus(t *testing.T) {
 				{
 					Node: "step1",
 					ExpectFailure: &plan.ExpectFailure{
-						Status: []int{403},
+						Status: plan.HTTPStatuses([]int{403}),
 					},
 					Assertions: &plan.Assertions{
 						Mechanical: []plan.MechanicalAssertion{

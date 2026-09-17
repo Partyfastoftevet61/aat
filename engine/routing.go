@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 
 	"github.com/gburgyan/aat/adapter"
@@ -14,6 +15,7 @@ import (
 type ExecutorRouter struct {
 	defaultExec    adapter.Executor
 	defaultConfig  *adapter.EnvironmentConfig
+	factory        *adapter.ExecutorFactory
 	overrides      []routeEntry
 	valueOverrides []valueOverrideEntry
 }
@@ -42,6 +44,26 @@ func NewExecutorRouter(exec adapter.Executor, cfg *adapter.EnvironmentConfig) *E
 		defaultExec:   exec,
 		defaultConfig: cfg,
 	}
+}
+
+// WithFactory sets what an override's target is turned into. Without one an
+// override is always routed over HTTP, which is what a project with no gRPC
+// nodes needs.
+func (r *ExecutorRouter) WithFactory(f *adapter.ExecutorFactory) *ExecutorRouter {
+	r.factory = f
+	return r
+}
+
+// executorFor builds the executor for a target, through the factory when there
+// is one.
+func (r *ExecutorRouter) executorFor(target string) (adapter.Executor, error) {
+	if r.factory != nil {
+		return r.factory.For(target)
+	}
+	if adapter.IsGRPCTarget(target) {
+		return nil, fmt.Errorf("target %s is a gRPC service but this run loads no descriptors", target)
+	}
+	return adapter.NewHTTPExecutor(target), nil
 }
 
 // AddOverride registers a named or glob-pattern override. Exact matches are
@@ -87,9 +109,12 @@ func (r *ExecutorRouter) Resolve(nodeName string) (adapter.Executor, *adapter.En
 // when the override sets baseUrl, auth, headers, or pathRewrite, and its
 // values and expectFailure in every case. A value-only override therefore
 // leaves the node on whatever route a broader match (or the default) gives it.
-func (r *ExecutorRouter) AddResolvedOverride(ov config.ResolvedOverride) {
+func (r *ExecutorRouter) AddResolvedOverride(ov config.ResolvedOverride) error {
 	if ov.Routes {
-		exec := adapter.NewHTTPExecutor(ov.APIConfig.BaseURL)
+		exec, err := r.executorFor(ov.APIConfig.BaseURL)
+		if err != nil {
+			return fmt.Errorf("override %q: %w", ov.Pattern, err)
+		}
 		cfg := &adapter.EnvironmentConfig{
 			BaseURL:   ov.APIConfig.BaseURL,
 			Headers:   ov.APIConfig.Headers,
@@ -108,11 +133,12 @@ func (r *ExecutorRouter) AddResolvedOverride(ov config.ResolvedOverride) {
 	var ef *plan.ExpectFailure
 	if ov.ExpectFailure != nil {
 		ef = &plan.ExpectFailure{
-			Status:      ov.ExpectFailure.Status,
+			Status:      plan.HTTPStatuses(ov.ExpectFailure.Status),
 			Description: ov.ExpectFailure.Description,
 		}
 	}
 	r.AddValueOverride(ov.Pattern, ov.Values, ef)
+	return nil
 }
 
 // AddValueOverride registers per-node input-value and expected-failure
@@ -202,6 +228,13 @@ func (r *ExecutorRouter) Close() error {
 	closeOnce(r.defaultExec)
 	for _, entry := range r.overrides {
 		closeOnce(entry.executor)
+	}
+	// gRPC executors share the factory's connections, so closing them is a
+	// no-op and the pool has to be closed itself.
+	if r.factory != nil {
+		if err := r.factory.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	return errors.Join(errs...)
 }

@@ -159,9 +159,9 @@ func TestBuildRunSummary_ExpectFailure(t *testing.T) {
 		Metadata: ArchiveMetadata{RunID: "run-ef"},
 		Steps: []StepRecord{
 			{Node: "authCheck", DurationMs: 50, Inputs: map[string]any{},
-				ExpectFailure: &ExpectFailureRecord{Expected: []int{401}, Actual: 401, Passed: true}},
+				ExpectFailure: &ExpectFailureRecord{Expected: plan.HTTPStatuses([]int{401}), Actual: 401, Passed: true}},
 			{Node: "badCheck", DurationMs: 50, Inputs: map[string]any{},
-				ExpectFailure: &ExpectFailureRecord{Expected: []int{401}, Actual: 200, Passed: false}},
+				ExpectFailure: &ExpectFailureRecord{Expected: plan.HTTPStatuses([]int{401}), Actual: 200, Passed: false}},
 		},
 		Result: ArchiveResult{Outcome: "failed"},
 	}

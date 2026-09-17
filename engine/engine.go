@@ -231,12 +231,9 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 				ActualStatus:     stepResult.StatusCode,
 				Description:      step.ExpectFailure.Description,
 			}
-			for _, expected := range step.ExpectFailure.Status {
-				if stepResult.StatusCode == expected {
-					efr.Passed = true
-					break
-				}
-			}
+			// A gRPC step is matched by status name when the plan wrote one,
+			// so that codes sharing an HTTP status stay distinguishable.
+			efr.Passed = step.ExpectFailure.Status.Matches(stepResult.StatusCode, grpcStatusName(stepResult.Response))
 			stepResult.ExpectFailure = efr
 			stepResults[len(stepResults)-1] = stepResult
 
@@ -259,12 +256,13 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 
 			// Unexpected success or wrong error code — FAIL.
 			outcome = OutcomeFailed
-			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s: expected failure status %v but got %d", stepRef(step), step.ExpectFailure.Status, stepResult.StatusCode))
+			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s: expected failure status %s but got %s", stepRef(step),
+				strings.Join(step.ExpectFailure.Status.Strings(), ", "), actualStatusText(stepResult.Response, stepResult.StatusCode)))
 		}
 
 		if stepResult.StatusCode >= 400 {
 			outcome = OutcomeFailed
-			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s returned status %d", stepRef(step), stepResult.StatusCode))
+			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s returned %s", stepRef(step), failureStatusText(stepResult.Response, stepResult.StatusCode)))
 		}
 
 		// Check for response body errors (API returned 2xx but body indicates error)
@@ -506,7 +504,7 @@ func (e *Engine) runVerification(ctx context.Context, steps []plan.Step, state *
 		case sr.Error != nil:
 			return results, OutcomeError, fmt.Errorf("verification step %s: %w", stepRef(step), sr.Error)
 		case sr.StatusCode >= 400:
-			failure = fmt.Errorf("verification step %s returned status %d", stepRef(step), sr.StatusCode)
+			failure = fmt.Errorf("verification step %s returned %s", stepRef(step), failureStatusText(sr.Response, sr.StatusCode))
 		case sr.ResponseBodyError != nil:
 			failure = fmt.Errorf("verification step %s: %s", stepRef(step), sr.ResponseBodyError.Summary())
 		case sr.Validation != nil && !sr.Validation.Passed:
@@ -745,9 +743,11 @@ func (e *Engine) executeStepWith(ctx context.Context, step plan.Step, node *grap
 		}
 	}
 
-	// Apply path rewriting if configured for this node
+	// Apply path rewriting if configured for this node. A gRPC request's path
+	// is its method, which a strip-and-prefix rewrite cannot mean anything
+	// for, so it is left alone; config rejects the combination outright.
 	originalPath := req.Path
-	if rewrite != nil {
+	if rewrite != nil && !req.IsGRPC() {
 		req.Path = adapter.RewritePath(req.Path, rewrite)
 	}
 

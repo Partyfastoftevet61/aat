@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gburgyan/aat/archive"
+	"github.com/gburgyan/aat/plan"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1255,7 +1256,9 @@ func toExpectFailureDetail(r *archive.ExpectFailureRecord) *ExpectFailureDetail 
 		return nil
 	}
 	return &ExpectFailureDetail{
-		Expected: r.Expected,
+		// The UI reads statuses as numbers; a gRPC run's names reach it when
+		// the step detail learns to render the protocol.
+		Expected: plan.ExpectedStatuses(r.Expected).Codes(),
 		Actual:   r.Actual,
 		Passed:   r.Passed,
 	}

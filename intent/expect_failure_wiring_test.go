@@ -22,7 +22,7 @@ func expectFailureGraph() *graph.Graph {
 func TestResolveRemainingAutowire_PassesOverExpectedFailures(t *testing.T) {
 	p := &plan.Plan{Execution: plan.Execution{Steps: []plan.Step{
 		{ID: "good", Node: "createOrder"},
-		{ID: "refused", Node: "createOrder", ExpectFailure: &plan.ExpectFailure{Status: []int{409}}},
+		{ID: "refused", Node: "createOrder", ExpectFailure: &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{409})}},
 		{ID: "read", Node: "getOrder", Values: map[string]plan.StepValue{"orderId": {Default: "AUTOWIRE"}}},
 	}}}
 
@@ -35,7 +35,7 @@ func TestResolveRemainingAutowire_PassesOverExpectedFailures(t *testing.T) {
 func TestBuildOutputMap_PassesOverExpectedFailures(t *testing.T) {
 	p := &plan.Plan{Execution: plan.Execution{Steps: []plan.Step{
 		{ID: "good", Node: "createOrder"},
-		{ID: "refused", Node: "createOrder", ExpectFailure: &plan.ExpectFailure{Status: []int{409}}},
+		{ID: "refused", Node: "createOrder", ExpectFailure: &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{409})}},
 	}}}
 
 	assert.Equal(t, "good.orderId", buildOutputMap(p, expectFailureGraph())["orderId"])

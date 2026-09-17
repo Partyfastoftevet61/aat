@@ -1,0 +1,205 @@
+package adapter
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/gburgyan/aat/internal/grpcstatus"
+	"github.com/gburgyan/aat/internal/protoreg"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/dynamicpb"
+)
+
+// GRPCExecutor sends adapter-built requests as unary gRPC calls.
+//
+// It owns no connection of its own: the pool does, so every executor routed to
+// the same target shares one. Closing an executor is therefore a no-op, and
+// the run closes the pool.
+type GRPCExecutor struct {
+	target string
+	pool   *ConnPool
+	reg    *protoreg.Registry
+	secure bool
+	tls    TLSConfig
+}
+
+var _ Executor = (*GRPCExecutor)(nil)
+
+// NewGRPCExecutor creates an executor for a gRPC target, such as
+// "grpc://localhost:9090" or "grpcs://api.example.com:443". The registry
+// supplies the descriptors the messages are built and read with.
+func NewGRPCExecutor(target string, pool *ConnPool, reg *protoreg.Registry, tlsCfg TLSConfig) (*GRPCExecutor, error) {
+	if reg == nil {
+		return nil, fmt.Errorf("gRPC target %s needs a descriptor set: name one with proto: in the project manifest or the graph", target)
+	}
+	_, secure, err := ParseGRPCTarget(target)
+	if err != nil {
+		return nil, err
+	}
+	if pool == nil {
+		pool = NewConnPool()
+	}
+	return &GRPCExecutor{target: target, pool: pool, reg: reg, secure: secure, tls: tlsCfg}, nil
+}
+
+// Protocol names the wire protocol: gRPC.
+func (e *GRPCExecutor) Protocol() string { return ProtocolGRPC }
+
+// Target returns the target requests are sent to.
+func (e *GRPCExecutor) Target() string { return e.target }
+
+// Close releases nothing: the pool owns the connections, and the run closes it.
+func (e *GRPCExecutor) Close() error { return nil }
+
+// Execute sends req as a unary call and returns the response.
+//
+// The response always carries a body, and it is always JSON. A call that
+// succeeded gives the reply message; one that failed gives a status envelope,
+// so extract rules, assertions, and error-detection rules read a failure the
+// same way they read a success.
+func (e *GRPCExecutor) Execute(ctx context.Context, req *Request) (*Response, error) {
+	if req.Protocol != ProtocolGRPC {
+		return nil, fmt.Errorf("executing %s: a gRPC executor sends gRPC requests", req.Path)
+	}
+	service, method, ok := splitRPC(req.Path)
+	if !ok {
+		return nil, fmt.Errorf("executing %q: it must name a service and a method", req.Path)
+	}
+
+	md, err := e.reg.Method(service, method)
+	if err != nil {
+		return nil, fmt.Errorf("executing %s: %w", req.Path, err)
+	}
+	if md.IsStreamingClient() || md.IsStreamingServer() {
+		return nil, fmt.Errorf("executing %s: aat runs unary methods, where one request has one response", req.Path)
+	}
+
+	body := req.Body
+	if len(body) == 0 {
+		body = []byte("{}")
+	}
+	in, err := e.reg.JSONToMessage(md.Input(), body)
+	if err != nil {
+		return nil, fmt.Errorf("building the request for %s: %w", req.Path, err)
+	}
+
+	conn, err := e.pool.Get(e.target, e.secure, e.tls)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(req.Headers) > 0 {
+		pairs := make([]string, 0, len(req.Headers)*2)
+		for k, v := range req.Headers {
+			// Metadata keys are lowercase on the wire; grpc-go rejects
+			// anything else rather than folding it.
+			pairs = append(pairs, strings.ToLower(k), v)
+		}
+		ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
+	}
+
+	out := dynamicpb.NewMessage(md.Output())
+	var header, trailer metadata.MD
+	invokeErr := conn.Invoke(ctx, fullMethod(service, method), in, out,
+		grpc.Header(&header), grpc.Trailer(&trailer))
+
+	headers := mergeMetadata(header, trailer)
+	if invokeErr != nil {
+		return e.errorResponse(invokeErr, headers)
+	}
+
+	respBody, err := e.reg.MessageToJSON(out)
+	if err != nil {
+		return nil, fmt.Errorf("reading the response of %s: %w", req.Path, err)
+	}
+	return &Response{
+		Protocol:   ProtocolGRPC,
+		StatusCode: grpcstatus.HTTPStatus(grpcstatus.OK),
+		Headers:    headers,
+		Body:       respBody,
+		GRPC:       &GRPCStatus{Code: grpcstatus.OK, Name: grpcstatus.Name(grpcstatus.OK)},
+	}, nil
+}
+
+// errorResponse turns a failed call into a response.
+//
+// Nearly everything that goes wrong in gRPC carries a status, an unreachable
+// host included: grpc-go reports that as UNAVAILABLE, which maps to 503 and so
+// classifies as transient and is retried, exactly as it should be. Returning
+// it as an error instead would be worse, because the engine recognises a
+// network failure by unwrapping a net.OpError, which a status error is not.
+//
+// Only something with no status at all — which should not happen — is returned
+// as an error.
+func (e *GRPCExecutor) errorResponse(invokeErr error, headers http.Header) (*Response, error) {
+	st, ok := status.FromError(invokeErr)
+	if !ok {
+		return nil, fmt.Errorf("executing gRPC request: %w", invokeErr)
+	}
+	code := uint32(st.Code())
+	if code > grpcstatus.MaxCode {
+		return nil, fmt.Errorf("executing gRPC request: %w", invokeErr)
+	}
+
+	gs := &GRPCStatus{
+		Code:    code,
+		Name:    grpcstatus.Name(code),
+		Message: st.Message(),
+	}
+	for _, detail := range st.Proto().GetDetails() {
+		encoded, err := e.reg.MessageToJSON(detail)
+		if err != nil {
+			// A detail whose type the descriptors do not name must not lose
+			// the status it came with.
+			encoded = []byte(fmt.Sprintf(`{"@type":%q}`, detail.GetTypeUrl()))
+		}
+		gs.Details = append(gs.Details, encoded)
+	}
+
+	return &Response{
+		Protocol:   ProtocolGRPC,
+		StatusCode: grpcstatus.HTTPStatus(code),
+		Headers:    headers,
+		Body:       gs.envelope(),
+		GRPC:       gs,
+	}, nil
+}
+
+// envelope renders a failed call's status as the JSON body of the response.
+// It mirrors the error envelope an API of AAT's own examples returns, so the
+// same assertions and errorDetection rules read both.
+func (s *GRPCStatus) envelope() []byte {
+	type envelope struct {
+		Code    string            `json:"code"`
+		Message string            `json:"message"`
+		Details []json.RawMessage `json:"details,omitempty"`
+	}
+	body, err := json.Marshal(envelope{Code: s.Name, Message: s.Message, Details: s.Details})
+	if err != nil {
+		return []byte(`{"code":"UNKNOWN","message":"the status could not be encoded"}`)
+	}
+	return body
+}
+
+// fullMethod renders the path gRPC puts on the wire.
+func fullMethod(service, method string) string { return "/" + service + "/" + method }
+
+// mergeMetadata flattens a call's header and trailer metadata into one set.
+// Trailers are applied last: a server that sends the same key in both means
+// the trailing value.
+func mergeMetadata(header, trailer metadata.MD) http.Header {
+	out := make(http.Header, len(header)+len(trailer))
+	for _, md := range []metadata.MD{header, trailer} {
+		for k, values := range md {
+			for _, v := range values {
+				out.Add(k, v)
+			}
+		}
+	}
+	return out
+}

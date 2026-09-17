@@ -199,7 +199,7 @@ func (e *Engine) executeCleanupEntry(ctx context.Context, entry CleanupEntry, no
 		return failed(inputs, fmt.Errorf("cleanup build request: %w", err))
 	}
 
-	if rewrite != nil {
+	if rewrite != nil && !req.IsGRPC() {
 		base.OriginalPath = req.Path
 		req.Path = adapter.RewritePath(req.Path, rewrite)
 	}

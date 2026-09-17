@@ -141,3 +141,12 @@ func WriteDescriptorSet(t *testing.T, name string, files ...*descriptorpb.FileDe
 	require.NoError(t, os.WriteFile(path, data, 0o600))
 	return path
 }
+
+// DescriptorSetBytes marshals files as a FileDescriptorSet, the artifact
+// protoc --descriptor_set_out writes.
+func DescriptorSetBytes(t *testing.T, files ...*descriptorpb.FileDescriptorProto) []byte {
+	t.Helper()
+	data, err := proto.Marshal(&descriptorpb.FileDescriptorSet{File: files})
+	require.NoError(t, err)
+	return data
+}

@@ -113,13 +113,18 @@ func (s *Server) handleExecutePlan(ctx context.Context, req mcp.CallToolRequest)
 	apiConfig := s.ctx.Environment.BuildAPIConfigFromToken(token, effectiveAuth, p.Headers)
 
 	// Create executor and environment config
-	executor := adapter.NewHTTPExecutor(apiConfig.BaseURL)
+	factory := adapter.NewExecutorFactory(s.ctx.ProtoRegistry).
+		WithTLS(engine.GRPCTLS(s.ctx.Environment, s.ctx.GraphDir))
+	executor, err := factory.For(apiConfig.BaseURL)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("creating executor: %v", err)), nil
+	}
 	envConfig := &adapter.EnvironmentConfig{
 		BaseURL:   apiConfig.BaseURL,
 		Headers:   apiConfig.Headers,
 		Protected: apiConfig.Protected,
 	}
-	router := engine.NewExecutorRouter(executor, envConfig)
+	router := engine.NewExecutorRouter(executor, envConfig).WithFactory(factory)
 	// One tool call owns its executors: the MCP server is long-lived, so they
 	// must not accumulate across calls.
 	defer func() { _ = router.Close() }()
@@ -136,7 +141,9 @@ func (s *Server) handleExecutePlan(ctx context.Context, req mcp.CallToolRequest)
 			return mcp.NewToolResultError(fmt.Sprintf("building overrides: %v", err)), nil
 		}
 		for _, ov := range resolvedOverrides {
-			router.AddResolvedOverride(ov)
+			if err := router.AddResolvedOverride(ov); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("applying override: %v", err)), nil
+			}
 		}
 	}
 

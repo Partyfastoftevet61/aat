@@ -772,9 +772,9 @@ func Validate(p *Plan, g *graph.Graph) error {
 			if len(step.ExpectFailure.Status) == 0 {
 				errs = append(errs, fmt.Sprintf("step %d (%s): expectFailure must have at least one status code", i, sid))
 			}
-			for _, code := range step.ExpectFailure.Status {
-				if code < 400 {
-					errs = append(errs, fmt.Sprintf("step %d (%s): expectFailure status %d must be >= 400", i, sid, code))
+			for _, status := range step.ExpectFailure.Status {
+				if !status.IsFailure() {
+					errs = append(errs, fmt.Sprintf("step %d (%s): expectFailure status %s must be a failure status", i, sid, status))
 				}
 			}
 			// Check for contradicting status assertion

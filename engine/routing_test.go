@@ -19,17 +19,17 @@ import (
 
 func TestExecutorRouter_AddResolvedOverride_ValueOnlyKeepsRoute(t *testing.T) {
 	router := NewExecutorRouter(adapter.NewHTTPExecutor("http://shop"), &adapter.EnvironmentConfig{BaseURL: "http://shop"})
-	router.AddResolvedOverride(config.ResolvedOverride{
+	require.NoError(t, router.AddResolvedOverride(config.ResolvedOverride{
 		Pattern:   "payment*",
 		Routes:    true,
 		APIConfig: config.APIConfig{BaseURL: "http://payments", Headers: map[string]string{"X-API-Key": "k"}},
-	})
-	router.AddResolvedOverride(config.ResolvedOverride{
+	}))
+	require.NoError(t, router.AddResolvedOverride(config.ResolvedOverride{
 		Pattern:       "paymentCharge",
 		APIConfig:     config.APIConfig{BaseURL: "http://shop"},
 		Values:        map[string]any{"cardNumber": "4000000000000002"},
 		ExpectFailure: &config.OverrideExpectFailure{Status: []int{402}},
-	})
+	}))
 
 	exec, cfg, _ := router.Resolve("paymentCharge")
 	assert.Equal(t, "http://payments", exec.Target(), "a value-only override must not replace the glob route")
@@ -38,7 +38,7 @@ func TestExecutorRouter_AddResolvedOverride_ValueOnlyKeepsRoute(t *testing.T) {
 	values, ef := router.ResolveValueOverride("paymentCharge")
 	assert.Equal(t, "4000000000000002", values["cardNumber"])
 	require.NotNil(t, ef)
-	assert.Equal(t, []int{402}, ef.Status)
+	assert.Equal(t, []int{402}, ef.Status.Codes())
 }
 
 func TestExecutorRouter_InheritedEnvOverride_ChildWins(t *testing.T) {
@@ -66,7 +66,7 @@ environments:
 
 	router := NewExecutorRouter(adapter.NewHTTPExecutor(env.APIBaseURL), &adapter.EnvironmentConfig{BaseURL: env.APIBaseURL})
 	for _, ov := range resolved {
-		router.AddResolvedOverride(ov)
+		require.NoError(t, router.AddResolvedOverride(ov))
 	}
 
 	exec, _, _ := router.Resolve("paymentCharge")
@@ -385,17 +385,17 @@ func TestExecutorRouter_LastRegisteredOverrideWins(t *testing.T) {
 
 func TestExecutorRouter_ValueOverrideLastExpectFailureWins(t *testing.T) {
 	router := NewExecutorRouter(adapter.NewHTTPExecutor("https://default.example.com"), &adapter.EnvironmentConfig{})
-	router.AddValueOverride("payment*", map[string]any{"cardNumber": "1"}, &plan.ExpectFailure{Status: []int{402}})
-	router.AddValueOverride("payment*", map[string]any{"cardNumber": "2"}, &plan.ExpectFailure{Status: []int{409}})
+	router.AddValueOverride("payment*", map[string]any{"cardNumber": "1"}, &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{402})})
+	router.AddValueOverride("payment*", map[string]any{"cardNumber": "2"}, &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{409})})
 
 	values, ef := router.ResolveValueOverride("paymentCharge")
 	assert.Equal(t, "2", values["cardNumber"])
 	require.NotNil(t, ef)
-	assert.Equal(t, []int{409}, ef.Status, "later glob wins")
+	assert.Equal(t, []int{409}, ef.Status.Codes(), "later glob wins")
 
-	router.AddValueOverride("paymentCharge", nil, &plan.ExpectFailure{Status: []int{422}})
+	router.AddValueOverride("paymentCharge", nil, &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{422})})
 	_, ef = router.ResolveValueOverride("paymentCharge")
-	assert.Equal(t, []int{422}, ef.Status, "exact beats glob")
+	assert.Equal(t, []int{422}, ef.Status.Codes(), "exact beats glob")
 }
 
 // countingExecutor records how often Close was called, so the router's

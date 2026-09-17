@@ -1971,7 +1971,7 @@ func TestValidate_ExpectFailure(t *testing.T) {
 							"departureDate": {Default: "2026-03-15"},
 						},
 						ExpectFailure: &ExpectFailure{
-							Status:      []int{400, 422},
+							Status:      HTTPStatuses([]int{400, 422}),
 							Description: "Invalid request expected",
 						},
 					},
@@ -1994,7 +1994,7 @@ func TestValidate_ExpectFailure(t *testing.T) {
 							"departureDate": {Default: "2026-03-15"},
 						},
 						ExpectFailure: &ExpectFailure{
-							Status: []int{},
+							Status: HTTPStatuses([]int{}),
 						},
 					},
 				},
@@ -2017,7 +2017,7 @@ func TestValidate_ExpectFailure(t *testing.T) {
 							"departureDate": {Default: "2026-03-15"},
 						},
 						ExpectFailure: &ExpectFailure{
-							Status: []int{200},
+							Status: HTTPStatuses([]int{200}),
 						},
 					},
 				},
@@ -2025,7 +2025,7 @@ func TestValidate_ExpectFailure(t *testing.T) {
 		}
 		err := Validate(p, g)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "status 200 must be >= 400")
+		assert.Contains(t, err.Error(), "status 200 must be a failure status")
 	})
 
 	t.Run("contradicting status class assertion", func(t *testing.T) {
@@ -2040,7 +2040,7 @@ func TestValidate_ExpectFailure(t *testing.T) {
 							"departureDate": {Default: "2026-03-15"},
 						},
 						ExpectFailure: &ExpectFailure{
-							Status: []int{402},
+							Status: HTTPStatuses([]int{402}),
 						},
 						Assertions: &Assertions{
 							Mechanical: []MechanicalAssertion{
@@ -2068,7 +2068,7 @@ func TestValidate_ExpectFailure(t *testing.T) {
 							"departureDate": {Default: "2026-03-15"},
 						},
 						ExpectFailure: &ExpectFailure{
-							Status: []int{401},
+							Status: HTTPStatuses([]int{401}),
 						},
 						Assertions: &Assertions{
 							Mechanical: []MechanicalAssertion{
@@ -2096,7 +2096,7 @@ func TestValidate_ExpectFailure(t *testing.T) {
 							"departureDate": {Default: "2026-03-15"},
 						},
 						ExpectFailure: &ExpectFailure{
-							Status: []int{401},
+							Status: HTTPStatuses([]int{401}),
 						},
 						Assertions: &Assertions{
 							Mechanical: []MechanicalAssertion{

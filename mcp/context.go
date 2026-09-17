@@ -11,7 +11,9 @@ import (
 	"github.com/gburgyan/aat/engine"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/graph/oas"
+	"github.com/gburgyan/aat/graph/proto"
 	"github.com/gburgyan/aat/intent"
+	"github.com/gburgyan/aat/internal/protoreg"
 	"github.com/gburgyan/aat/plan"
 	v3high "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
@@ -23,6 +25,9 @@ type ServerContext struct {
 	Registry *adapter.Registry
 	KB       *domain.KnowledgeBase       // may be nil
 	OASSpecs map[string]*v3high.Document // spec path -> loaded doc; may be empty
+	// ProtoRegistry holds the descriptors the graph's gRPC nodes are built
+	// and read with; nil when the graph has none.
+	ProtoRegistry *protoreg.Registry
 
 	// Docs (60b, may be nil)
 	DocsDir  string
@@ -77,6 +82,23 @@ func BuildServerContextWithVars(manifest *ProjectManifest, vars map[string]strin
 		return nil, fmt.Errorf("loading templates: %w", err)
 	}
 	ctx.Registry = registry
+
+	// Load protobuf descriptors when the graph names any (gRPC nodes only).
+	protoPaths := proto.NewValidator().CollectSpecPaths(g)
+	if len(protoPaths) > 0 {
+		resolved := make([]string, len(protoPaths))
+		for i, p := range protoPaths {
+			resolved[i] = p
+			if !filepath.IsAbs(p) {
+				resolved[i] = filepath.Join(ctx.GraphDir, p)
+			}
+		}
+		reg, err := protoreg.LoadDescriptorSets(resolved...)
+		if err != nil {
+			return nil, fmt.Errorf("loading descriptors: %w", err)
+		}
+		ctx.ProtoRegistry = reg
+	}
 
 	// Load domain knowledge (optional)
 	if manifest.DomainPath != "" {
