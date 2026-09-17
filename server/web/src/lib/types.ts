@@ -290,8 +290,8 @@ export interface ErrorClassDetail {
 }
 
 export interface ExpectFailureDetail {
-  expected: number[];
-  actual: number;
+  expected: string[];
+  actual: string;
   passed: boolean;
 }
 

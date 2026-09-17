@@ -49,8 +49,9 @@ type GRPCStatus struct {
 func (r *Response) IsGRPC() bool { return r.GRPC != nil }
 
 // mergedHeaders returns the response's headers and trailers as one set, for
-// the places that read a name without caring which half carried it. Trailers
-// are added last, so a key sent in both reads as the trailing value.
+// the places that read a name without caring which half carried it. A key sent
+// in both keeps both values, headers first, so a reader taking the first gets
+// the header — the same precedence HeaderValues gives.
 func (r *Response) mergedHeaders() http.Header {
 	if len(r.Trailers) == 0 {
 		return r.Headers

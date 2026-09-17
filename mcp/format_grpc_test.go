@@ -6,6 +6,7 @@ import (
 
 	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/archive"
+	"github.com/gburgyan/aat/plan"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,4 +77,35 @@ func TestFormatStep_GRPCNamesTheCode(t *testing.T) {
 	assert.Contains(t, out, "gRPC grpc://host:9090/shop.v1.Carts/CreateCart")
 	assert.Contains(t, out, "NOT_FOUND (no such cart)")
 	assert.NotContains(t, out, "→ 404", "the HTTP status it maps to is AAT's business, not the reader's")
+}
+
+func TestFormatStep_ExpectFailureNamesTheGRPCCode(t *testing.T) {
+	step := &archive.StepRecord{
+		StepID: "charge", Node: "paymentCharge",
+		Request:  &archive.RequestRecord{Protocol: "grpc", URL: "grpc://localhost:8767/shop.v1.Payments/Charge"},
+		Response: &archive.ResponseRecord{Status: 400, GRPCCode: "INVALID_ARGUMENT"},
+		ExpectFailure: &archive.ExpectFailureRecord{
+			Expected:   plan.ExpectedStatuses{{Code: 400, Name: "INVALID_ARGUMENT"}},
+			Actual:     400,
+			ActualName: "INVALID_ARGUMENT",
+			Passed:     true,
+		},
+	}
+	out := formatStepRecord(step, 1, 1)
+	assert.Contains(t, out, "got INVALID_ARGUMENT")
+	assert.NotContains(t, out, "got 400", "the HTTP status it maps to is not what the plan wrote")
+}
+
+func TestFormatStep_ExpectFailureHTTPIsUnchanged(t *testing.T) {
+	step := &archive.StepRecord{
+		StepID: "get", Node: "getCart",
+		Request:  &archive.RequestRecord{Method: "GET", URL: "http://x/carts/1"},
+		Response: &archive.ResponseRecord{Status: 404},
+		ExpectFailure: &archive.ExpectFailureRecord{
+			Expected: plan.HTTPStatuses([]int{404}),
+			Actual:   404,
+			Passed:   true,
+		},
+	}
+	assert.Contains(t, formatStepRecord(step, 1, 1), "got 404")
 }

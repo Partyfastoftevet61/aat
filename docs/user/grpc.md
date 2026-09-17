@@ -25,8 +25,8 @@ cd examples/grpc-payments
   [1/5] cart (createCart)    201  0ms
   [2/5] item (addItem)       201  0ms
   [3/5] order (checkoutCart) 201  0ms
-  [4/5] charge               OK  162ms
-  [5/5] refund               OK  0ms
+  [4/5] charge                OK  162ms
+  [5/5] refund                OK  0ms
 
 PASSED (5/5 steps, 164ms)
 ```
@@ -255,9 +255,12 @@ A gRPC status is named, not numbered, and AAT uses the name everywhere you
 would see an HTTP status code:
 
 ```
-  [4/5] charge               OK  162ms
-  [1/1] missing              NOT_FOUND  0ms
+  [4/5] charge                     OK  162ms
+  [1/1] missing             NOT_FOUND  0ms
 ```
+
+The status column is sized for the names a plan writes, so the columns after
+it stay put whichever protocol a step used.
 
 Assertions and expectations take the name:
 

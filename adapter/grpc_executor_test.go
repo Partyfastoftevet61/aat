@@ -182,11 +182,15 @@ func TestGRPCExecutor_MetadataAndTrailers(t *testing.T) {
 
 	resp, err := exec.Execute(context.Background(), req)
 	require.NoError(t, err)
-	assert.Equal(t, "req-1", resp.Headers.Get("x-request-id"), "header metadata is kept apart")
-	assert.Empty(t, resp.Headers.Get("x-cost"), "a trailer is not a header")
-	assert.Equal(t, "3", resp.Trailers.Get("x-cost"), "trailing metadata is kept apart")
+	// Keys are stored as the wire sent them: lowercase, not canonicalized to
+	// X-Request-Id, which is the spelling an archive and a copied grpcurl
+	// command show.
+	assert.Equal(t, []string{"req-1"}, resp.Headers["x-request-id"], "header metadata is kept apart, wire-spelled")
+	assert.NotContains(t, resp.Headers, "X-Request-Id", "no canonicalized spelling")
+	assert.Empty(t, resp.Headers["x-cost"], "a trailer is not a header")
+	assert.Equal(t, []string{"3"}, resp.Trailers["x-cost"], "trailing metadata is kept apart")
 
-	// A template reads a value wherever the server chose to put it.
+	// A template reads a value wherever the server chose to put it, in any case.
 	assert.Equal(t, []string{"req-1"}, resp.HeaderValues("X-Request-Id"))
 	assert.Equal(t, []string{"3"}, resp.HeaderValues("X-Cost"))
 	assert.Nil(t, resp.HeaderValues("x-absent"))

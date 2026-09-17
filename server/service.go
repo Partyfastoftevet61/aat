@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1287,11 +1288,13 @@ func toExpectFailureDetail(r *archive.ExpectFailureRecord) *ExpectFailureDetail 
 	if r == nil {
 		return nil
 	}
+	actual := strconv.Itoa(r.Actual)
+	if r.ActualName != "" {
+		actual = r.ActualName
+	}
 	return &ExpectFailureDetail{
-		// The UI reads statuses as numbers; a gRPC run's names reach it when
-		// the step detail learns to render the protocol.
-		Expected: plan.ExpectedStatuses(r.Expected).Codes(),
-		Actual:   r.Actual,
+		Expected: plan.ExpectedStatuses(r.Expected).Strings(),
+		Actual:   actual,
 		Passed:   r.Passed,
 	}
 }

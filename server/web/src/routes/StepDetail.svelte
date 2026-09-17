@@ -150,7 +150,10 @@
    *
    * The target loses its scheme, which grpcurl does not take, and a plaintext
    * one gains -plaintext; grpc:// means no TLS, so the flag is not guesswork.
-   * Metadata goes in -H, as headers do for curl.
+   * Metadata goes in -H, as headers do for curl. -d is always present: with
+   * no -d, grpcurl reads the request message from stdin and the pasted
+   * command appears to hang, and an empty body is what the executor sends as
+   * {} anyway.
    */
   function buildGrpcurl(req: RequestDetail): string {
     const target = req.target ?? '';
@@ -162,10 +165,9 @@
     for (const h of req.headers ?? []) {
       lines.push(`  -H ${shellQuote(`${h.name}: ${h.value}`)}`);
     }
-    if (req.body !== undefined && req.body !== null) {
-      const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-      lines.push(`  -d ${shellQuote(body)}`);
-    }
+    const hasBody = req.body !== undefined && req.body !== null;
+    const body = hasBody ? (typeof req.body === 'string' ? req.body : JSON.stringify(req.body)) : '{}';
+    lines.push(`  -d ${shellQuote(body)}`);
     lines.push(`  ${shellQuote(host)}`);
     lines.push(`  ${shellQuote(req.rpc ?? '')}`);
     return lines.join(' \\\n');

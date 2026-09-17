@@ -275,9 +275,10 @@ func grpcStatusName(resp *adapter.Response) string {
 	return resp.GRPC.Name
 }
 
-// actualStatusText renders the status a step came back with, naming a gRPC
-// code rather than the HTTP status it maps to.
-func actualStatusText(resp *adapter.Response, code int) string {
+// ActualStatusText renders the status a step came back with, naming a gRPC
+// code rather than the HTTP status it maps to. Several gRPC statuses share
+// one HTTP status, so the name says what the number cannot.
+func ActualStatusText(resp *adapter.Response, code int) string {
 	if name := grpcStatusName(resp); name != "" {
 		return name
 	}

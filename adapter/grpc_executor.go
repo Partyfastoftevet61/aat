@@ -222,15 +222,19 @@ func fullMethod(service, method string) string { return "/" + service + "/" + me
 // metadataHeader renders gRPC metadata as a header set, keeping every value of
 // a repeated key. It returns nil for empty metadata, so a response that carries
 // no trailers records none.
+//
+// Keys are stored as the wire sends them, which for gRPC metadata is
+// lowercase. http.Header.Add would canonicalize them to Content-Type, a
+// spelling no gRPC server ever sent and a grpcurl command copied from the UI
+// would not reproduce, so the map is built directly. Every reader of these
+// maps matches names case-insensitively.
 func metadataHeader(md metadata.MD) http.Header {
 	if len(md) == 0 {
 		return nil
 	}
 	out := make(http.Header, len(md))
 	for k, values := range md {
-		for _, v := range values {
-			out.Add(k, v)
-		}
+		out[k] = append(out[k], values...)
 	}
 	return out
 }

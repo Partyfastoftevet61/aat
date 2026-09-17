@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gburgyan/aat/adapter"
@@ -122,8 +123,8 @@ func formatStepRecord(s *archive.StepRecord, idx, total int) string {
 		if !s.ExpectFailure.Passed {
 			result = "FAILED"
 		}
-		fmt.Fprintf(&b, "**Expect Failure:** %s (expected %v, got %d)\n\n",
-			result, s.ExpectFailure.Expected, s.ExpectFailure.Actual)
+		fmt.Fprintf(&b, "**Expect Failure:** %s (expected %v, got %s)\n\n",
+			result, s.ExpectFailure.Expected, expectFailureActual(s.ExpectFailure))
 	}
 
 	// Request body (truncated), as fields when it is form-encoded
@@ -773,4 +774,14 @@ func statusText(r *archive.ResponseRecord) string {
 		return fmt.Sprintf("%s (%s)", r.GRPCCode, r.GRPCMessage)
 	}
 	return r.GRPCCode
+}
+
+// expectFailureActual names the status a negative step came back with: a gRPC
+// step's code name, an HTTP step's number. It matches statusText, which does
+// the same for the status line.
+func expectFailureActual(r *archive.ExpectFailureRecord) string {
+	if r.ActualName != "" {
+		return r.ActualName
+	}
+	return strconv.Itoa(r.Actual)
 }

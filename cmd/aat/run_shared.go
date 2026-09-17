@@ -273,7 +273,8 @@ func toStepSummary(step engine.StepResult) StepSummary {
 	} else if step.ExpectFailure != nil {
 		ss.Passed = step.ExpectFailure.Passed
 		if !ss.Passed {
-			ss.Error = fmt.Sprintf("expected status %v, got %d", step.ExpectFailure.ExpectedStatuses, step.ExpectFailure.ActualStatus)
+			ss.Error = fmt.Sprintf("expected status %v, got %s", step.ExpectFailure.ExpectedStatuses,
+				engine.ActualStatusText(step.Response, step.ExpectFailure.ActualStatus))
 		}
 	} else if step.StatusCode >= 400 {
 		ss.Passed = false
@@ -895,6 +896,12 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 	// 2. Validate plan against graph (with layers)
 	if _, err := plan.InstantiateAndValidateWithLayers(p, rctx.Graph, layeredDefaults); err != nil {
 		return &runResult{setupErr: true, err: fmt.Errorf("plan validation: %w", err)}
+	}
+
+	// The progress observer is fed a step at a time and never sees the plan,
+	// so the status column is measured here, where the plan is in hand.
+	if sizer, ok := observer.(statusSizer); ok {
+		sizer.setStatusWidth(planStatusWidth(p, rctx.Graph, rctx.Registry))
 	}
 
 	// 3. Pre-load overlay files to discover transaction-level auth before authenticating.

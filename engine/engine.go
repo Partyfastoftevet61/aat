@@ -265,7 +265,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 			// Unexpected success or wrong error code — FAIL.
 			outcome = OutcomeFailed
 			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s: expected failure status %s but got %s", stepRef(step),
-				strings.Join(step.ExpectFailure.Status.Strings(), ", "), actualStatusText(stepResult.Response, stepResult.StatusCode)))
+				strings.Join(step.ExpectFailure.Status.Strings(), ", "), ActualStatusText(stepResult.Response, stepResult.StatusCode)))
 		}
 
 		if stepResult.StatusCode >= 400 {

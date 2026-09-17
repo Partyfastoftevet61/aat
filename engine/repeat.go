@@ -138,7 +138,7 @@ func (e *Engine) executeStepRepeated(ctx context.Context, step plan.Step, node *
 		}
 
 		wait := interval
-		if after, ok := retryAfter(result.Response.Headers, result.StatusCode, time.Now()); ok {
+		if after, ok := retryAfter(result.Response, result.StatusCode, time.Now()); ok {
 			wait = max(wait, min(after, maxRetryAfter))
 		}
 		if elapsed := time.Since(start); timeout > 0 && elapsed+wait > timeout {

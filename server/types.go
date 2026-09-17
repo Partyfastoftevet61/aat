@@ -334,11 +334,14 @@ type ErrorClassDetail struct {
 	RetryAttempt int    `json:"retryAttempt"`
 }
 
-// ExpectFailureDetail captures the outcome of a negative assertion.
+// ExpectFailureDetail captures the outcome of a negative assertion. The
+// statuses read as the plan wrote them, so a gRPC step shows the names it
+// names — several gRPC statuses share one HTTP status, which is the whole
+// reason a plan may write a name.
 type ExpectFailureDetail struct {
-	Expected []int `json:"expected"`
-	Actual   int   `json:"actual"`
-	Passed   bool  `json:"passed"`
+	Expected []string `json:"expected"`
+	Actual   string   `json:"actual"`
+	Passed   bool     `json:"passed"`
 }
 
 // ResponseBodyErrorDetail captures an error detected in a 2xx response body.
