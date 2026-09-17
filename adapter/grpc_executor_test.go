@@ -3,6 +3,7 @@ package adapter
 import (
 	"context"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -180,8 +181,14 @@ func TestGRPCExecutor_MetadataAndTrailers(t *testing.T) {
 
 	resp, err := exec.Execute(context.Background(), req)
 	require.NoError(t, err)
-	assert.Equal(t, "req-1", resp.Headers.Get("x-request-id"), "header metadata is readable")
-	assert.Equal(t, "3", resp.Headers.Get("x-cost"), "trailers are readable too")
+	assert.Equal(t, "req-1", resp.Headers.Get("x-request-id"), "header metadata is kept apart")
+	assert.Empty(t, resp.Headers.Get("x-cost"), "a trailer is not a header")
+	assert.Equal(t, "3", resp.Trailers.Get("x-cost"), "trailing metadata is kept apart")
+
+	// A template reads a value wherever the server chose to put it.
+	assert.Equal(t, []string{"req-1"}, resp.HeaderValues("X-Request-Id"))
+	assert.Equal(t, []string{"3"}, resp.HeaderValues("X-Cost"))
+	assert.Nil(t, resp.HeaderValues("x-absent"))
 }
 
 func TestGRPCExecutor_UnknownRequestFieldFailsBeforeTheWire(t *testing.T) {
@@ -377,4 +384,23 @@ func TestTLSConfig_Build(t *testing.T) {
 		assert.NotEqual(t, TLSConfig{CAFile: "a"}.key(), TLSConfig{CAFile: "b"}.key())
 		assert.Equal(t, TLSConfig{CAFile: "a"}.key(), TLSConfig{CAFile: "a"}.key())
 	})
+}
+
+func TestResponse_HeaderValuesSpansTrailers(t *testing.T) {
+	resp := &Response{
+		Headers:  http.Header{"X-One": []string{"a"}, "Shared": []string{"from-header"}},
+		Trailers: http.Header{"X-Two": []string{"b"}, "Shared": []string{"from-trailer"}},
+	}
+	assert.Equal(t, []string{"a"}, resp.HeaderValues("x-one"))
+	assert.Equal(t, []string{"b"}, resp.HeaderValues("X-TWO"))
+	assert.Equal(t, []string{"from-header"}, resp.HeaderValues("shared"), "a header wins over a trailer of the same name")
+
+	merged := resp.mergedHeaders()
+	assert.Equal(t, []string{"from-header", "from-trailer"}, merged.Values("Shared"), "the merged view keeps both")
+}
+
+func TestResponse_HeaderValuesWithoutTrailers(t *testing.T) {
+	resp := &Response{Headers: http.Header{"Content-Type": []string{"application/json"}}}
+	assert.Equal(t, []string{"application/json"}, resp.HeaderValues("content-type"))
+	assert.Nil(t, resp.Trailers, "an HTTP response carries no trailers")
 }

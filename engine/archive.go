@@ -212,6 +212,9 @@ func convertResponse(resp *adapter.Response) *archive.ResponseRecord {
 		Headers: archive.RedactHeaders(flattenHeaders(resp.Headers)),
 		Body:    toRawMessage(resp.Body),
 	}
+	if len(resp.Trailers) > 0 {
+		rec.Trailers = archive.RedactHeaders(flattenHeaders(resp.Trailers))
+	}
 	if resp.GRPC != nil {
 		rec.GRPCCode = resp.GRPC.Name
 		rec.GRPCMessage = resp.GRPC.Message

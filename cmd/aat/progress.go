@@ -90,7 +90,7 @@ func writeStepResult(w io.Writer, lead string, index, total int, result engine.S
 		_, _ = fmt.Fprintf(w, "%s %s: %s%s\n", prefix, colorize("ERROR", colorRed, color), result.Error, stepMarks(result, color))
 	case result.Response != nil:
 		duration := colorize(formatDuration(result.Duration), colorDim, color)
-		_, _ = fmt.Fprintf(w, "%s %s  %s%s\n", prefix, colorStatus(result.StatusCode, color), duration, stepMarks(result, color))
+		_, _ = fmt.Fprintf(w, "%s %s  %s%s\n", prefix, colorStatusNamed(result.StatusCode, grpcCodeName(result.Response), color), duration, stepMarks(result, color))
 		for _, do := range result.DisplayOutputs {
 			_, _ = fmt.Fprintf(w, "%s%s: %v\n", indent, do.Label, do.Value)
 		}
@@ -120,7 +120,7 @@ func writeCleanupResult(w io.Writer, lead string, result engine.StepResult, term
 		_, _ = fmt.Fprintf(w, "%s %s: %s\n", prefix, colorize("ERROR", colorRed, color), result.Error)
 	case result.Response != nil:
 		duration := colorize(formatDuration(result.Duration), colorDim, color)
-		_, _ = fmt.Fprintf(w, "%s %s  %s\n", prefix, colorStatus(result.StatusCode, color), duration)
+		_, _ = fmt.Fprintf(w, "%s %s  %s\n", prefix, colorStatusNamed(result.StatusCode, grpcCodeName(result.Response), color), duration)
 	default:
 		_, _ = fmt.Fprintf(w, "%s (no response)\n", prefix)
 	}

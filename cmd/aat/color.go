@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+
+	"github.com/gburgyan/aat/adapter"
 	"strings"
 )
 
@@ -27,7 +29,17 @@ func colorize(text, code string, enabled bool) string {
 // colorStatus returns a status code string colored by HTTP range.
 // 2xx → green, 4xx → yellow, 5xx → red.
 func colorStatus(statusCode int, enabled bool) string {
+	return colorStatusNamed(statusCode, "", enabled)
+}
+
+// colorStatusNamed is colorStatus for a status that may have a name of its own.
+// A gRPC step shows its code — NOT_FOUND rather than the 404 it maps to — and
+// is colored by that mapping, which is what the range checks below read.
+func colorStatusNamed(statusCode int, name string, enabled bool) string {
 	text := fmt.Sprintf("%d", statusCode)
+	if name != "" {
+		text = name
+	}
 	if !enabled {
 		return text
 	}
@@ -103,4 +115,12 @@ func formatNodeCol(name string, width int, color bool) string {
 		pad = 0
 	}
 	return colorCyan + truncated + colorReset + strings.Repeat(" ", pad)
+}
+
+// grpcCodeName returns a response's gRPC status name, and "" for an HTTP one.
+func grpcCodeName(resp *adapter.Response) string {
+	if resp == nil || resp.GRPC == nil {
+		return ""
+	}
+	return resp.GRPC.Name
 }

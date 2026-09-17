@@ -70,6 +70,7 @@ type shownCleanupFailure struct {
 	Node       string `json:"node"`
 	CleanupFor string `json:"cleanup_for,omitempty"`
 	Status     int    `json:"status,omitempty"`
+	GRPCCode   string `json:"grpc_code,omitempty"` // the gRPC status name, reported in place of the status
 	Error      string `json:"error,omitempty"`
 }
 
@@ -157,6 +158,8 @@ func showBatch(out io.Writer, dir string, format showFormat) error {
 			switch {
 			case f.Error != "":
 				fmt.Fprintf(&b, ": %s", f.Error)
+			case f.GRPCCode != "":
+				fmt.Fprintf(&b, ": status %s", f.GRPCCode)
 			case f.Status != 0:
 				fmt.Fprintf(&b, ": status %d", f.Status)
 			}
@@ -240,6 +243,7 @@ func buildShownBatch(dir string) (shownBatch, error) {
 			failure := shownCleanupFailure{Run: entry.RunID, Step: id, Node: step.Node, CleanupFor: step.CleanupFor, Error: step.Error}
 			if step.Response != nil {
 				failure.Status = step.Response.Status
+				failure.GRPCCode = step.Response.GRPCCode
 			}
 			view.CleanupFailures = append(view.CleanupFailures, failure)
 		}

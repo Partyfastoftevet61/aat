@@ -500,7 +500,7 @@ func (a *TemplateAdapter) ExtractOutputs(resp *Response) (map[string]any, error)
 
 	for name, rule := range a.tmpl.Response.Extract {
 		if rule.Header != "" {
-			if values := headerValues(resp.Headers, rule.Header); len(values) > 0 {
+			if values := resp.HeaderValues(rule.Header); len(values) > 0 {
 				outputs[name] = strings.Join(values, ", ")
 				continue
 			}
@@ -541,7 +541,7 @@ func (a *TemplateAdapter) ExtractOutputs(resp *Response) (map[string]any, error)
 	}
 
 	if a.tmpl.Response.Transform != "" {
-		transformed, err := runTransformWithLog(a.tmpl.Response.Transform, outputs, bodyStr, resp.Headers, os.Stderr)
+		transformed, err := runTransformWithLog(a.tmpl.Response.Transform, outputs, bodyStr, resp.mergedHeaders(), os.Stderr)
 		if err != nil {
 			return nil, fmt.Errorf("transform: %w", err)
 		}

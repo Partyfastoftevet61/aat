@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
+	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/archive"
 )
 
@@ -83,8 +83,8 @@ func formatStepRecord(s *archive.StepRecord, idx, total int) string {
 	// Status line
 	dur := formatDurationMs(s.DurationMs)
 	if s.Request != nil && s.Response != nil {
-		fmt.Fprintf(&b, "**%s %s** → %d (%s)\n\n",
-			s.Request.Method, s.Request.URL, s.Response.Status, dur)
+		fmt.Fprintf(&b, "**%s** → %s (%s)\n\n",
+			requestLine(s.Request), statusText(s.Response), dur)
 		if s.Request.OriginalURL != "" {
 			fmt.Fprintf(&b, "*Override active — original: %s*\n\n", s.Request.OriginalURL)
 		}
@@ -249,7 +249,7 @@ func formatIterations(its []archive.IterationRecord) string {
 	row := func(it archive.IterationRecord) {
 		status := "-"
 		if it.Response != nil {
-			status = strconv.Itoa(it.Response.Status)
+			status = statusText(it.Response)
 		}
 		until := ""
 		if it.UntilMet {
@@ -332,7 +332,7 @@ func formatFailureAnalysis(a *archive.Archive) string {
 		}
 
 		if fs.Response != nil {
-			fmt.Fprintf(&b, "**HTTP Status:** %d\n", fs.Response.Status)
+			fmt.Fprintf(&b, "**Status:** %s\n", statusText(fs.Response))
 			if len(fs.Response.Body) > 0 {
 				b.WriteString("**Response Excerpt:**\n```json\n")
 				b.WriteString(truncateBody(fs.Response.Body, 500))
@@ -418,7 +418,7 @@ func formatArchiveDiff(a1, a2 *archive.Archive) string {
 
 			if p.s1 != nil {
 				if p.s1.Response != nil {
-					s1Status = fmt.Sprintf("%d", p.s1.Response.Status)
+					s1Status = statusText(p.s1.Response)
 				} else if p.s1.Error != "" {
 					s1Status = "ERROR"
 				}
@@ -426,7 +426,7 @@ func formatArchiveDiff(a1, a2 *archive.Archive) string {
 			}
 			if p.s2 != nil {
 				if p.s2.Response != nil {
-					s2Status = fmt.Sprintf("%d", p.s2.Response.Status)
+					s2Status = statusText(p.s2.Response)
 				} else if p.s2.Error != "" {
 					s2Status = "ERROR"
 				}
@@ -751,4 +751,26 @@ func diffStringSets(a, b []string) (added, removed []string) {
 		}
 	}
 	return
+}
+
+// requestLine renders what a step sent: a verb and a URL for HTTP, and the
+// method and service for gRPC, which has neither.
+func requestLine(r *archive.RequestRecord) string {
+	if r.Protocol == adapter.ProtocolGRPC {
+		return fmt.Sprintf("gRPC %s", r.URL)
+	}
+	return fmt.Sprintf("%s %s", r.Method, r.URL)
+}
+
+// statusText renders what came back. A gRPC response names the code the server
+// sent rather than the HTTP status AAT maps it to, because the code is what
+// the API documents and what a plan writes in expectFailure.
+func statusText(r *archive.ResponseRecord) string {
+	if r.GRPCCode == "" {
+		return fmt.Sprintf("%d", r.Status)
+	}
+	if r.GRPCMessage != "" {
+		return fmt.Sprintf("%s (%s)", r.GRPCCode, r.GRPCMessage)
+	}
+	return r.GRPCCode
 }

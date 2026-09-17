@@ -196,6 +196,11 @@ type ResponseRecord struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    json.RawMessage   `json:"body,omitempty"`
 
+	// Trailers are a gRPC call's trailing metadata, kept apart from its header
+	// metadata because a server chooses which to send a value in. It is empty
+	// for an HTTP response.
+	Trailers map[string]string `json:"trailers,omitempty"`
+
 	// GRPCCode is the gRPC status name, such as "NOT_FOUND". It is empty for
 	// an HTTP response, and is what a reader should show when it is not.
 	GRPCCode string `json:"grpcCode,omitempty" redact:"-"`

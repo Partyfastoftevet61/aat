@@ -71,9 +71,13 @@ type AttemptSummary struct {
 
 // StepSummary is a compact view of a step for timeline display.
 type StepSummary struct {
-	StepID               string          `json:"stepId"`
-	Node                 string          `json:"node"`
-	Status               int             `json:"status,omitempty"`
+	StepID string `json:"stepId"`
+	Node   string `json:"node"`
+	Status int    `json:"status,omitempty"`
+	// GRPCCode is the gRPC status name a step came back with, such as
+	// "NOT_FOUND". It is empty for an HTTP step, and where it is set a reader
+	// should show it in place of Status.
+	GRPCCode             string          `json:"grpcCode,omitempty"`
 	DurationMs           int64           `json:"durationMs"`
 	DurationDisplay      string          `json:"durationDisplay"`
 	Passed               bool            `json:"passed"`
@@ -162,7 +166,7 @@ type DisplayOutput struct {
 	Value any    `json:"value,omitempty"`
 }
 
-// RequestDetail captures the outbound HTTP request.
+// RequestDetail captures the outbound request.
 type RequestDetail struct {
 	Method      string          `json:"method"`
 	URL         string          `json:"url"`
@@ -172,14 +176,35 @@ type RequestDetail struct {
 	// FormFields, on a form-encoded body, are its fields decoded, in the order
 	// they were sent.
 	FormFields []FormField `json:"formFields,omitempty"`
+
+	// Protocol names how the request was sent: empty or "http" for HTTP,
+	// "grpc" for a gRPC call.
+	Protocol string `json:"protocol,omitempty"`
+	// RPC is a gRPC call's method as the wire names it,
+	// "shop.v1.Carts/CreateCart", which is what a reader should show in place
+	// of a verb and a path.
+	RPC string `json:"rpc,omitempty"`
+	// Target is the gRPC service the call went to, "grpc://host:port".
+	Target string `json:"target,omitempty"`
 }
 
-// ResponseDetail captures the HTTP response.
+// ResponseDetail captures the response.
 type ResponseDetail struct {
 	Status     int             `json:"status"`
 	Headers    []HeaderEntry   `json:"headers,omitempty"`
 	Body       json.RawMessage `json:"body,omitempty"`
 	FormFields []FormField     `json:"formFields,omitempty"`
+
+	// Trailers are a gRPC call's trailing metadata, kept apart from its header
+	// metadata.
+	Trailers []HeaderEntry `json:"trailers,omitempty"`
+	// GRPCCode is the gRPC status name, such as "NOT_FOUND", which a reader
+	// should show in place of the HTTP status it maps to.
+	GRPCCode string `json:"grpcCode,omitempty"`
+	// GRPCMessage is the message the server sent with that status.
+	GRPCMessage string `json:"grpcMessage,omitempty"`
+	// GRPCDetails are the status details, each already encoded as JSON.
+	GRPCDetails []json.RawMessage `json:"grpcDetails,omitempty"`
 }
 
 // FormField is one field of a form-encoded body, decoded.
@@ -191,8 +216,11 @@ type FormField struct {
 // IterationSummary is one request of a repeated step, as its step detail lists
 // it.
 type IterationSummary struct {
-	Index           int    `json:"index"`
-	Status          int    `json:"status,omitempty"`
+	Index  int `json:"index"`
+	Status int `json:"status,omitempty"`
+	// GRPCCode is the gRPC status name this request came back with; empty for
+	// an HTTP one.
+	GRPCCode        string `json:"grpcCode,omitempty"`
 	DurationMs      int64  `json:"durationMs"`
 	DurationDisplay string `json:"durationDisplay"`
 	UntilMet        bool   `json:"untilMet,omitempty"`

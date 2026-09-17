@@ -68,7 +68,7 @@ Dependencies flow in one direction. No cycles. No lateral imports within a tier.
 **Leaf packages** (no aat imports other than foundation packages): `config`, `graph`, `domain`, `adapter`, `validate`, `internal/sandbox/shop`
 **Mid-tier**: `graph/oas` → graph; `graph/proto` → graph; `llm` → config; `plan` → graph, config; `archive` → plan
 **Orchestrators**: `engine` → graph, graph/oas, adapter, plan, domain, validate, archive, config
-**Entry points**: `intent` → graph, domain, plan, llm; `mcp` → all packages; `server` → intent, archive, plan, config
+**Entry points**: `intent` → graph, domain, plan, llm; `mcp` → all packages; `server` → intent, archive, plan, config, adapter (for the protocol a step used)
 **Binaries**: `cmd/aat` → every package outside `internal/` (its tests also import `internal/sandbox/shop` and the root embed for the shop end-to-end test); `cmd/aat-sandbox` → internal/sandbox/shop, root embed
 
 Data flows down, decisions flow up. No business logic in `cmd/`.

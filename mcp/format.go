@@ -53,6 +53,16 @@ func formatNodeDetail(node *graph.Node, g *graph.Graph) string {
 		}
 		b.WriteString("\n")
 	}
+	if node.Proto != nil {
+		// A gRPC node is described by its method, and everything it sends is
+		// one message; there is no path, query, or header to split inputs
+		// across.
+		fmt.Fprintf(&b, "**gRPC:** %s", node.Proto.String())
+		if node.Proto.Descriptor != "" {
+			fmt.Fprintf(&b, " (descriptors: %s)", node.Proto.Descriptor)
+		}
+		b.WriteString("\n")
+	}
 
 	// Inputs
 	if len(node.Inputs) > 0 {

@@ -23,9 +23,15 @@ the graph and plan formats may still change before 1.0.
   path written with a field's proto name when the response encodes it under its JSON name.
 
   Streaming methods are rejected: a step is one request and one response. Server-streaming may come
-  later; bidirectional will not. The web UI, MCP tools, and `aat generate` do not understand gRPC
-  yet, so a gRPC run is readable in the terminal and in its archive but renders plainly in the
-  browser.
+  later; bidirectional will not.
+
+  Every surface reads a gRPC run in its own terms. The web UI shows the method and the service it
+  went to in place of a verb and a URL, names the status code the server sent rather than the HTTP
+  status AAT maps it to, labels request and response metadata as metadata, gives trailers a pane of
+  their own, and offers **Copy as grpcurl** in place of Copy as cURL. `aat run show`, the run
+  progress lines, and the MCP archive tools do the same, and the MCP template and node tools describe
+  a gRPC operation by its service, method, metadata, and message. `aat generate` does not understand
+  gRPC yet.
 
   This adds `google.golang.org/grpc` and `google.golang.org/protobuf`, which take a `go install`
   build from about 28 MB to about 44 MB.

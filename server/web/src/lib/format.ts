@@ -56,10 +56,22 @@ export function issueTooltip(issues?: Record<string, number>): string {
     .join(', ');
 }
 
-/** Map an HTTP status code to a semantic category for CSS class selection. */
-export function httpStatusCategory(
-  status: number | undefined,
-): 'success' | 'client-error' | 'server-error' | 'redirect' | 'info' | 'unknown' {
+export type StatusCategory =
+  | 'success'
+  | 'client-error'
+  | 'server-error'
+  | 'redirect'
+  | 'info'
+  | 'unknown';
+
+/**
+ * Map an HTTP status code to a semantic category for CSS class selection.
+ *
+ * A gRPC step records the HTTP status its code maps to, so this reads it
+ * correctly without knowing which protocol produced it: OK is 200, and every
+ * other gRPC code is 400 or above.
+ */
+export function httpStatusCategory(status: number | undefined): StatusCategory {
   if (status === undefined) return 'unknown';
   if (status >= 200 && status < 300) return 'success';
   if (status >= 400 && status < 500) return 'client-error';
@@ -67,4 +79,14 @@ export function httpStatusCategory(
   if (status >= 300 && status < 400) return 'redirect';
   if (status >= 100 && status < 200) return 'info';
   return 'unknown';
+}
+
+/**
+ * The text a status pill shows: a gRPC status name where there is one, and the
+ * HTTP status code otherwise. A reader should see the code the server actually
+ * sent, not the one AAT maps it to for its own comparisons.
+ */
+export function statusLabel(status: number | undefined, grpcCode?: string): string {
+  if (grpcCode) return grpcCode;
+  return status === undefined ? '' : String(status);
 }

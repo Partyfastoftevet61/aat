@@ -15,9 +15,12 @@ import (
 // assertions and the archives that should name it.
 type Response struct {
 	StatusCode int
-	// Headers are the response headers, or a gRPC call's metadata and
-	// trailers merged, trailers last.
+	// Headers are the response headers, or a gRPC call's header metadata.
 	Headers http.Header
+	// Trailers are a gRPC call's trailing metadata, which is where a server
+	// puts what it only knows once the reply is written. It is nil for HTTP.
+	// Reads go through HeaderValues, which spans both.
+	Trailers http.Header
 	// Body is the response body, always JSON for gRPC: the reply message, or
 	// the status envelope when the call failed.
 	Body []byte
@@ -44,3 +47,31 @@ type GRPCStatus struct {
 
 // IsGRPC reports whether the response came from a gRPC call.
 func (r *Response) IsGRPC() bool { return r.GRPC != nil }
+
+// mergedHeaders returns the response's headers and trailers as one set, for
+// the places that read a name without caring which half carried it. Trailers
+// are added last, so a key sent in both reads as the trailing value.
+func (r *Response) mergedHeaders() http.Header {
+	if len(r.Trailers) == 0 {
+		return r.Headers
+	}
+	merged := make(http.Header, len(r.Headers)+len(r.Trailers))
+	for _, set := range []http.Header{r.Headers, r.Trailers} {
+		for k, values := range set {
+			for _, v := range values {
+				merged.Add(k, v)
+			}
+		}
+	}
+	return merged
+}
+
+// HeaderValues returns the values a response carries under a name, matched in
+// any case. A gRPC call's trailing metadata is searched after its header
+// metadata, so a template reads a value wherever the server chose to put it.
+func (r *Response) HeaderValues(name string) []string {
+	if values := headerValues(r.Headers, name); len(values) > 0 {
+		return values
+	}
+	return headerValues(r.Trailers, name)
+}

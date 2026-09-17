@@ -17,8 +17,10 @@ import (
 // shownIterationRow is one request of a repeated step in aat run show's step
 // view, and in the step's --json document.
 type shownIterationRow struct {
-	Index      int    `json:"index"`
-	Status     int    `json:"status,omitempty"`
+	Index    int    `json:"index"`
+	Status   int    `json:"status,omitempty"`
+	GRPCCode string `json:"grpc_code,omitempty"` // the gRPC status name, shown in place of the status
+
 	DurationMs int64  `json:"duration_ms"`
 	UntilMet   bool   `json:"until_met,omitempty"`
 	Retries    int    `json:"retries,omitempty"`
@@ -45,6 +47,7 @@ func newShownIterationRow(step *archive.StepRecord, it archive.IterationRecord) 
 	}
 	if it.Response != nil {
 		row.Status = it.Response.Status
+		row.GRPCCode = it.Response.GRPCCode
 	}
 	for name, v := range it.Outputs {
 		switch v.(type) {
@@ -131,7 +134,10 @@ func writeShownIterations(b *strings.Builder, rows []shownIterationRow) {
 	line("#", "STATUS", "TIME", "UNTIL", "SENT", "OUTPUTS")
 	for i, row := range rows {
 		status := "-"
-		if row.Status != 0 {
+		switch {
+		case row.GRPCCode != "":
+			status = row.GRPCCode
+		case row.Status != 0:
 			status = strconv.Itoa(row.Status)
 		}
 		until := ""
@@ -163,16 +169,18 @@ func findShownIteration(step *archive.StepRecord, id string, n int) (*archive.It
 // shownIteration is one request of a repeated step as aat run show --iteration
 // prints it, and its --json document.
 type shownIteration struct {
-	StepID     string `json:"step_id"`
-	Node       string `json:"node"`
-	Index      int    `json:"index"`
-	Requests   int    `json:"requests"` // the requests the step sent
-	Method     string `json:"method,omitempty"`
-	URL        string `json:"url,omitempty"`
-	Status     int    `json:"status,omitempty"`
-	DurationMs int64  `json:"duration_ms"`
-	Retries    int    `json:"retries,omitempty"`
-	UntilMet   bool   `json:"until_met,omitempty"`
+	StepID      string `json:"step_id"`
+	Node        string `json:"node"`
+	Index       int    `json:"index"`
+	Requests    int    `json:"requests"` // the requests the step sent
+	Method      string `json:"method,omitempty"`
+	URL         string `json:"url,omitempty"`
+	Status      int    `json:"status,omitempty"`
+	GRPCCode    string `json:"grpc_code,omitempty"`    // the gRPC status name, where the request made one
+	GRPCMessage string `json:"grpc_message,omitempty"` // what the server said with it
+	DurationMs  int64  `json:"duration_ms"`
+	Retries     int    `json:"retries,omitempty"`
+	UntilMet    bool   `json:"until_met,omitempty"`
 	// RepeatStop, on the step's last request, says why the step stopped.
 	RepeatStop string `json:"repeat_stop,omitempty"`
 	Error      string `json:"error,omitempty"`
@@ -215,6 +223,8 @@ func buildShownIteration(step *archive.StepRecord, it *archive.IterationRecord, 
 	}
 	if it.Response != nil {
 		view.Status = it.Response.Status
+		view.GRPCCode = it.Response.GRPCCode
+		view.GRPCMessage = it.Response.GRPCMessage
 		view.ResponseBodyBytes = compactSize(it.Response.Body)
 	}
 	return view
@@ -239,7 +249,13 @@ func showIteration(out io.Writer, step *archive.StepRecord, it *archive.Iteratio
 		fmt.Fprintf(&b, "%s %s\n", view.Method, view.URL)
 	}
 	status := "no response"
-	if view.Status != 0 {
+	switch {
+	case view.GRPCCode != "":
+		status = "status " + view.GRPCCode
+		if view.GRPCMessage != "" {
+			status += " (" + view.GRPCMessage + ")"
+		}
+	case view.Status != 0:
 		status = fmt.Sprintf("status %d", view.Status)
 	}
 	fmt.Fprintf(&b, "%s  %s", status, formatDuration(time.Duration(view.DurationMs)*time.Millisecond))

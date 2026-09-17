@@ -397,10 +397,14 @@ func formatWorkflowDetail(wf graph.Workflow, p *plan.Plan, g *graph.Graph, reg *
 			fmt.Fprintf(&b, "**Description:** %s\n", node.Description)
 		}
 
-		// HTTP info from template
+		// What the step sends, as its template describes it.
 		if node != nil {
 			if tmpl, ok := reg.GetTemplate(node.Adapter); ok {
-				fmt.Fprintf(&b, "**HTTP:** %s %s\n", tmpl.Request.Method, tmpl.Request.Path)
+				if tmpl.Protocol == adapter.ProtocolGRPC {
+					fmt.Fprintf(&b, "**gRPC:** %s\n", tmpl.Request.RPC)
+				} else {
+					fmt.Fprintf(&b, "**HTTP:** %s %s\n", tmpl.Request.Method, tmpl.Request.Path)
+				}
 			}
 		}
 

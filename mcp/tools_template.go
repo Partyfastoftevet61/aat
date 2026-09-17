@@ -122,27 +122,44 @@ func formatTemplate(tmpl *adapter.Template) string {
 
 	fmt.Fprintf(&b, "# %s\n\n", tmpl.Adapter)
 	fmt.Fprintf(&b, "**Protocol:** %s\n", tmpl.Protocol)
-	fmt.Fprintf(&b, "**Method:** %s\n", tmpl.Request.Method)
-	fmt.Fprintf(&b, "**Path:** `%s`\n", tmpl.Request.Path)
 
-	if len(tmpl.Request.Headers) > 0 {
-		b.WriteString("\n## Headers\n\n")
-		b.WriteString("| Header | Value |\n")
+	isGRPC := tmpl.Protocol == adapter.ProtocolGRPC
+	if isGRPC {
+		// A gRPC call has no verb and no path: it names a method, and
+		// everything it sends is in one message.
+		fmt.Fprintf(&b, "**Service:** %s\n", tmpl.Request.Service())
+		fmt.Fprintf(&b, "**Method:** %s\n", tmpl.Request.MethodName())
+	} else {
+		fmt.Fprintf(&b, "**Method:** %s\n", tmpl.Request.Method)
+		fmt.Fprintf(&b, "**Path:** `%s`\n", tmpl.Request.Path)
+	}
+
+	entries, label := tmpl.Request.Headers, "Headers"
+	if isGRPC {
+		entries, label = tmpl.Request.Metadata, "Metadata"
+	}
+	if len(entries) > 0 {
+		fmt.Fprintf(&b, "\n## %s\n\n", label)
+		fmt.Fprintf(&b, "| %s | Value |\n", strings.TrimSuffix(label, "s"))
 		b.WriteString("|--------|-------|\n")
-		keys := make([]string, 0, len(tmpl.Request.Headers))
-		for k := range tmpl.Request.Headers {
+		keys := make([]string, 0, len(entries))
+		for k := range entries {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			fmt.Fprintf(&b, "| %s | %s |\n", k, tmpl.Request.Headers[k])
+			fmt.Fprintf(&b, "| %s | %s |\n", k, entries[k])
 		}
 	}
 
-	if tmpl.Request.Body != "" {
-		b.WriteString("\n## Body\n\n```\n")
-		b.WriteString(tmpl.Request.Body)
-		if !strings.HasSuffix(tmpl.Request.Body, "\n") {
+	body, bodyLabel := tmpl.Request.Body, "Body"
+	if isGRPC {
+		body, bodyLabel = tmpl.Request.Message, "Message"
+	}
+	if body != "" {
+		fmt.Fprintf(&b, "\n## %s\n\n```\n", bodyLabel)
+		b.WriteString(body)
+		if !strings.HasSuffix(body, "\n") {
 			b.WriteString("\n")
 		}
 		b.WriteString("```\n")

@@ -108,9 +108,8 @@ func (e *GRPCExecutor) Execute(ctx context.Context, req *Request) (*Response, er
 	invokeErr := conn.Invoke(ctx, fullMethod(service, method), in, out,
 		grpc.Header(&header), grpc.Trailer(&trailer))
 
-	headers := mergeMetadata(header, trailer)
 	if invokeErr != nil {
-		return e.errorResponse(invokeErr, headers)
+		return e.errorResponse(invokeErr, header, trailer)
 	}
 
 	respBody, err := e.reg.MessageToJSON(out)
@@ -120,7 +119,8 @@ func (e *GRPCExecutor) Execute(ctx context.Context, req *Request) (*Response, er
 	return &Response{
 		Protocol:   ProtocolGRPC,
 		StatusCode: grpcstatus.HTTPStatus(grpcstatus.OK),
-		Headers:    headers,
+		Headers:    metadataHeader(header),
+		Trailers:   metadataHeader(trailer),
 		Body:       respBody,
 		GRPC:       &GRPCStatus{Code: grpcstatus.OK, Name: grpcstatus.Name(grpcstatus.OK)},
 	}, nil
@@ -136,7 +136,7 @@ func (e *GRPCExecutor) Execute(ctx context.Context, req *Request) (*Response, er
 //
 // Only something with no status at all — which should not happen — is returned
 // as an error.
-func (e *GRPCExecutor) errorResponse(invokeErr error, headers http.Header) (*Response, error) {
+func (e *GRPCExecutor) errorResponse(invokeErr error, header, trailer metadata.MD) (*Response, error) {
 	st, ok := status.FromError(invokeErr)
 	if !ok {
 		return nil, fmt.Errorf("executing gRPC request: %w", invokeErr)
@@ -164,7 +164,8 @@ func (e *GRPCExecutor) errorResponse(invokeErr error, headers http.Header) (*Res
 	return &Response{
 		Protocol:   ProtocolGRPC,
 		StatusCode: grpcstatus.HTTPStatus(code),
-		Headers:    headers,
+		Headers:    metadataHeader(header),
+		Trailers:   metadataHeader(trailer),
 		Body:       gs.envelope(),
 		GRPC:       gs,
 	}, nil
@@ -189,16 +190,17 @@ func (s *GRPCStatus) envelope() []byte {
 // fullMethod renders the path gRPC puts on the wire.
 func fullMethod(service, method string) string { return "/" + service + "/" + method }
 
-// mergeMetadata flattens a call's header and trailer metadata into one set.
-// Trailers are applied last: a server that sends the same key in both means
-// the trailing value.
-func mergeMetadata(header, trailer metadata.MD) http.Header {
-	out := make(http.Header, len(header)+len(trailer))
-	for _, md := range []metadata.MD{header, trailer} {
-		for k, values := range md {
-			for _, v := range values {
-				out.Add(k, v)
-			}
+// metadataHeader renders gRPC metadata as a header set, keeping every value of
+// a repeated key. It returns nil for empty metadata, so a response that carries
+// no trailers records none.
+func metadataHeader(md metadata.MD) http.Header {
+	if len(md) == 0 {
+		return nil
+	}
+	out := make(http.Header, len(md))
+	for k, values := range md {
+		for _, v := range values {
+			out.Add(k, v)
 		}
 	}
 	return out
