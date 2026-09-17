@@ -109,8 +109,48 @@ request:
 		},
 		{
 			name:    "unsupported protocol",
-			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  method: GET\n  path: /test\n",
+			yaml:    "adapter: test\nprotocol: graphql\nrequest:\n  method: GET\n  path: /test\n",
 			wantErr: "unsupported protocol",
+		},
+		{
+			name:    "a gRPC template with an HTTP method",
+			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  rpc: shop.v1.Carts/CreateCart\n  method: GET\n",
+			wantErr: "request.method belongs to an HTTP template",
+		},
+		{
+			name:    "a gRPC template with a path",
+			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  rpc: shop.v1.Carts/CreateCart\n  path: /carts\n",
+			wantErr: "request.path belongs to an HTTP template",
+		},
+		{
+			name:    "a gRPC template with headers",
+			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  rpc: shop.v1.Carts/CreateCart\n  headers:\n    X-Tenant: acme\n",
+			wantErr: "a gRPC request sends request.metadata",
+		},
+		{
+			name:    "a gRPC template with a body",
+			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  rpc: shop.v1.Carts/CreateCart\n  body: \"{}\"\n",
+			wantErr: "request.body belongs to an HTTP template",
+		},
+		{
+			name:    "a gRPC template without an rpc",
+			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  message: \"{}\"\n",
+			wantErr: "template missing required field: request.rpc",
+		},
+		{
+			name:    "a gRPC template whose rpc names no method",
+			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  rpc: Carts\n",
+			wantErr: "must name a service and a method",
+		},
+		{
+			name:    "an HTTP template with an rpc",
+			yaml:    "adapter: test\nrequest:\n  method: GET\n  path: /test\n  rpc: shop.v1.Carts/CreateCart\n",
+			wantErr: "request.rpc belongs to a gRPC template",
+		},
+		{
+			name:    "an HTTP template with metadata",
+			yaml:    "adapter: test\nrequest:\n  method: GET\n  path: /test\n  metadata:\n    x-tenant: acme\n",
+			wantErr: "an HTTP template sends request.headers",
 		},
 	}
 
@@ -1288,4 +1328,69 @@ func TestTemplate_SuppliedFields(t *testing.T) {
 		"name": true, "status": true, "photoUrls": true, "category": true, "note": true, "items": true,
 	}
 	assert.Equal(t, want, got, "conditional fields (page, X-Trace, tags) and nested keys (id, sku) are not supplied unconditionally")
+}
+
+func TestParseTemplate_GRPC(t *testing.T) {
+	tmpl, err := ParseTemplate([]byte(`adapter: createCart
+protocol: grpc
+
+request:
+  rpc: shop.v1.Carts/CreateCart
+  metadata:
+    x-tenant: "{{tenant}}"
+  message: |
+    {"customerId": "{{customerId}}"}
+
+response:
+  extract:
+    cartId: cartId
+    subtotal: $.subtotal
+`))
+	require.NoError(t, err)
+	assert.Equal(t, ProtocolGRPC, tmpl.Protocol)
+	assert.Equal(t, "shop.v1.Carts/CreateCart", tmpl.Request.RPC)
+	assert.Equal(t, "shop.v1.Carts", tmpl.Request.Service())
+	assert.Equal(t, "CreateCart", tmpl.Request.MethodName())
+	assert.Equal(t, "{{tenant}}", tmpl.Request.Metadata["x-tenant"])
+	assert.Contains(t, tmpl.Request.Message, "{{customerId}}")
+
+	// Extraction is unchanged: a gRPC response is read as JSON like any other.
+	assert.Equal(t, "cartId", tmpl.Response.Extract["cartId"].GJSONPath())
+	assert.Equal(t, "subtotal", tmpl.Response.Extract["subtotal"].GJSONPath())
+}
+
+func TestSplitRPC(t *testing.T) {
+	tests := []struct {
+		in              string
+		service, method string
+		ok              bool
+	}{
+		{"shop.v1.Carts/CreateCart", "shop.v1.Carts", "CreateCart", true},
+		{"/shop.v1.Carts/CreateCart", "shop.v1.Carts", "CreateCart", true},
+		{"shop.v1.Carts.CreateCart", "shop.v1.Carts", "CreateCart", true},
+		{"Carts/CreateCart", "Carts", "CreateCart", true},
+		{"Carts", "", "", false},
+		{"", "", "", false},
+		{"/CreateCart", "", "", false},
+		{"shop.v1.Carts/", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			service, method, ok := splitRPC(tt.in)
+			assert.Equal(t, tt.ok, ok)
+			assert.Equal(t, tt.service, service)
+			assert.Equal(t, tt.method, method)
+		})
+	}
+}
+
+func TestTemplateAdapter_GRPCCannotRunYet(t *testing.T) {
+	// A gRPC template must not quietly build an HTTP request out of an RPC.
+	tmpl, err := ParseTemplate([]byte("adapter: createCart\nprotocol: grpc\nrequest:\n  rpc: shop.v1.Carts/CreateCart\n  message: \"{}\"\n"))
+	require.NoError(t, err)
+
+	_, err = NewTemplateAdapter(*tmpl).BuildRequest(map[string]any{}, &EnvironmentConfig{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot run them yet")
+	assert.Contains(t, err.Error(), "createCart", "the error names the adapter")
 }

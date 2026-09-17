@@ -23,7 +23,10 @@ type Template struct {
 	Response TemplateResponse `yaml:"response"`
 }
 
-// TemplateRequest defines the HTTP request shape within a template.
+// TemplateRequest defines the request shape within a template. Which fields
+// apply depends on the template's protocol: an HTTP template has a method and
+// a path, a gRPC template an rpc and a message. ParseTemplate rejects the
+// other protocol's fields by name.
 type TemplateRequest struct {
 	Method  string            `yaml:"method"`
 	Path    string            `yaml:"path"`
@@ -32,6 +35,42 @@ type TemplateRequest struct {
 	// Form is a form-encoded body written as a mapping (see FormFields). It is
 	// nil when the template has none; a request has a Body or a Form.
 	Form FormFields `yaml:"form,omitempty"`
+
+	// RPC names the gRPC method, as in "shop.v1.Carts/CreateCart".
+	RPC string `yaml:"rpc,omitempty"`
+	// Metadata is what headers are to HTTP: the entries a gRPC request sends
+	// alongside its message.
+	Metadata map[string]string `yaml:"metadata,omitempty"`
+	// Message is the gRPC request message, written as JSON with the same
+	// {{key}} placeholders a body uses.
+	Message string `yaml:"message,omitempty"`
+}
+
+// Service and Method split the template's rpc field. They are empty when the
+// template is not a gRPC one, or when its rpc field is malformed, which
+// ParseTemplate rejects.
+func (r TemplateRequest) Service() string { s, _, _ := splitRPC(r.RPC); return s }
+
+// Method is the RPC's method name; see Service.
+func (r TemplateRequest) MethodName() string { _, m, _ := splitRPC(r.RPC); return m }
+
+// splitRPC splits "pkg.Service/Method", the form gRPC uses on the wire, and
+// also accepts "pkg.Service.Method", the form protobuf uses for a full name.
+// The graph parses its own proto refs the same way; adapter is a leaf package
+// and cannot reach graph, so the two forms are read in both places.
+func splitRPC(ref string) (service, method string, ok bool) {
+	ref = strings.TrimPrefix(ref, "/")
+	if i := strings.LastIndex(ref, "/"); i > 0 {
+		service, method = ref[:i], ref[i+1:]
+	} else if i := strings.LastIndex(ref, "."); i > 0 {
+		service, method = ref[:i], ref[i+1:]
+	} else {
+		return "", "", false
+	}
+	if service == "" || method == "" || strings.Contains(method, "/") {
+		return "", "", false
+	}
+	return service, method, true
 }
 
 // TemplateResponse defines how outputs are extracted from the response.
@@ -202,30 +241,84 @@ func ParseTemplate(data []byte) (*Template, error) {
 	if t.Adapter == "" {
 		return nil, fmt.Errorf("template missing required field: adapter")
 	}
-	if t.Request.Method == "" {
-		return nil, fmt.Errorf("template missing required field: request.method")
-	}
-	if t.Request.Path == "" {
-		return nil, fmt.Errorf("template missing required field: request.path")
-	}
 
 	if t.Protocol == "" {
-		t.Protocol = "http"
+		t.Protocol = ProtocolHTTP
 	}
-	if t.Protocol != "http" {
-		return nil, fmt.Errorf("unsupported protocol %q (only \"http\" is supported)", t.Protocol)
+	switch t.Protocol {
+	case ProtocolHTTP:
+		if err := t.validateHTTPRequest(); err != nil {
+			return nil, err
+		}
+	case ProtocolGRPC:
+		if err := t.validateGRPCRequest(); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("unsupported protocol %q (%q and %q are supported)", t.Protocol, ProtocolHTTP, ProtocolGRPC)
+	}
+
+	return &t, nil
+}
+
+// validateHTTPRequest checks the fields an HTTP template needs, and that it
+// carries none of the gRPC ones.
+func (t *Template) validateHTTPRequest() error {
+	if t.Request.Method == "" {
+		return fmt.Errorf("template missing required field: request.method")
+	}
+	if t.Request.Path == "" {
+		return fmt.Errorf("template missing required field: request.path")
+	}
+	for _, f := range []struct{ name, value string }{
+		{"rpc", t.Request.RPC},
+		{"message", t.Request.Message},
+	} {
+		if f.value != "" {
+			return fmt.Errorf("request.%s belongs to a gRPC template; this one is %q (set protocol: %s)", f.name, t.Protocol, ProtocolGRPC)
+		}
+	}
+	if t.Request.Metadata != nil {
+		return fmt.Errorf("request.metadata belongs to a gRPC template; an HTTP template sends request.headers")
 	}
 
 	if t.Request.Form != nil {
 		if t.Request.Body != "" {
-			return nil, fmt.Errorf("template has both request.body and request.form; a request sends one of them")
+			return fmt.Errorf("template has both request.body and request.form; a request sends one of them")
 		}
 		if contentType, ok := headerValue(t.Request.Headers, "Content-Type"); ok && !isFormContentType(contentType) {
-			return nil, fmt.Errorf("request.form is sent as %s, but the template's Content-Type header is %q", FormContentType, contentType)
+			return fmt.Errorf("request.form is sent as %s, but the template's Content-Type header is %q", FormContentType, contentType)
 		}
 	}
+	return nil
+}
 
-	return &t, nil
+// validateGRPCRequest checks the fields a gRPC template needs, and that it
+// carries none of the HTTP ones. A gRPC call has no path, no verb, and no form
+// encoding: everything the request says is in its message.
+func (t *Template) validateGRPCRequest() error {
+	if t.Request.RPC == "" {
+		return fmt.Errorf("template missing required field: request.rpc (as in \"shop.v1.Carts/CreateCart\")")
+	}
+	if _, _, ok := splitRPC(t.Request.RPC); !ok {
+		return fmt.Errorf("request.rpc %q must name a service and a method, as in \"shop.v1.Carts/CreateCart\"", t.Request.RPC)
+	}
+	for _, f := range []struct{ name, value string }{
+		{"method", t.Request.Method},
+		{"path", t.Request.Path},
+		{"body", t.Request.Body},
+	} {
+		if f.value != "" {
+			return fmt.Errorf("request.%s belongs to an HTTP template; a gRPC request names its rpc and sends a message", f.name)
+		}
+	}
+	if t.Request.Headers != nil {
+		return fmt.Errorf("request.headers belongs to an HTTP template; a gRPC request sends request.metadata")
+	}
+	if t.Request.Form != nil {
+		return fmt.Errorf("request.form belongs to an HTTP template; a gRPC request sends a message")
+	}
+	return nil
 }
 
 // ParseTemplateFile reads a file and parses it as a template. Errors name the
@@ -252,6 +345,13 @@ func NewTemplateAdapter(tmpl Template) *TemplateAdapter {
 // escaped for where it lands (see renderContext); config supplies the headers
 // every request starts with.
 func (a *TemplateAdapter) BuildRequest(inputs map[string]any, config *EnvironmentConfig) (*Request, error) {
+	if a.tmpl.Protocol == ProtocolGRPC {
+		// The graph validates gRPC nodes against their descriptors, but
+		// nothing sends one yet. Fail here rather than build an HTTP request
+		// out of a template that describes an RPC.
+		return nil, fmt.Errorf("adapter %q is a gRPC template: aat validates gRPC nodes but cannot run them yet", a.tmpl.Adapter)
+	}
+
 	path, err := substitutePlaceholders(a.tmpl.Request.Path, inputs, renderPath)
 	if err != nil {
 		return nil, fmt.Errorf("path substitution: %w", err)

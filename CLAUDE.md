@@ -37,6 +37,7 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 | `cmd/aat/` | CLI binary — thin wrapper, wires packages together |
 | `cmd/aat-sandbox/` | Demo API binary: `serve` runs the offline shop sandbox, `init` extracts `examples/shop` |
 | `graph/` | API graph model, YAML parsing, traversal, backward chaining, diffing |
+| `graph/proto/` | Validates gRPC nodes against protobuf descriptors (implements `graph.SpecValidator`) |
 | `adapter/` | Adapter interface, HTTP executor, Tier 1/3 loaders |
 | `domain/` | Domain knowledge: concepts, types, value pools |
 | `plan/` | Plan model, expression evaluator, validation, persistence |
@@ -52,6 +53,7 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 | `internal/httpstatus/` | Expected-status values shared by plan validation and assertions: exact codes, `2xx` classes, contradictions with `expectFailure` |
 | `internal/yamlx/` | Strict YAML decoding for project files: unknown keys are errors with line, key, and suggestion |
 | `internal/predicate/` | Predicate expressions (`status == "open" && total > 100`): parsing, evaluation, and the fields they name, for selection filters, constraints, assertions, and cleanup `when` |
+| `internal/protoreg/` | Protobuf descriptor sets and the protobuf-to-JSON codec; shared by `adapter` and `graph/proto` |
 | `internal/primer/` | The AI assistant primer (`llms.md`): embedded for `aat docs primer`, included by `docs/user/llms.md`, and published as `llms-full.txt` |
 | `internal/testutil/` | Shared test helpers and fixtures |
 | `internal/version/` | Build version info |
@@ -61,9 +63,9 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 
 Dependencies flow in one direction. No cycles. No lateral imports within a tier.
 
-**Foundation packages** (stdlib and third-party imports only; importable from any tier): `internal/httpstatus`, `internal/yamlx`, `internal/predicate`, `internal/version`, `internal/primer`
+**Foundation packages** (stdlib and third-party imports only; importable from any tier): `internal/httpstatus`, `internal/yamlx`, `internal/predicate`, `internal/version`, `internal/primer`, `internal/protoreg`
 **Leaf packages** (no aat imports other than foundation packages): `config`, `graph`, `domain`, `adapter`, `validate`, `internal/sandbox/shop`
-**Mid-tier**: `graph/oas` → graph; `llm` → config; `plan` → graph, config; `archive` → plan
+**Mid-tier**: `graph/oas` → graph; `graph/proto` → graph; `llm` → config; `plan` → graph, config; `archive` → plan
 **Orchestrators**: `engine` → graph, graph/oas, adapter, plan, domain, validate, archive, config
 **Entry points**: `intent` → graph, domain, plan, llm; `mcp` → all packages; `server` → intent, archive, plan, config
 **Binaries**: `cmd/aat` → every package outside `internal/` (its tests also import `internal/sandbox/shop` and the root embed for the shop end-to-end test); `cmd/aat-sandbox` → internal/sandbox/shop, root embed
@@ -113,7 +115,7 @@ environment: env.yaml
 defaultEnvironment: us
 ```
 
-Key type: `config.ProjectManifest`. Fields: `Name` (required), `GraphPath` (required), `TemplatesPath` (required), `DomainPath`, `DocsDir`, `WorkflowsDir`, `LayersDir`, `PlanDirs`, `OASPaths`, `ArchiveDir`, `TracesDir`, `VisualizersDir`, `EnvPath`, `DefaultEnvironment`. The highest-priority manifest found (`--manifest`, CWD walk-up, `AAT_PROJECT`, user config `default_project`) describes the whole project; lower levels never fill in fields it leaves out.
+Key type: `config.ProjectManifest`. Fields: `Name` (required), `GraphPath` (required), `TemplatesPath` (required), `DomainPath`, `DocsDir`, `WorkflowsDir`, `LayersDir`, `PlanDirs`, `OASPaths`, `ProtoPaths`, `ArchiveDir`, `TracesDir`, `VisualizersDir`, `EnvPath`, `DefaultEnvironment`. The highest-priority manifest found (`--manifest`, CWD walk-up, `AAT_PROJECT`, user config `default_project`) describes the whole project; lower levels never fill in fields it leaves out.
 
 Used by: `aat validate`, `aat web`, `aat mcp serve`, `aat plan list`, `aat env list`, and as defaults for `aat run`/`aat prompt` when explicit flags are omitted.
 

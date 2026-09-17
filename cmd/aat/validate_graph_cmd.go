@@ -10,6 +10,7 @@ import (
 	"github.com/gburgyan/aat/engine"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/graph/oas"
+	"github.com/gburgyan/aat/graph/proto"
 	"github.com/gburgyan/aat/intent"
 	"github.com/spf13/cobra"
 )
@@ -156,6 +157,27 @@ func graphValidateCommand(args *graphValidateArgs) int {
 			}
 		} else {
 			fmt.Println("OAS validation: OK")
+		}
+	}
+
+	// 4b. Protobuf validation, for the graph's gRPC nodes.
+	protoValidator := proto.NewValidator()
+	if registry != nil {
+		protoValidator.WithOutputPaths(proto.OutputPaths(engine.OutputExtractPaths(g, registry)))
+	}
+	if section := specCheck("Protobuf validation", protoValidator, g, args.GraphPath, args.Strict); section != nil {
+		if section.Status == "OK" {
+			fmt.Println("Protobuf validation: OK")
+		} else {
+			fmt.Println()
+			for _, e := range section.Errors {
+				fmt.Println(e)
+			}
+			// WARN is for issues that fail only under --strict, which
+			// specCheck has already folded into the status.
+			if section.Status == "FAILED" {
+				hasError = true
+			}
 		}
 	}
 

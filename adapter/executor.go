@@ -6,6 +6,7 @@ import "context"
 // same names in its protocol key.
 const (
 	ProtocolHTTP = "http"
+	ProtocolGRPC = "grpc"
 )
 
 // Executor sends an adapter-built request and returns the response. The engine

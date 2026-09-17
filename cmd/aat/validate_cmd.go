@@ -16,6 +16,7 @@ import (
 	"github.com/gburgyan/aat/engine"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/graph/oas"
+	"github.com/gburgyan/aat/graph/proto"
 	"github.com/gburgyan/aat/intent"
 	"github.com/gburgyan/aat/plan"
 	"github.com/spf13/cobra"
@@ -230,42 +231,17 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 			WithBodyInputFields(engine.TemplateBodyInputFields(g, registry)).
 			WithPathTemplates(engine.TemplatePaths(g, registry))
 	}
-	specPaths := validator.CollectSpecPaths(g)
-	if len(specPaths) > 0 {
-		graphDir := filepath.Dir(m.GraphPath)
-		var oasErrors []string
-		loadFailed := false
-		for _, sp := range specPaths {
-			resolvedPath := sp
-			if !filepath.IsAbs(sp) {
-				resolvedPath = filepath.Join(graphDir, sp)
-			}
-			if err := validator.LoadSpec(sp, resolvedPath); err != nil {
-				oasErrors = append(oasErrors, fmt.Sprintf("loading spec %q: %s", sp, err))
-				loadFailed = true
-			}
-		}
-		if loadFailed {
-			sections = append(sections, sectionResult{
-				Name:   "OAS validation",
-				Status: "FAILED",
-				Errors: oasErrors,
-			})
-		} else {
-			result := validator.Validate(g)
-			if result.HasIssues() {
-				sections = append(sections, sectionResult{
-					Name:   "OAS validation",
-					Status: issueStatus(result.HasErrors(), args.Strict),
-					Errors: []string{result.Format()},
-				})
-			} else {
-				sections = append(sections, sectionResult{
-					Name:   "OAS validation",
-					Status: "OK",
-				})
-			}
-		}
+	if section := specCheck("OAS validation", validator, g, m.GraphPath, args.Strict); section != nil {
+		sections = append(sections, *section)
+	}
+
+	// 3b. Protobuf validation, for the graph's gRPC nodes.
+	protoValidator := proto.NewValidator()
+	if templateErr == nil {
+		protoValidator.WithOutputPaths(proto.OutputPaths(engine.OutputExtractPaths(g, registry)))
+	}
+	if section := specCheck("Protobuf validation", protoValidator, g, m.GraphPath, args.Strict); section != nil {
+		sections = append(sections, *section)
 	}
 
 	// 4. Adapter outputs

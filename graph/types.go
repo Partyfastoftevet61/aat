@@ -19,6 +19,7 @@ type Graph struct {
 	Examples       []WorkflowExample    `yaml:"examples,omitempty"`
 	Notes          string               `yaml:"notes,omitempty"`
 	OAS            string               `yaml:"oas,omitempty"`
+	Proto          string               `yaml:"proto,omitempty"`
 	ErrorDetection []ErrorDetectionRule `yaml:"errorDetection,omitempty"`
 	Nodes          map[string]*Node     `yaml:"nodes"`
 	Conditions     []Condition          `yaml:"conditions,omitempty"`
@@ -145,6 +146,7 @@ type Node struct {
 	Cleanup        CleanupPairing       `yaml:"cleanup,omitempty"`
 	CycleBreaker   bool                 `yaml:"cycleBreaker,omitempty"`
 	OAS            *OASRef              `yaml:"oas,omitempty"`
+	Proto          *ProtoRef            `yaml:"proto,omitempty"`
 	Requires       []string             `yaml:"requires,omitempty"`
 	Satisfies      []string             `yaml:"satisfies,omitempty"`
 	Preferred      bool                 `yaml:"preferred,omitempty"`
@@ -155,6 +157,101 @@ type Node struct {
 type OASRef struct {
 	OperationID string `yaml:"operationId"`
 	Spec        string `yaml:"spec,omitempty"`
+}
+
+// ProtoRef links a graph node to a gRPC method. It is written either as a
+// scalar naming the method the way the wire does,
+//
+//	proto: shop.v1.Carts/CreateCart
+//
+// or as a mapping, which a node needs only to name its own descriptor set:
+//
+//	proto:
+//	  service: shop.v1.Carts
+//	  method: CreateCart
+//	  descriptor: carts.protoset
+type ProtoRef struct {
+	Service string `yaml:"service"`
+	Method  string `yaml:"method"`
+	// Descriptor names the descriptor set holding the service, for a node
+	// whose service is not in the graph's own. It mirrors OASRef.Spec.
+	Descriptor string `yaml:"descriptor,omitempty"`
+}
+
+// FullMethod returns the method as gRPC names it on the wire.
+func (r ProtoRef) FullMethod() string {
+	return "/" + r.Service + "/" + r.Method
+}
+
+// String returns the method as a graph writes it in the scalar form.
+func (r ProtoRef) String() string {
+	return r.Service + "/" + r.Method
+}
+
+// rawProtoRef drops the custom unmarshaler so the mapping form decodes
+// strictly; see internal/yamlx.
+type rawProtoRef ProtoRef
+
+// UnmarshalYAML accepts the scalar and mapping forms. It uses the callback
+// form so strict decoding reaches the mapping (see internal/yamlx).
+func (r *ProtoRef) UnmarshalYAML(unmarshal func(any) error) error {
+	n, err := yamlx.Node(unmarshal)
+	if err != nil {
+		return err
+	}
+	switch n.Kind {
+	case yaml.ScalarNode:
+		var ref string
+		if err := unmarshal(&ref); err != nil {
+			return err
+		}
+		service, method, ok := splitFullMethod(ref)
+		if !ok {
+			return &yaml.TypeError{Errors: []string{fmt.Sprintf(
+				"line %d: proto %q must name a service and a method, as in \"shop.v1.Carts/CreateCart\"", n.Line, ref)}}
+		}
+		r.Service, r.Method = service, method
+		return nil
+	case yaml.MappingNode:
+		var raw rawProtoRef
+		if err := unmarshal(&raw); err != nil {
+			return err
+		}
+		if raw.Service == "" || raw.Method == "" {
+			return &yaml.TypeError{Errors: []string{fmt.Sprintf(
+				"line %d: proto needs both a service and a method", n.Line)}}
+		}
+		*r = ProtoRef(raw)
+		return nil
+	default:
+		return yamlx.KindError(n, "proto", "a service/method reference or a mapping")
+	}
+}
+
+// MarshalYAML writes the scalar form unless the ref names its own descriptor
+// set, so a generated graph reads the way one is written by hand.
+func (r ProtoRef) MarshalYAML() (any, error) {
+	if r.Descriptor == "" {
+		return r.String(), nil
+	}
+	return rawProtoRef(r), nil
+}
+
+// splitFullMethod splits "pkg.Service/Method", the form gRPC uses, and also
+// accepts "pkg.Service.Method", the form protobuf uses for a full name.
+func splitFullMethod(ref string) (service, method string, ok bool) {
+	ref = strings.TrimPrefix(ref, "/")
+	if i := strings.LastIndex(ref, "/"); i > 0 {
+		service, method = ref[:i], ref[i+1:]
+	} else if i := strings.LastIndex(ref, "."); i > 0 {
+		service, method = ref[:i], ref[i+1:]
+	} else {
+		return "", "", false
+	}
+	if service == "" || method == "" || strings.Contains(method, "/") {
+		return "", "", false
+	}
+	return service, method, true
 }
 
 // Input describes a single input parameter for a node.
