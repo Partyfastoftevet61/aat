@@ -1,0 +1,50 @@
+# The whole point in one plan: three HTTP steps, then two gRPC steps, with the
+# order id and total flowing across the protocol boundary untouched.
+intent:
+  goal: refund
+
+execution:
+  steps:
+    - id: cart
+      node: createCart
+
+    - id: item
+      node: addItem
+      values:
+        sku: {default: SKU-1001}
+        quantity: {default: 2}
+
+    - id: order
+      node: checkoutCart
+      assertions:
+        mechanical:
+          - type: status
+            expect: 201
+          - type: fieldExists
+            path: $.orderId
+
+    - id: charge
+      node: paymentCharge
+      isGoal: false
+      assertions:
+        mechanical:
+          # A gRPC step asserts on its status by name.
+          - type: status
+            expect: OK
+          - type: fieldEquals
+            path: $.paymentStatus
+            value: captured
+          - type: fieldEquals
+            path: $.orderStatus
+            value: paid
+
+    - id: refund
+      node: paymentRefund
+      isGoal: true
+      assertions:
+        mechanical:
+          - type: status
+            expect: OK
+          - type: fieldEquals
+            path: $.paymentStatus
+            value: refunded

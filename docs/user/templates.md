@@ -2,7 +2,9 @@
 
 A graph says what an operation takes and returns; a template says how that becomes an HTTP request and where in the response the outputs live. One small file per operation is what lets a reviewer, or an AI tool, read exactly the call in question and nothing else.
 
-Templates define how AAT translates graph node inputs into HTTP requests and extracts outputs from responses. Each template is a YAML file that maps to one graph node via its `adapter` name.
+Templates define how AAT translates graph node inputs into requests and extracts outputs from responses. Each template is a YAML file that maps to one graph node via its `adapter` name.
+
+This page describes HTTP templates. A template can also declare `protocol: grpc`, which replaces `method`/`path` with an `rpc`, `headers` with `metadata`, and `body` with a `message`; everything else on this page — placeholders, conditional and iteration blocks, extraction, Lua transforms — is the same. See [gRPC](grpc.md).
 
 ## Overview
 
@@ -37,6 +39,8 @@ request:
 ```
 
 The `method` field accepts any HTTP method: GET, POST, PUT, DELETE, PATCH, etc. The `path` is appended to the environment's `apiBaseUrl` at execution time.
+
+The `protocol` field is `http` when omitted. Set it to `grpc` for a gRPC call, which names an `rpc` instead — see [gRPC](grpc.md). A template that mixes the two protocols' fields is rejected by name rather than quietly ignored.
 
 The `protocol` field defaults to `"http"` and is the only supported value.
 

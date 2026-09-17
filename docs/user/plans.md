@@ -614,6 +614,21 @@ Steps can declare that failure is the *expected* outcome:
       productId: "INVALID-ID"
 ```
 
+A [gRPC](grpc.md) step names its status instead, in `expectFailure`, in
+`mutations[].expectStatus`, and in a `status` assertion:
+
+```yaml
+  - node: paymentCharge
+    expectFailure:
+      status: [NOT_FOUND]
+      description: "an unknown order has nothing to charge"
+```
+
+Naming it matters: `INVALID_ARGUMENT`, `FAILED_PRECONDITION`, and
+`OUT_OF_RANGE` all map to HTTP 400, so a test that expects one should not pass
+on another. Numbers still match a gRPC step through that mapping, so a plan
+written as `status: [404]` reads against either protocol.
+
 When `expectFailure` is set:
 
 - The step passes if the response status matches one of the listed codes

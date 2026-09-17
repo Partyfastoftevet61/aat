@@ -22,19 +22,19 @@ func TestCheckStatus(t *testing.T) {
 		{name: "mismatch", statusCode: 404, expect: 200, passed: false, msgContain: "expected status 200, got 404"},
 		{name: "float64 coercion from YAML", statusCode: 200, expect: float64(200), passed: true, msgContain: "status code is 200"},
 		{name: "nil expect", statusCode: 200, expect: nil, passed: false, msgContain: "missing 'expect'"},
-		{name: "string expect fails", statusCode: 200, expect: "200", passed: false, msgContain: "cannot coerce"},
+		{name: "string expect fails", statusCode: 200, expect: "200", passed: false, msgContain: "cannot read expect value"},
 		{name: "class 2xx matches 201", statusCode: 201, expect: "2xx", passed: true, msgContain: "status code 201 is 2xx"},
 		{name: "class 2xx matches 204", statusCode: 204, expect: "2xx", passed: true, msgContain: "status code 204 is 2xx"},
 		{name: "class is case-insensitive", statusCode: 200, expect: "2XX", passed: true, msgContain: "is 2xx"},
 		{name: "class mismatch", statusCode: 402, expect: "2xx", passed: false, msgContain: "expected status 2xx, got 402"},
 		{name: "class 4xx", statusCode: 409, expect: "4xx", passed: true, msgContain: "status code 409 is 4xx"},
-		{name: "unknown class fails", statusCode: 200, expect: "6xx", passed: false, msgContain: "cannot coerce"},
+		{name: "unknown class fails", statusCode: 200, expect: "6xx", passed: false, msgContain: "cannot read expect value"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			a := MechanicalAssertion{Type: AssertStatus, Expect: tt.expect}
-			ar := checkStatus(tt.statusCode, a)
+			ar := checkStatus(HTTPStatusInfo(tt.statusCode), a)
 			assert.Equal(t, tt.passed, ar.Passed)
 			assert.Contains(t, ar.Message, tt.msgContain)
 			assert.Equal(t, AssertStatus, ar.Type)
@@ -86,7 +86,7 @@ func TestCheckSchema_AggregateStillPassesWhenSkipped(t *testing.T) {
 		{Type: AssertStatus, Expect: 200},
 		{Type: AssertSchema, Ref: "schema.json"},
 	}
-	result := RunMechanical(200, []byte(`{}`), assertions, nil, nil)
+	result := RunMechanical(HTTPStatusInfo(200), []byte(`{}`), assertions, nil, nil)
 	assert.True(t, result.Passed)
 	require.Len(t, result.Results, 2)
 	assert.True(t, result.Results[1].Skipped)
@@ -237,7 +237,7 @@ func TestCheckFieldAbsent(t *testing.T) {
 
 	t.Run("RunMechanical dispatches fieldAbsent", func(t *testing.T) {
 		body := []byte(`{"error": {"type": "idempotency_error"}}`)
-		result := RunMechanical(400, body, []MechanicalAssertion{
+		result := RunMechanical(HTTPStatusInfo(400), body, []MechanicalAssertion{
 			{Type: AssertFieldAbsent, Path: "error.code"},
 			{Type: AssertFieldAbsent, Path: "error.type"},
 		}, nil, nil)
@@ -457,7 +457,7 @@ func TestRunMechanical_AllPass(t *testing.T) {
 		{Type: AssertFieldEquals, Path: "name", Value: "Alice"},
 	}
 
-	result := RunMechanical(200, body, assertions, nil, nil)
+	result := RunMechanical(HTTPStatusInfo(200), body, assertions, nil, nil)
 	assert.True(t, result.Passed)
 	require.Len(t, result.Results, 3)
 	for _, r := range result.Results {
@@ -473,7 +473,7 @@ func TestRunMechanical_OneFails(t *testing.T) {
 		{Type: AssertFieldEquals, Path: "name", Value: "Alice"},
 	}
 
-	result := RunMechanical(200, body, assertions, nil, nil)
+	result := RunMechanical(HTTPStatusInfo(200), body, assertions, nil, nil)
 	assert.False(t, result.Passed)
 	require.Len(t, result.Results, 3)
 	assert.True(t, result.Results[0].Passed)
@@ -482,7 +482,7 @@ func TestRunMechanical_OneFails(t *testing.T) {
 }
 
 func TestRunMechanical_EmptyList(t *testing.T) {
-	result := RunMechanical(200, []byte(`{}`), nil, nil, nil)
+	result := RunMechanical(HTTPStatusInfo(200), []byte(`{}`), nil, nil, nil)
 	assert.True(t, result.Passed)
 	assert.Empty(t, result.Results)
 }
@@ -504,7 +504,7 @@ func TestRunMechanical_MixedResults(t *testing.T) {
 		{Type: AssertPredicate, Expr: "count > 0"}, // fails: count is 0
 	}
 
-	result := RunMechanical(200, body, assertions, eval, nil)
+	result := RunMechanical(HTTPStatusInfo(200), body, assertions, eval, nil)
 	assert.False(t, result.Passed)
 	require.Len(t, result.Results, 3)
 	assert.True(t, result.Results[0].Passed)
@@ -516,8 +516,53 @@ func TestRunMechanical_UnknownType(t *testing.T) {
 	assertions := []MechanicalAssertion{
 		{Type: "bogus"},
 	}
-	result := RunMechanical(200, []byte(`{}`), assertions, nil, nil)
+	result := RunMechanical(HTTPStatusInfo(200), []byte(`{}`), assertions, nil, nil)
 	assert.False(t, result.Passed)
 	require.Len(t, result.Results, 1)
 	assert.Contains(t, result.Results[0].Message, "unknown assertion type")
+}
+
+func TestCheckStatus_GRPCNames(t *testing.T) {
+	grpcStatus := StatusInfo{Code: 404, GRPCName: "NOT_FOUND"}
+
+	t.Run("a matching name passes", func(t *testing.T) {
+		r := checkStatus(grpcStatus, MechanicalAssertion{Type: AssertStatus, Expect: "NOT_FOUND"})
+		assert.True(t, r.Passed)
+		assert.Contains(t, r.Message, "NOT_FOUND")
+	})
+
+	t.Run("any spelling passes", func(t *testing.T) {
+		for _, name := range []string{"not_found", "NotFound", "not-found"} {
+			assert.True(t, checkStatus(grpcStatus, MechanicalAssertion{Expect: name}).Passed, name)
+		}
+	})
+
+	t.Run("OK is a name like any other", func(t *testing.T) {
+		r := checkStatus(StatusInfo{Code: 200, GRPCName: "OK"}, MechanicalAssertion{Expect: "OK"})
+		assert.True(t, r.Passed)
+	})
+
+	t.Run("a different code fails, even sharing an HTTP status", func(t *testing.T) {
+		// This is why names are compared rather than the codes they map to.
+		invalid := StatusInfo{Code: 400, GRPCName: "INVALID_ARGUMENT"}
+		r := checkStatus(invalid, MechanicalAssertion{Expect: "FAILED_PRECONDITION"})
+		assert.False(t, r.Passed)
+		assert.Contains(t, r.Message, "expected status FAILED_PRECONDITION, got INVALID_ARGUMENT")
+	})
+
+	t.Run("a number still matches a gRPC step", func(t *testing.T) {
+		r := checkStatus(grpcStatus, MechanicalAssertion{Expect: 404})
+		assert.True(t, r.Passed, "so a plan reads against either protocol")
+		assert.Contains(t, r.Message, "NOT_FOUND")
+	})
+
+	t.Run("a class still matches a gRPC step", func(t *testing.T) {
+		assert.True(t, checkStatus(StatusInfo{Code: 200, GRPCName: "OK"}, MechanicalAssertion{Expect: "2xx"}).Passed)
+	})
+
+	t.Run("naming a gRPC status on an HTTP step says so", func(t *testing.T) {
+		r := checkStatus(HTTPStatusInfo(404), MechanicalAssertion{Expect: "NOT_FOUND"})
+		assert.False(t, r.Passed)
+		assert.Contains(t, r.Message, "was not a gRPC call")
+	})
 }

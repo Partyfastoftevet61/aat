@@ -49,6 +49,11 @@ var regions = map[string]*regionConfig{
 // regionNames lists the regions in display order.
 var regionNames = []string{"us", "eu"}
 
+// DefaultRegion is the region a caller gets when it names none. The HTTP API
+// always has one in its path; a gRPC method has no path, so its façade needs a
+// default (see internal/sandbox/shopgrpc).
+const DefaultRegion = "us"
+
 // allTiers lists every shipping tier the API understands, in display order. A
 // region may offer a subset (see regionConfig.Tiers).
 var allTiers = []string{"standard", "express", "overnight"}

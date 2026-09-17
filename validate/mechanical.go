@@ -3,9 +3,11 @@ package validate
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/tidwall/gjson"
 
+	"github.com/gburgyan/aat/internal/grpcstatus"
 	"github.com/gburgyan/aat/internal/httpstatus"
 )
 
@@ -68,14 +70,14 @@ type SchemaCheckFunc func(a MechanicalAssertion) AssertionResult
 // RunMechanical evaluates all mechanical assertions against a response.
 // It returns an aggregate result indicating whether all assertions passed.
 // schemaCheck may be nil; when nil, schema assertions return Skipped.
-func RunMechanical(statusCode int, body []byte, assertions []MechanicalAssertion, predicateEval PredicateEvalFunc, schemaCheck SchemaCheckFunc) *MechanicalResult {
+func RunMechanical(status StatusInfo, body []byte, assertions []MechanicalAssertion, predicateEval PredicateEvalFunc, schemaCheck SchemaCheckFunc) *MechanicalResult {
 	result := &MechanicalResult{Passed: true}
 
 	for _, a := range assertions {
 		var ar AssertionResult
 		switch a.Type {
 		case AssertStatus:
-			ar = checkStatus(statusCode, a)
+			ar = checkStatus(status, a)
 		case AssertSchema:
 			ar = checkSchema(a, schemaCheck)
 		case AssertFieldExists:
@@ -104,9 +106,24 @@ func RunMechanical(statusCode int, body []byte, assertions []MechanicalAssertion
 	return result
 }
 
-// checkStatus compares the response status code against the expected value:
-// an exact code such as 201, or a class such as "2xx".
-func checkStatus(statusCode int, a MechanicalAssertion) AssertionResult {
+// StatusInfo is the status a response came back with, as assertions read it.
+//
+// Code is an HTTP status whatever the protocol: a gRPC response carries the
+// one its code maps to, so a class such as "2xx" and an exact code such as 404
+// mean the same thing for both. GRPCName is set only for a gRPC response, and
+// lets an assertion name the code the server actually sent.
+type StatusInfo struct {
+	Code     int
+	GRPCName string
+}
+
+// HTTPStatusInfo is the status of an HTTP response.
+func HTTPStatusInfo(code int) StatusInfo { return StatusInfo{Code: code} }
+
+// checkStatus compares the response status against the expected value: an
+// exact code such as 201, a class such as "2xx", or — on a gRPC response — a
+// status name such as NOT_FOUND.
+func checkStatus(status StatusInfo, a MechanicalAssertion) AssertionResult {
 	ar := AssertionResult{Type: AssertStatus}
 
 	if a.Expect == nil {
@@ -115,12 +132,34 @@ func checkStatus(statusCode int, a MechanicalAssertion) AssertionResult {
 		return ar
 	}
 
-	if class, ok := httpstatus.Class(a.Expect); ok {
-		ar.Passed = statusCode/100 == class
+	// A gRPC status is named before it is numbered: several codes share one
+	// HTTP status, so comparing names is the only way to tell them apart.
+	if grpcstatus.IsName(a.Expect) {
+		expected, _ := a.Expect.(string)
+		if status.GRPCName == "" {
+			ar.Passed = false
+			ar.Message = fmt.Sprintf("expected gRPC status %s, but the step was not a gRPC call (status %d)", expected, status.Code)
+			return ar
+		}
+		// Compare the codes the two names resolve to, so every accepted
+		// spelling — NOT_FOUND, not_found, NotFound, not-found — matches.
+		expectedCode, _ := grpcstatus.CodeByName(expected)
+		actualCode, known := grpcstatus.CodeByName(status.GRPCName)
+		ar.Passed = known && expectedCode == actualCode
 		if ar.Passed {
-			ar.Message = fmt.Sprintf("status code %d is %dxx", statusCode, class)
+			ar.Message = "status is " + status.GRPCName
 		} else {
-			ar.Message = fmt.Sprintf("expected status %dxx, got %d", class, statusCode)
+			ar.Message = fmt.Sprintf("expected status %s, got %s", strings.ToUpper(expected), status.GRPCName)
+		}
+		return ar
+	}
+
+	if class, ok := httpstatus.Class(a.Expect); ok {
+		ar.Passed = status.Code/100 == class
+		if ar.Passed {
+			ar.Message = fmt.Sprintf("status code %d is %dxx", status.Code, class)
+		} else {
+			ar.Message = fmt.Sprintf("expected status %dxx, got %d", class, status.Code)
 		}
 		return ar
 	}
@@ -128,18 +167,34 @@ func checkStatus(statusCode int, a MechanicalAssertion) AssertionResult {
 	expected, ok := httpstatus.Code(a.Expect)
 	if !ok {
 		ar.Passed = false
-		ar.Message = fmt.Sprintf("cannot coerce expect value %v (%T) to int", a.Expect, a.Expect)
+		ar.Message = fmt.Sprintf("cannot read expect value %v (%T) as a status code, a class such as \"2xx\", or a gRPC status name", a.Expect, a.Expect)
 		return ar
 	}
 
-	if statusCode == expected {
+	if status.Code == expected {
 		ar.Passed = true
-		ar.Message = fmt.Sprintf("status code is %d", statusCode)
+		ar.Message = statusIsMessage(status)
 	} else {
 		ar.Passed = false
-		ar.Message = fmt.Sprintf("expected status %d, got %d", expected, statusCode)
+		ar.Message = fmt.Sprintf("expected status %d, got %s", expected, statusGotMessage(status))
 	}
 	return ar
+}
+
+// statusIsMessage describes a matched status, naming a gRPC code where there
+// is one so the message reads the way the plan's author thinks.
+func statusIsMessage(status StatusInfo) string {
+	if status.GRPCName != "" {
+		return fmt.Sprintf("status is %s (%d)", status.GRPCName, status.Code)
+	}
+	return fmt.Sprintf("status code is %d", status.Code)
+}
+
+func statusGotMessage(status StatusInfo) string {
+	if status.GRPCName != "" {
+		return fmt.Sprintf("%s (%d)", status.GRPCName, status.Code)
+	}
+	return fmt.Sprintf("%d", status.Code)
 }
 
 // checkSchema delegates to the caller-provided SchemaCheckFunc, which typically

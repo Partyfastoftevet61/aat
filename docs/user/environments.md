@@ -391,6 +391,54 @@ auth:
 
 An empty or missing `type` field is treated as `none`.
 
+## gRPC Targets
+
+A node routed to a gRPC service takes a `grpc://` or `grpcs://` target instead
+of an HTTP base URL. `grpc://` is plaintext; `grpcs://` is TLS against the
+system roots. A target is a host and port, with no path — the template names
+the method.
+
+```yaml
+apiBaseUrl: grpc://localhost:9090
+```
+
+A project that spans both protocols routes per node, with the same `overrides:`
+block a multi-host HTTP project uses:
+
+```yaml
+apiBaseUrl: http://localhost:8765/us/v1
+
+overrides:
+  - match: "payment*"
+    baseUrl: grpc://localhost:8767
+    auth:
+      type: apikey
+      headerName: x-api-key
+      credentials:
+        key: {source: env, var: PAYMENTS_KEY}
+```
+
+Authentication needs nothing new: every auth type resolves to a name and a
+value, and on a gRPC call that travels as metadata rather than as a header.
+An `oauth2` token endpoint stays HTTP, which is how most gRPC services issue
+tokens.
+
+A `grpc:` block configures TLS beyond the system roots. Paths resolve beside
+the environment file.
+
+```yaml
+grpc:
+  tls:
+    caFile: certs/ca.pem           # a private certificate authority
+    certFile: certs/client.pem     # mTLS, when the service asks for a client certificate
+    keyFile: certs/client-key.pem
+    serverName: api.internal       # when the address is not the certificate's name
+    insecureSkipVerify: false      # a sandbox with a self-signed certificate, nothing else
+```
+
+`pathRewrite` has no meaning for a gRPC route — a path there is a method name —
+and naming both is an error rather than a silent no-op. See [gRPC](grpc.md).
+
 ## Custom Headers
 
 Static headers added to every request. These form the base layer — every other header source can override them:

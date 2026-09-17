@@ -105,6 +105,27 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  example-grpc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # The descriptor set is checked in, so this job needs no protoc.
+      - name: Run examples/grpc-payments against the sandbox
+        run: make example-grpc
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: example-grpc-runs
+          path: examples/grpc-payments/_output/
+          retention-days: 7
+          if-no-files-found: ignore
+
   build:
     needs: frontend
     runs-on: ubuntu-latest

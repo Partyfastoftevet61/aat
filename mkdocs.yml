@@ -97,6 +97,7 @@ nav:
       - Project setup: project-setup.md
       - API graphs: graphs.md
       - Templates: templates.md
+      - gRPC: grpc.md
       - Lua transforms: lua-transforms.md
       - Environments: environments.md
       - Plans and recipes: plans.md

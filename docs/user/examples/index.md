@@ -1,11 +1,12 @@
 # Examples
 
-Every example is the same idea at a different scale: a graph precise enough to run, and the things that read it. Two complete projects ship in the repository. CI checks both with `aat validate --strict`, and runs the shop's plans against the sandbox.
+Every example is the same idea at a different scale: a graph precise enough to run, and the things that read it. Three complete projects ship in the repository. CI checks each with `aat validate --strict`, and runs the shop's and the gRPC project's plans against the sandbox.
 
 | Example | API | What it shows | Needs |
 |---------|-----|---------------|-------|
 | [Shop](shop.md) | An offline e-commerce API served by `aat-sandbox` | Everything: an 18-operation graph, workflows with slots and addons, a Lua transform, layers and batch matrices with dedup, `us`/`eu` environments, a separately hosted payments API, negative tests and mutations, retries, checkpoints, a visualizer, MCP configuration, and an [integration kit](../integration-kit.md) packaged from the project | Nothing — no network, no account |
 | [Petstore](../petstore-walkthrough.md) | The public Swagger Petstore | The smallest working project: four operations, two workflows, two recipes, and graph cleanup pairing | Network access |
+| [gRPC payments](../grpc.md#the-60-second-version) | The same `aat-sandbox`, over gRPC and HTTP | One plan across two protocols: a cart opened and checked out over HTTP, then charged and refunded over [gRPC](../grpc.md), with the order id crossing the boundary untouched | Nothing — no network, no account |
 
 Three more projects run against real, public APIs and live in their own repositories; [Real APIs](real-apis.md) describes each. Each was built against the API's live test mode, and every claim in its README is something a run recorded:
 

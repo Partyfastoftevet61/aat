@@ -1,0 +1,22 @@
+# A negative test. The sandbox always declines card 4000000000000002, and the
+# payments API answers 402; over gRPC that arrives as INVALID_ARGUMENT, which
+# is what this plan names.
+intent:
+  goal: charge
+
+execution:
+  steps:
+    - id: cart
+      node: createCart
+    - id: item
+      node: addItem
+    - id: order
+      node: checkoutCart
+    - id: charge
+      node: paymentCharge
+      isGoal: true
+      values:
+        cardNumber: {default: "4000000000000002"}
+      expectFailure:
+        status: [INVALID_ARGUMENT]
+        description: the issuer declines this card every time

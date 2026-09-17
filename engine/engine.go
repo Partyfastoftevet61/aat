@@ -900,7 +900,8 @@ func (e *Engine) runStepAssertions(step plan.Step, node *graph.Node, state *RunS
 		schemaCheck := buildSchemaCheck(result.OASValidation)
 
 		if len(normalAssertions) > 0 {
-			nr := validate.RunMechanical(resp.StatusCode, normalBody,
+			statusInfo := validate.StatusInfo{Code: resp.StatusCode, GRPCName: grpcStatusName(resp)}
+			nr := validate.RunMechanical(statusInfo, normalBody,
 				withDisplayedExprs(convertAssertions(normalAssertions), ectx), normalEval, schemaCheck)
 			merged.Results = append(merged.Results, nr.Results...)
 			if !nr.Passed {
@@ -908,7 +909,7 @@ func (e *Engine) runStepAssertions(step plan.Step, node *graph.Node, state *RunS
 			}
 		}
 		if len(rawAssertions) > 0 {
-			rr := validate.RunMechanical(resp.StatusCode, resp.Body,
+			rr := validate.RunMechanical(validate.StatusInfo{Code: resp.StatusCode, GRPCName: grpcStatusName(resp)}, resp.Body,
 				withDisplayedExprs(convertAssertions(rawAssertions), ectx), predicateEval, schemaCheck)
 			merged.Results = append(merged.Results, rr.Results...)
 			if !rr.Passed {

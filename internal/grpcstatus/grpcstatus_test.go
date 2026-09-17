@@ -89,3 +89,53 @@ func TestNames(t *testing.T) {
 	assert.Equal(t, "OK", names[0])
 	assert.Equal(t, "UNAUTHENTICATED", names[MaxCode])
 }
+
+func TestFromHTTPStatus(t *testing.T) {
+	tests := []struct {
+		status int
+		want   uint32
+	}{
+		{200, OK}, {201, OK}, {204, OK},
+		{400, InvalidArgument},
+		{401, Unauthenticated},
+		{403, PermissionDenied},
+		{404, NotFound},
+		{409, Aborted},
+		{422, FailedPrecondition},
+		{412, FailedPrecondition},
+		{429, ResourceExhausted},
+		{402, InvalidArgument}, // payment required has no code of its own
+		{500, Internal},
+		{501, Unimplemented},
+		{503, Unavailable},
+		{504, DeadlineExceeded},
+	}
+	for _, tt := range tests {
+		t.Run(Name(tt.want), func(t *testing.T) {
+			assert.Equal(t, tt.want, FromHTTPStatus(tt.status), "HTTP %d", tt.status)
+		})
+	}
+}
+
+// TestFromHTTPStatusAgreesWithHTTPStatus checks the two directions line up
+// wherever the mapping is one-to-one: a code that is the only one for its HTTP
+// status must survive a round trip.
+func TestFromHTTPStatusAgreesWithHTTPStatus(t *testing.T) {
+	unique := map[int]uint32{}
+	shared := map[int]bool{}
+	for code := uint32(0); code <= MaxCode; code++ {
+		status := HTTPStatus(code)
+		if _, seen := unique[status]; seen {
+			shared[status] = true
+			continue
+		}
+		unique[status] = code
+	}
+	for status, code := range unique {
+		if shared[status] {
+			continue
+		}
+		assert.Equal(t, code, FromHTTPStatus(status),
+			"%s maps to HTTP %d and should map back", Name(code), status)
+	}
+}

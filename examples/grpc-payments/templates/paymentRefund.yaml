@@ -1,0 +1,17 @@
+adapter: paymentRefund
+protocol: grpc
+
+request:
+  rpc: shop.v1.Payments/Refund
+  # Omitting amount refunds whatever is left on the order.
+  message: |
+    {
+      "orderId": "{{orderId}}",
+      "reason": "{{reason}}"
+    }
+
+response:
+  extract:
+    paymentId: id
+    paymentStatus: status
+    refundedAmount: refundedAmount

@@ -238,6 +238,41 @@ response:
         title: name
 ```
 
+### gRPC Templates
+
+A template with `protocol: grpc` calls a gRPC method. Everything above still
+applies — placeholders, conditional and iteration blocks, `response.extract` —
+because a protobuf message reaches the rest of AAT as JSON.
+
+```yaml
+adapter: paymentCharge
+protocol: grpc
+
+request:
+  rpc: shop.v1.Payments/Charge   # replaces method + path
+  metadata:                      # replaces headers
+    x-tenant: "{{tenant}}"
+  message: |                     # replaces body; JSON, same placeholders
+    {"orderId": "{{orderId}}", "amount": "{{amount}}"}
+
+response:
+  extract:
+    paymentId: id
+```
+
+- The node names the method too: `proto: shop.v1.Payments/Charge`, in place of `oas:`. The graph or the manifest names the descriptor set with `proto: payments.protoset` — a `FileDescriptorSet` from `protoc --descriptor_set_out` or `buf build -o`, never `.proto` source
+- Mixing protocols' fields is an error: an HTTP template may not carry `rpc`/`metadata`/`message`, and a gRPC one may not carry `method`/`path`/`headers`/`body`/`form`
+- **Extract paths use lowerCamelCase JSON names**, so a `.proto` field `order_id` is `orderId`. Requests accept either spelling; only extraction is affected, and `aat validate` reports a path written the wrong way
+- **A 64-bit integer (`int64`, `uint64`, `fixed64`) is a JSON string**: `"4200"`, not `4200`. Write `fieldEquals` values quoted. Numeric comparisons in predicates still work
+- Other encodings: `bytes` is base64; an enum is its name; `Timestamp` is RFC 3339; `Duration` is `"3s"`; `Any` is `{"@type": …}` and needs its type in the descriptor set (`--include_imports`); map keys are always strings; `NaN`/`Infinity` are strings
+- Zero values are present in the JSON, so an extract rule for a `0` or `""` field does not fail. An unset `optional` field, message field, or map entry stays absent, which is what `fieldAbsent` tests
+- **Statuses are named**: `expect: OK`, `status: [NOT_FOUND]` in `expectFailure`, `expectStatus: [INVALID_ARGUMENT]` in a mutation. Prefer the name to a number: `INVALID_ARGUMENT`, `FAILED_PRECONDITION`, and `OUT_OF_RANGE` all map to HTTP 400, so a number cannot tell them apart. A number still matches, so a plan can read against either protocol
+- A failed call still has a JSON body: `{"code": "NOT_FOUND", "message": "...", "details": [...]}`, which assertions and `errorDetection` read normally
+- **Unary methods only.** A streaming method is rejected by `aat validate` and by the executor
+- The target is `grpc://host:port` (plaintext) or `grpcs://host:port` (TLS), set as `apiBaseUrl` or in an `overrides:` entry so one project can span both protocols. Auth needs nothing new: a credential travels as metadata
+
+Cross-ref: [gRPC](https://gburgyan.github.io/aat/grpc/)
+
 ### Form Bodies and Query Strings
 
 - **Write a form body as `form:`,** a mapping of field names to values, in place of `body:`. It is sent as `application/x-www-form-urlencoded`, with every key and value URL-encoded and the brackets of a key kept.

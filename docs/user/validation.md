@@ -156,6 +156,26 @@ When `--templates` is provided, AAT validates that template adapter files are co
 - Required template placeholders correspond to graph inputs
 - Placeholder types are compatible with input types
 
+### Protobuf Validation
+
+A project whose graph names a descriptor set gets a `Protobuf validation`
+section, which checks its gRPC nodes offline with no server running:
+
+```
+Protobuf validation: OK
+```
+
+It reports an unknown or misspelled service or method, a streaming method
+(AAT runs unary methods only), an input the request message does not declare,
+and — the one that would otherwise fail silently — an extract path written with
+a field's `.proto` name when the response encodes it under its JSON name:
+
+```
+node "paymentCharge": output "orderId" reads "order_id", but the response encodes that field as "orderId"
+```
+
+See [gRPC](grpc.md).
+
 ## Plan Validation
 
 ```

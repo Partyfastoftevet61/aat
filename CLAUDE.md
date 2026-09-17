@@ -20,6 +20,8 @@ make frontend      # cd server/web && npm install && npm run build
 make test          # go test ./...
 make check         # fmt + test-race + lint — mirrors the CI test and lint jobs
 make example-shop  # examples/shop against a local sandbox — mirrors the CI example-shop job
+make example-grpc  # examples/grpc-payments (HTTP + gRPC) against a local sandbox — mirrors the CI example-grpc job
+make proto         # regenerate examples/grpc-payments/payments.protoset (needs protoc; the .protoset is checked in)
 make demos         # regenerate docs/user/assets (VHS GIFs, Playwright screenshots) against a fresh sandbox
 make docs          # mkdocs build --strict in .venv-docs — mirrors the Docs workflow
 make docs-serve    # live-reloading docs site on :8000
@@ -50,6 +52,7 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 | `server/` | Local web API server (chi), embedded Svelte SPA frontend, archive viewer |
 | `mcp/` | MCP server: API lifecycle platform for IDE-based AI tools (stdio transport) |
 | `internal/sandbox/shop/` | Offline e-commerce sandbox API (regions, OAuth2/API key, order state machine, chaos hooks); stdlib only |
+| `internal/sandbox/shopgrpc/` | The sandbox's payments API over gRPC: a façade that forwards to the HTTP handler, served dynamically from the checked-in descriptor set. grpc-go and protobuf allowed here, unlike `shop` |
 | `internal/httpstatus/` | Expected-status values shared by plan validation and assertions: exact codes, `2xx` classes, contradictions with `expectFailure` |
 | `internal/yamlx/` | Strict YAML decoding for project files: unknown keys are errors with line, key, and suggestion |
 | `internal/predicate/` | Predicate expressions (`status == "open" && total > 100`): parsing, evaluation, and the fields they name, for selection filters, constraints, assertions, and cleanup `when` |
@@ -65,11 +68,13 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 Dependencies flow in one direction. No cycles. No lateral imports within a tier.
 
 **Foundation packages** (stdlib and third-party imports only; importable from any tier): `internal/httpstatus`, `internal/yamlx`, `internal/predicate`, `internal/version`, `internal/primer`, `internal/protoreg`, `internal/grpcstatus`
-**Leaf packages** (no aat imports other than foundation packages): `config`, `graph`, `domain`, `adapter`, `validate`, `internal/sandbox/shop`
+**Leaf packages** (no aat imports other than foundation packages): `config`, `graph`, `domain`, `adapter`, `validate`, `internal/sandbox/shop`, `internal/sandbox/shopgrpc`
 **Mid-tier**: `graph/oas` → graph; `graph/proto` → graph; `llm` → config; `plan` → graph, config; `archive` → plan
 **Orchestrators**: `engine` → graph, graph/oas, adapter, plan, domain, validate, archive, config
 **Entry points**: `intent` → graph, domain, plan, llm; `mcp` → all packages; `server` → intent, archive, plan, config, adapter (for the protocol a step used)
-**Binaries**: `cmd/aat` → every package outside `internal/` (its tests also import `internal/sandbox/shop` and the root embed for the shop end-to-end test); `cmd/aat-sandbox` → internal/sandbox/shop, root embed
+**Binaries**: `cmd/aat` → every package outside `internal/` (its tests also import `internal/sandbox/shop` and the root embed for the shop end-to-end test); `cmd/aat-sandbox` → internal/sandbox/shop, internal/sandbox/shopgrpc, root embed
+
+`internal/sandbox/shop` is stdlib only, and stays that way. `internal/sandbox/shopgrpc` is the one exception in the sandbox tree: it needs grpc-go and protobuf to serve a gRPC listener, and it holds no logic of its own — every call becomes the HTTP request `shop` already answers, so the two surfaces cannot drift.
 
 Data flows down, decisions flow up. No business logic in `cmd/`.
 
@@ -194,6 +199,14 @@ sh package-kit.sh                                                     # package 
 
 # What CI runs against the shop (starts its own sandbox; needs curl, jq, free ports 8765/8766)
 make example-shop
+
+# The gRPC example: a cart over HTTP, then charge and refund over gRPC, against
+# the same sandbox (shop :8765, payments :8766, gRPC payments :8767)
+cd examples/grpc-payments/
+../../aat validate --strict                # checks gRPC nodes against payments.protoset, offline
+../../aat run plan charge-and-refund       # three HTTP steps, then two gRPC ones
+../../aat run plan declined-card           # expectFailure naming a gRPC status
+make example-grpc                          # what CI runs
 
 # Petstore example (public API, no credentials), from the repository root
 cd examples/petstore/

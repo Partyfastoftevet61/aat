@@ -129,3 +129,49 @@ func Names() []string {
 	}
 	return names
 }
+
+// FromHTTPStatus maps an HTTP status to the gRPC code an equivalent service
+// would return. It is the inverse of HTTPStatus where one exists, and is used
+// by a gateway or a façade that fronts an HTTP API with a gRPC one.
+//
+// The mapping is lossy in the direction HTTPStatus is not: several codes share
+// one HTTP status, so 400 comes back as INVALID_ARGUMENT, the most common of
+// them, and 409 as ABORTED.
+func FromHTTPStatus(status int) uint32 {
+	switch status {
+	case 200, 201, 202, 204:
+		return OK
+	case 400:
+		return InvalidArgument
+	case 401:
+		return Unauthenticated
+	case 403:
+		return PermissionDenied
+	case 404:
+		return NotFound
+	case 409:
+		return Aborted
+	case 429:
+		return ResourceExhausted
+	case 499:
+		return Canceled
+	case 501:
+		return Unimplemented
+	case 503:
+		return Unavailable
+	case 504:
+		return DeadlineExceeded
+	}
+	switch {
+	case status >= 200 && status < 300:
+		return OK
+	case status == 412 || status == 422:
+		// A request that is well formed but cannot be applied in the
+		// resource's current state.
+		return FailedPrecondition
+	case status >= 400 && status < 500:
+		return InvalidArgument
+	default:
+		return Internal
+	}
+}

@@ -71,15 +71,15 @@ func TestServeCommand_HealthAndShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ready := make(chan [2]string, 1)
+	ready := make(chan [3]string, 1)
 	errCh := make(chan error, 1)
 	var out bytes.Buffer
 	go func() {
 		errCh <- serveCommand(ctx, serveArgs{Host: "127.0.0.1", Latency: 0, Seed: 1}, &out,
-			func(api, pay string) { ready <- [2]string{api, pay} })
+			func(api, pay, grpcAddr string) { ready <- [3]string{api, pay, grpcAddr} })
 	}()
 
-	var addrs [2]string
+	var addrs [3]string
 	select {
 	case addrs = <-ready:
 	case err := <-errCh:
@@ -87,12 +87,16 @@ func TestServeCommand_HealthAndShutdown(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("serve did not become ready")
 	}
-	for _, addr := range addrs {
+	for _, addr := range addrs[:2] {
 		res, err := http.Get("http://" + addr + "/healthz")
 		require.NoError(t, err)
 		_ = res.Body.Close()
 		assert.Equal(t, http.StatusOK, res.StatusCode, addr)
 	}
+	// The gRPC listener answers no HTTP route, so readiness is a connection.
+	conn, err := net.DialTimeout("tcp", addrs[2], 2*time.Second)
+	require.NoError(t, err, "gRPC payments listener at %s", addrs[2])
+	_ = conn.Close()
 
 	cancel()
 	select {
@@ -108,13 +112,13 @@ func TestServeCommand_HealthAndShutdown(t *testing.T) {
 func TestServeCommand_PortInUse(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ready := make(chan [2]string, 1)
+	ready := make(chan [3]string, 1)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- serveCommand(ctx, serveArgs{Host: "127.0.0.1", Quiet: true, Seed: 1}, &bytes.Buffer{},
-			func(api, pay string) { ready <- [2]string{api, pay} })
+			func(api, pay, grpcAddr string) { ready <- [3]string{api, pay, grpcAddr} })
 	}()
-	var addrs [2]string
+	var addrs [3]string
 	select {
 	case addrs = <-ready:
 	case <-time.After(5 * time.Second):

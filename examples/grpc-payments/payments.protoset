@@ -1,0 +1,32 @@
+
+Å
+payments.protoshop.v1"‡
+ChargeRequest
+order_id (	RorderId
+amount (Ramount
+currency (	Rcurrency
+method (	Rmethod
+card_number (	R
+cardNumber$
+gift_card_code (	RgiftCardCode!
+paypal_email (	RpaypalEmail"Z
+RefundRequest
+order_id (	RorderId
+amount (Ramount
+reason (	Rreason"™
+Payment
+id (	Rid
+order_id (	RorderId!
+order_status (	RorderStatus
+status (	Rstatus
+method (	Rmethod
+amount (Ramount%
+amount_display (	RamountDisplay
+currency (	Rcurrency
+
+created_at	 (	R	createdAt'
+refunded_amount
+ (RrefundedAmount2r
+Payments2
+Charge.shop.v1.ChargeRequest.shop.v1.Payment2
+Refund.shop.v1.RefundRequest.shop.v1.Paymentbproto3

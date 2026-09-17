@@ -458,6 +458,35 @@ The template-aware parts of these checks need the templates: `aat validate` alwa
 
 Warnings are informational — intentional divergence from the spec is normal (e.g., omitting optional parameters or extracting only specific response fields).
 
+## Protobuf Integration
+
+A node that calls a gRPC method names it with `proto:` in place of `oas:`, and
+the graph names the descriptor set its methods are declared in:
+
+```yaml
+proto: payments.protoset        # from protoc --descriptor_set_out, or buf build -o
+
+nodes:
+  paymentCharge:
+    adapter: paymentCharge
+    proto: shop.v1.Payments/Charge
+```
+
+The mapping form lets a node name a descriptor set of its own, as `oas.spec`
+does for a node whose operation lives in another document:
+
+```yaml
+    proto:
+      service: legacy.v1.Payments
+      method: Charge
+      descriptor: legacy.protoset
+```
+
+`aat validate` checks every gRPC node against the descriptors offline: that the
+service and method exist, that the method is unary, and that the node's inputs
+and extract paths name fields the request and response messages declare. A node
+carries one contract or the other, never both. See [gRPC](grpc.md).
+
 ## Graph YAML Reference
 
 An annotated graph with every top-level field except `examples` (few-shot examples for `aat prompt`'s workflow selection) and the common node fields; the tables above list the rest. `version` is required and must be `X.Y.Z`.

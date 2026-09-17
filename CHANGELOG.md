@@ -16,9 +16,10 @@ the graph and plan formats may still change before 1.0.
   Messages cross into the rest of AAT as JSON, so extract rules, predicates, assertions, error
   detection, archives, and `aat run show` work exactly as they do for HTTP; `metadata:` carries what
   headers carry, credentials included, so `oauth2`, `apikey`, and `bearer` need no new configuration.
-  `expectFailure` and `expectStatus` accept gRPC status names — `status: [NOT_FOUND]` — which match
-  more precisely than a code can, because several gRPC statuses share one HTTP status. Numbers still
-  work, so a plan can read against either protocol. `aat validate` checks gRPC nodes against the
+  `expectFailure`, `expectStatus`, and a `status` assertion accept gRPC status names —
+  `expect: OK`, `status: [NOT_FOUND]` — which match more precisely than a code can, because several
+  gRPC statuses share one HTTP status. Numbers still work, so a plan can read against either
+  protocol. `aat validate` checks gRPC nodes against the
   descriptors offline, catching an unknown or misspelled method, a streaming method, and an extract
   path written with a field's proto name when the response encodes it under its JSON name.
 
@@ -35,6 +36,22 @@ the graph and plan formats may still change before 1.0.
 
   This adds `google.golang.org/grpc` and `google.golang.org/protobuf`, which take a `go install`
   build from about 28 MB to about 44 MB.
+
+- **A gRPC demo, offline.** `aat-sandbox serve` now serves `shop.v1.Payments` on `:8767` beside the
+  HTTP shop (`:8765`) and HTTP payments (`:8766`), against the same orders. The new
+  `examples/grpc-payments` project runs one plan across both protocols: a cart opened and checked
+  out over HTTP, then charged and refunded over gRPC, with the order id crossing the boundary
+  untouched. `make example-grpc` runs it, and CI does too, so nothing about gRPC is unexercised.
+
+  The service is a façade over the payments HTTP handler rather than a second implementation, so
+  the order state machine, the declined card, and the region's currency rules behave identically
+  whichever protocol reached them. It is served dynamically from the same descriptor set the
+  project reads, so the two cannot describe different APIs. `make proto` regenerates it.
+
+- **`docs/user/grpc.md`**, a guide covering descriptor sets, the template and graph shape, routing
+  and auth, status names, and the proto3 JSON encoding rules most likely to surprise a plan author
+  — starting with 64-bit integers, which encode as strings. The AI assistant primer gained the same
+  ground so agents author gRPC plans correctly.
 
 ### Fixed
 - The Homebrew cask clears the macOS quarantine attribute with a declarative `postflight_steps` stanza, so `brew` no
