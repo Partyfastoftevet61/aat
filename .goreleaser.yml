@@ -62,7 +62,7 @@ changelog:
 # Homebrew cask pushed to github.com/gburgyan/homebrew-tap (Casks/aat.rb).
 # Requires the HOMEBREW_TAP_GITHUB_TOKEN secret (fine-grained PAT, Contents RW on the tap repo).
 # The cask has on_macos and on_linux stanzas; v0.1.0 installed with Homebrew on Linux (amd64).
-# The quarantine hook below runs on macOS only.
+# The quarantine step below runs on macOS only.
 homebrew_casks:
   - name: aat
     repository:
@@ -76,16 +76,21 @@ homebrew_casks:
     license: Apache-2.0
     # aat-sandbox ships alongside so the offline quick start works right after install.
     binaries: [aat, aat-sandbox]
-    # The binaries are not notarized; strip the quarantine attribute so the
-    # first run does not trip Gatekeeper.
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            %w[aat aat-sandbox].each do |binary|
-              system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/#{binary}"]
-            end
-          end
+    # Homebrew deprecated the `postflight` stanza, and its replacement takes
+    # declarative steps rather than Ruby. GoReleaser still hardcodes `postflight`
+    # for `hooks.post.install` (goreleaser#6870), so write the stanza here until
+    # `hooks.post.install_steps` ships (goreleaser#6873). `custom_block` is not
+    # templated on its own, and the whole generated cask gets one template pass,
+    # so Homebrew's `{{staged_path}}` token is escaped as a string literal.
+    custom_block: |
+      # The binaries are not notarized; strip the quarantine attribute so the
+      # first run does not trip Gatekeeper.
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/aat"], must_succeed: false
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/aat-sandbox"], must_succeed: false
+        end
+      end
 
 # Multi-arch image at ghcr.io/gburgyan/aat (see Dockerfile), aat only. Images are
 # built and pushed in the publish phase; `--snapshot` builds them locally.
