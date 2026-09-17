@@ -1359,31 +1359,6 @@ response:
 	assert.Equal(t, "subtotal", tmpl.Response.Extract["subtotal"].GJSONPath())
 }
 
-func TestSplitRPC(t *testing.T) {
-	tests := []struct {
-		in              string
-		service, method string
-		ok              bool
-	}{
-		{"shop.v1.Carts/CreateCart", "shop.v1.Carts", "CreateCart", true},
-		{"/shop.v1.Carts/CreateCart", "shop.v1.Carts", "CreateCart", true},
-		{"shop.v1.Carts.CreateCart", "shop.v1.Carts", "CreateCart", true},
-		{"Carts/CreateCart", "Carts", "CreateCart", true},
-		{"Carts", "", "", false},
-		{"", "", "", false},
-		{"/CreateCart", "", "", false},
-		{"shop.v1.Carts/", "", "", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			service, method, ok := splitRPC(tt.in)
-			assert.Equal(t, tt.ok, ok)
-			assert.Equal(t, tt.service, service)
-			assert.Equal(t, tt.method, method)
-		})
-	}
-}
-
 func TestTemplateAdapter_BuildGRPCRequest(t *testing.T) {
 	tmpl, err := ParseTemplate([]byte(`adapter: createCart
 protocol: grpc

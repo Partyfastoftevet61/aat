@@ -42,8 +42,6 @@ The `method` field accepts any HTTP method: GET, POST, PUT, DELETE, PATCH, etc. 
 
 The `protocol` field is `http` when omitted. Set it to `grpc` for a gRPC call, which names an `rpc` instead — see [gRPC](grpc.md). A template that mixes the two protocols' fields is rejected by name rather than quietly ignored.
 
-The `protocol` field defaults to `"http"` and is the only supported value.
-
 ### Headers
 
 ```yaml

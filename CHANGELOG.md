@@ -54,6 +54,32 @@ the graph and plan formats may still change before 1.0.
   ground so agents author gRPC plans correctly.
 
 ### Fixed
+- **gRPC rough edges, found by reviewing the feature against its own docs.** A descriptor set named
+  by `proto:` in `aat-project.yaml` — the form the guide teaches first — was parsed and read by
+  nothing, so every gRPC node went unvalidated and the run then failed telling the user to do what
+  they had already done. It works now, for `aat validate`, `aat run`, `aat prompt` and the MCP
+  server alike, and a project that names a descriptor set its nodes do not use, or uses descriptor
+  sets it does not name, is told so rather than passed over in silence.
+
+  A node's `proto:` is now checked against its template. Pointing a gRPC node at an HTTP template,
+  the natural mistake of forgetting `protocol: grpc`, used to pass `aat validate --strict` and fail
+  three steps into a run, after a cart and an order already existed; it fails validation, and fails
+  a run before its first step. A node whose `proto:` and template `rpc:` name different methods is
+  caught too — validation was checking one method while the wire called another.
+
+  A gRPC call had no deadline at all, so a server that accepted and never replied held the step for
+  as long as the run lasted; it now gives up after the same 30 seconds an HTTP request does, and
+  says so in the same words. `pathRewrite` beside a `grpc://` `baseUrl` is rejected, as the
+  documentation always said it was. A status assertion written as a gRPC status name can no longer
+  contradict `expectFailure` unnoticed.
+
+  The web UI shows the gRPC status a plan wrote rather than the HTTP status it maps to — several
+  gRPC statuses share one, so the number could not say which — and so do the CLI's failure summary
+  and the MCP archive tools. **Copy as grpcurl** always emits `-d`, without which grpcurl reads the
+  message from stdin and the pasted command appears to hang. The progress lines keep their columns
+  aligned when a step reports a status name instead of three digits. gRPC metadata is archived with
+  the lowercase keys the wire uses, so a key grepped for in an archive is the key the server sent.
+
 - The Homebrew cask clears the macOS quarantine attribute with a declarative `postflight_steps` stanza, so `brew` no
   longer warns that `postflight` is deprecated and asks users to report it to the tap. The published cask in
   `gburgyan/homebrew-tap` was updated in place, so the warning is gone without waiting for the next release.

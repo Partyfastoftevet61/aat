@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gburgyan/aat/internal/protoreg"
 	"github.com/gburgyan/aat/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
@@ -205,7 +206,7 @@ func (r *ProtoRef) UnmarshalYAML(unmarshal func(any) error) error {
 		if err := unmarshal(&ref); err != nil {
 			return err
 		}
-		service, method, ok := splitFullMethod(ref)
+		service, method, ok := protoreg.SplitFullMethod(ref)
 		if !ok {
 			return &yaml.TypeError{Errors: []string{fmt.Sprintf(
 				"line %d: proto %q must name a service and a method, as in \"shop.v1.Carts/CreateCart\"", n.Line, ref)}}
@@ -235,23 +236,6 @@ func (r ProtoRef) MarshalYAML() (any, error) {
 		return r.String(), nil
 	}
 	return rawProtoRef(r), nil
-}
-
-// splitFullMethod splits "pkg.Service/Method", the form gRPC uses, and also
-// accepts "pkg.Service.Method", the form protobuf uses for a full name.
-func splitFullMethod(ref string) (service, method string, ok bool) {
-	ref = strings.TrimPrefix(ref, "/")
-	if i := strings.LastIndex(ref, "/"); i > 0 {
-		service, method = ref[:i], ref[i+1:]
-	} else if i := strings.LastIndex(ref, "."); i > 0 {
-		service, method = ref[:i], ref[i+1:]
-	} else {
-		return "", "", false
-	}
-	if service == "" || method == "" || strings.Contains(method, "/") {
-		return "", "", false
-	}
-	return service, method, true
 }
 
 // Input describes a single input parameter for a node.

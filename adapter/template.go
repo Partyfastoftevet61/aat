@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gburgyan/aat/internal/protoreg"
 	"github.com/gburgyan/aat/internal/yamlx"
 	"github.com/tidwall/gjson"
 	"gopkg.in/yaml.v3"
@@ -49,29 +50,10 @@ type TemplateRequest struct {
 // Service and Method split the template's rpc field. They are empty when the
 // template is not a gRPC one, or when its rpc field is malformed, which
 // ParseTemplate rejects.
-func (r TemplateRequest) Service() string { s, _, _ := splitRPC(r.RPC); return s }
+func (r TemplateRequest) Service() string { s, _, _ := protoreg.SplitFullMethod(r.RPC); return s }
 
 // Method is the RPC's method name; see Service.
-func (r TemplateRequest) MethodName() string { _, m, _ := splitRPC(r.RPC); return m }
-
-// splitRPC splits "pkg.Service/Method", the form gRPC uses on the wire, and
-// also accepts "pkg.Service.Method", the form protobuf uses for a full name.
-// The graph parses its own proto refs the same way; adapter is a leaf package
-// and cannot reach graph, so the two forms are read in both places.
-func splitRPC(ref string) (service, method string, ok bool) {
-	ref = strings.TrimPrefix(ref, "/")
-	if i := strings.LastIndex(ref, "/"); i > 0 {
-		service, method = ref[:i], ref[i+1:]
-	} else if i := strings.LastIndex(ref, "."); i > 0 {
-		service, method = ref[:i], ref[i+1:]
-	} else {
-		return "", "", false
-	}
-	if service == "" || method == "" || strings.Contains(method, "/") {
-		return "", "", false
-	}
-	return service, method, true
-}
+func (r TemplateRequest) MethodName() string { _, m, _ := protoreg.SplitFullMethod(r.RPC); return m }
 
 // TemplateResponse defines how outputs are extracted from the response.
 type TemplateResponse struct {
@@ -300,7 +282,7 @@ func (t *Template) validateGRPCRequest() error {
 	if t.Request.RPC == "" {
 		return fmt.Errorf("template missing required field: request.rpc (as in \"shop.v1.Carts/CreateCart\")")
 	}
-	if _, _, ok := splitRPC(t.Request.RPC); !ok {
+	if _, _, ok := protoreg.SplitFullMethod(t.Request.RPC); !ok {
 		return fmt.Errorf("request.rpc %q must name a service and a method, as in \"shop.v1.Carts/CreateCart\"", t.Request.RPC)
 	}
 	for _, f := range []struct{ name, value string }{

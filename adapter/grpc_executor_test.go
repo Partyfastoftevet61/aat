@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -185,10 +186,13 @@ func TestGRPCExecutor_MetadataAndTrailers(t *testing.T) {
 	// Keys are stored as the wire sent them: lowercase, not canonicalized to
 	// X-Request-Id, which is the spelling an archive and a copied grpcurl
 	// command show.
-	assert.Equal(t, []string{"req-1"}, resp.Headers["x-request-id"], "header metadata is kept apart, wire-spelled")
-	assert.NotContains(t, resp.Headers, "X-Request-Id", "no canonicalized spelling")
-	assert.Empty(t, resp.Headers["x-cost"], "a trailer is not a header")
-	assert.Equal(t, []string{"3"}, resp.Trailers["x-cost"], "trailing metadata is kept apart")
+	// Keys are stored as the wire sent them: lowercase, not canonicalized to
+	// X-Request-Id, which is the spelling an archive and a copied grpcurl
+	// command show.
+	assert.Contains(t, headerKeys(resp.Headers), "x-request-id", "header metadata is wire-spelled")
+	assert.NotContains(t, headerKeys(resp.Headers), "X-Request-Id", "no canonicalized spelling")
+	assert.Equal(t, []string{"x-cost"}, headerKeys(resp.Trailers), "a trailer is kept apart from a header")
+	assert.Nil(t, resp.Headers.Values("x-cost"), "a trailer is not a header")
 
 	// A template reads a value wherever the server chose to put it, in any case.
 	assert.Equal(t, []string{"req-1"}, resp.HeaderValues("X-Request-Id"))
@@ -462,4 +466,15 @@ func TestGRPCExecutor_CancelledContextDoesNotBlameTheTimeout(t *testing.T) {
 		require.NotNil(t, resp.GRPC)
 		assert.Equal(t, "CANCELLED", resp.GRPC.Name)
 	}
+}
+
+// headerKeys returns a header map's keys as stored, sorted, for asserting the
+// spelling rather than the lookup.
+func headerKeys(h http.Header) []string {
+	keys := make([]string, 0, len(h))
+	for k := range h {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

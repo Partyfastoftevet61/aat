@@ -262,6 +262,7 @@ response:
 
 - The node names the method too: `proto: shop.v1.Payments/Charge`, in place of `oas:`. The graph or the manifest names the descriptor set with `proto: payments.protoset` — a `FileDescriptorSet` from `protoc --descriptor_set_out` or `buf build -o`, never `.proto` source
 - Mixing protocols' fields is an error: an HTTP template may not carry `rpc`/`metadata`/`message`, and a gRPC one may not carry `method`/`path`/`headers`/`body`/`form`
+- The node and its template must agree: a node with `proto:` needs a template with `protocol: grpc`, and the two must name the same method. `aat validate` and `aat run` both reject a mismatch — a run before its first step — because nothing at run time reads `proto:`, so a mismatch means validation checked a contract the run never uses
 - **Extract paths use lowerCamelCase JSON names**, so a `.proto` field `order_id` is `orderId`. Requests accept either spelling; only extraction is affected, and `aat validate` reports a path written the wrong way
 - **A 64-bit integer (`int64`, `uint64`, `fixed64`) is a JSON string**: `"4200"`, not `4200`. Write `fieldEquals` values quoted. Numeric comparisons in predicates still work
 - Other encodings: `bytes` is base64; an enum is its name; `Timestamp` is RFC 3339; `Duration` is `"3s"`; `Any` is `{"@type": …}` and needs its type in the descriptor set (`--include_imports`); map keys are always strings; `NaN`/`Infinity` are strings

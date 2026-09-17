@@ -81,12 +81,11 @@ func protoSpecCheck(g *graph.Graph, graphPath string, projectProto []string, reg
 		}
 	}
 
-	switch {
-	case nodes == 0:
+	if nodes == 0 {
 		section.Detail = "(" + pluralize(len(projectProto), "descriptor set") + ", no gRPC nodes)"
 		section.Notes = append(section.Notes,
 			"aat-project.yaml names a descriptor set, but no node has proto:; a node is checked against it once it names a method")
-	default:
+	} else {
 		section.Detail = "(" + pluralize(nodes, "gRPC node") + ")"
 	}
 	return section

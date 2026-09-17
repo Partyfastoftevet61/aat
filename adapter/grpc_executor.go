@@ -71,7 +71,7 @@ func (e *GRPCExecutor) Execute(ctx context.Context, req *Request) (*Response, er
 	if req.Protocol != ProtocolGRPC {
 		return nil, fmt.Errorf("executing %s: a gRPC executor sends gRPC requests", req.Path)
 	}
-	service, method, ok := splitRPC(req.Path)
+	service, method, ok := protoreg.SplitFullMethod(req.Path)
 	if !ok {
 		return nil, fmt.Errorf("executing %q: it must name a service and a method", req.Path)
 	}

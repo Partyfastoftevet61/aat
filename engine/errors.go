@@ -166,13 +166,24 @@ func classifyStepResult(result *StepResult) *ErrorClassification {
 // rather than by the HTTP status it maps to, which the caller never wrote and
 // would not recognise.
 func statusDetail(resp *adapter.Response, code int) string {
-	if resp != nil && resp.GRPC != nil {
-		if resp.GRPC.Message != "" {
-			return fmt.Sprintf("gRPC %s: %s", resp.GRPC.Name, resp.GRPC.Message)
-		}
-		return "gRPC " + resp.GRPC.Name
+	if text, ok := grpcStatusText(resp); ok {
+		return text
 	}
 	return statusCodeDetail(code)
+}
+
+// grpcStatusText describes a gRPC response by the code it carries and the
+// message the server sent, which is where the reason for an unreachable host
+// or a refused call lives. ok is false for an HTTP response, leaving the
+// caller to supply its own wording for a status number.
+func grpcStatusText(resp *adapter.Response) (string, bool) {
+	if resp == nil || resp.GRPC == nil {
+		return "", false
+	}
+	if resp.GRPC.Message != "" {
+		return fmt.Sprintf("gRPC %s: %s", resp.GRPC.Name, resp.GRPC.Message), true
+	}
+	return "gRPC " + resp.GRPC.Name, true
 }
 
 // statusCodeDetail returns a human-readable description for an HTTP status code.
@@ -290,11 +301,8 @@ func ActualStatusText(resp *adapter.Response, code int) string {
 // is where the reason for an unreachable host or a refused call lives; an HTTP
 // step reads as it always has.
 func failureStatusText(resp *adapter.Response, code int) string {
-	if resp != nil && resp.GRPC != nil {
-		if resp.GRPC.Message != "" {
-			return fmt.Sprintf("gRPC %s: %s", resp.GRPC.Name, resp.GRPC.Message)
-		}
-		return "gRPC " + resp.GRPC.Name
+	if text, ok := grpcStatusText(resp); ok {
+		return text
 	}
 	return fmt.Sprintf("status %d", code)
 }

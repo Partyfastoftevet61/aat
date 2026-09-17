@@ -87,6 +87,7 @@ A manifest that exists but fails to load is an error for every command that disc
 | Graph structure | YAML parsing, node uniqueness, input/output types, required fields, cleanup pairings and their `when` conditions, and the shape of literal defaults and slot `inject` values. Warns about a required input whose default takes `from:` an optional output |
 | OAS validation | OpenAPI spec loading, operationId alignment, inputs and required parameters, outputs present in the 2xx response schema at their template extract paths (nested objects and array items included) |
 | Adapter outputs | Template extraction paths match graph output declarations |
+| Node protocols | A node's `proto:` agrees with its template's `protocol:` and `rpc:` |
 | Template inputs | Required template placeholders vs optional graph inputs |
 | Workflow compatibility | Addon `AUTOWIRE` inputs are produced in every base the addon attaches to; a slot counts when all of its options produce the input, because slots are filled before addons are spliced. A plain `AUTOWIRE` in a base or slot option must be produced by the base or its slots; the warning names any addon that produces the output and suggests `AUTOWIRE?` for an optional input. `AUTOWIRE?` never warns as unfed, but it does warn on a required input with no graph default |
 | Workflows | Workflow directory files, subdirectories included, parse correctly and validate against graph. Warns about a required input that takes `from:` an optional output |
@@ -158,12 +159,17 @@ When `--templates` is provided, AAT validates that template adapter files are co
 
 ### Protobuf Validation
 
-A project whose graph names a descriptor set gets a `Protobuf validation`
-section, which checks its gRPC nodes offline with no server running:
+A project whose `aat-project.yaml` or graph names a descriptor set gets a
+`Protobuf validation` section, which checks its gRPC nodes offline with no
+server running:
 
 ```
-Protobuf validation: OK
+Protobuf validation: OK (2 gRPC nodes)
 ```
+
+A project that names a descriptor set before writing its first gRPC node
+passes, with a note saying so; a node that names a method with no descriptor
+set anywhere fails, naming both places one can be declared.
 
 It reports an unknown or misspelled service or method, a streaming method
 (AAT runs unary methods only), an input the request message does not declare,
@@ -175,6 +181,27 @@ node "paymentCharge": output "orderId" reads "order_id", but the response encode
 ```
 
 See [gRPC](grpc.md).
+
+### Node Protocols
+
+A project with any gRPC node gets a `Node protocols` section, which checks
+each node's `proto:` against its template's `protocol:` and `rpc:`:
+
+```
+Node protocols:      OK (2 gRPC, 6 HTTP)
+```
+
+Nothing at run time reads a node's `proto:` — a gRPC call is built entirely
+from its template's `protocol:` and `rpc:` — so a mismatch does not change
+what goes over the wire. It means the contract validation checked is not the
+call the run makes, which is worse than a wrong call, because it passes.
+
+A node declaring `proto:` whose template is `protocol: http`, the natural
+mistake of forgetting `protocol: grpc`, is an error, as is a node whose
+`proto:` and template `rpc:` name different methods. A gRPC template whose
+node names no method is a warning: nothing breaks, but the node goes
+unchecked against the descriptors. `aat run` makes the same check before its
+first step, so a mismatched project fails before it creates anything.
 
 ## Plan Validation
 
