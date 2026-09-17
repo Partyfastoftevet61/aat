@@ -6,6 +6,11 @@ the graph and plan formats may still change before 1.0.
 
 ## [Unreleased]
 
+### Fixed
+- The Homebrew cask clears the macOS quarantine attribute with a declarative `postflight_steps` stanza, so `brew` no
+  longer warns that `postflight` is deprecated and asks users to report it to the tap. The published cask in
+  `gburgyan/homebrew-tap` was updated in place, so the warning is gone without waiting for the next release.
+
 ## [0.2.0] - 2026-09-16
 
 The public launch release, and the one the three real-API projects ([aat-duffel](https://github.com/gburgyan/aat-duffel),
