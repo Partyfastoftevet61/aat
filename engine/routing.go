@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"path/filepath"
 
 	"github.com/gburgyan/aat/adapter"
@@ -11,7 +12,7 @@ import (
 // ExecutorRouter routes API calls to different executors based on node name.
 // It supports exact-match and glob-pattern overrides, falling back to a default executor.
 type ExecutorRouter struct {
-	defaultExec    *adapter.HTTPExecutor
+	defaultExec    adapter.Executor
 	defaultConfig  *adapter.EnvironmentConfig
 	overrides      []routeEntry
 	valueOverrides []valueOverrideEntry
@@ -20,7 +21,7 @@ type ExecutorRouter struct {
 type routeEntry struct {
 	pattern     string
 	isGlob      bool
-	executor    *adapter.HTTPExecutor
+	executor    adapter.Executor
 	config      *adapter.EnvironmentConfig
 	pathRewrite *adapter.PathRewrite
 }
@@ -36,7 +37,7 @@ type valueOverrideEntry struct {
 }
 
 // NewExecutorRouter creates a router with the given default executor and config.
-func NewExecutorRouter(exec *adapter.HTTPExecutor, cfg *adapter.EnvironmentConfig) *ExecutorRouter {
+func NewExecutorRouter(exec adapter.Executor, cfg *adapter.EnvironmentConfig) *ExecutorRouter {
 	return &ExecutorRouter{
 		defaultExec:   exec,
 		defaultConfig: cfg,
@@ -47,7 +48,7 @@ func NewExecutorRouter(exec *adapter.HTTPExecutor, cfg *adapter.EnvironmentConfi
 // checked before glob patterns; within each kind the last registered match
 // wins, so later sources (.aat-overrides.yaml, --overlay, --override) take
 // precedence over earlier ones (env.yaml overrides).
-func (r *ExecutorRouter) AddOverride(pattern string, exec *adapter.HTTPExecutor, cfg *adapter.EnvironmentConfig, rewrite *adapter.PathRewrite) {
+func (r *ExecutorRouter) AddOverride(pattern string, exec adapter.Executor, cfg *adapter.EnvironmentConfig, rewrite *adapter.PathRewrite) {
 	r.overrides = append(r.overrides, routeEntry{
 		pattern:     pattern,
 		isGlob:      isGlobPattern(pattern),
@@ -60,7 +61,7 @@ func (r *ExecutorRouter) AddOverride(pattern string, exec *adapter.HTTPExecutor,
 // Resolve returns the executor, config, and optional path rewrite for the given node name.
 // Resolution order: exact matches first, then glob matches, then the default.
 // Within each pass the last registered match wins.
-func (r *ExecutorRouter) Resolve(nodeName string) (*adapter.HTTPExecutor, *adapter.EnvironmentConfig, *adapter.PathRewrite) {
+func (r *ExecutorRouter) Resolve(nodeName string) (adapter.Executor, *adapter.EnvironmentConfig, *adapter.PathRewrite) {
 	// Pass 1: exact matches (last registered wins)
 	for i := len(r.overrides) - 1; i >= 0; i-- {
 		entry := r.overrides[i]
@@ -178,6 +179,31 @@ func (r *ExecutorRouter) ResolveValueOverride(nodeName string) (map[string]any, 
 		ef = globEF
 	}
 	return values, ef
+}
+
+// Close releases every executor the router holds, the default and the
+// overrides. An executor registered under several patterns is closed once. It
+// is idempotent, and returns the errors of the executors that failed to close.
+func (r *ExecutorRouter) Close() error {
+	seen := make(map[adapter.Executor]struct{}, len(r.overrides)+1)
+	var errs []error
+	closeOnce := func(exec adapter.Executor) {
+		if exec == nil {
+			return
+		}
+		if _, done := seen[exec]; done {
+			return
+		}
+		seen[exec] = struct{}{}
+		if err := exec.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	closeOnce(r.defaultExec)
+	for _, entry := range r.overrides {
+		closeOnce(entry.executor)
+	}
+	return errors.Join(errs...)
 }
 
 // HasOverrides returns true if any overrides have been configured.

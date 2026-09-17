@@ -944,6 +944,8 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 		Protected: apiConfig.Protected,
 	}
 	router := engine.NewExecutorRouter(executor, envConfig)
+	// The run owns its executors; closing the router releases what they hold open.
+	defer func() { _ = router.Close() }()
 
 	// 6a–6d. Register per-node overrides from every source, lowest precedence
 	// first: env.yaml, .aat-overrides.yaml, the --overlay file, then --override

@@ -727,7 +727,7 @@ func (e *Engine) executeStepWith(ctx context.Context, step plan.Step, node *grap
 
 	// Resolve executor/config/rewrite for this node
 	exec, cfg, rewrite := e.router.Resolve(node.Name)
-	actualBaseURL := exec.BaseURL
+	actualBaseURL := exec.Target()
 
 	// Build request
 	req, err := adp.BuildRequest(inputs, cfg)

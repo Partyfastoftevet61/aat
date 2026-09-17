@@ -120,6 +120,9 @@ func (s *Server) handleExecutePlan(ctx context.Context, req mcp.CallToolRequest)
 		Protected: apiConfig.Protected,
 	}
 	router := engine.NewExecutorRouter(executor, envConfig)
+	// One tool call owns its executors: the MCP server is long-lived, so they
+	// must not accumulate across calls.
+	defer func() { _ = router.Close() }()
 
 	// Apply env-file overrides (inherit plan auth if present)
 	if len(s.ctx.Environment.Overrides) > 0 {

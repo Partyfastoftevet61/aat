@@ -389,6 +389,7 @@ func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *prompt
 		Protected: apiConfig.Protected,
 	}
 	router := engine.NewExecutorRouter(executor, envConfig)
+	defer func() { _ = router.Close() }()
 
 	// Apply env-file overrides, then auto-discovered .aat-overrides.yaml entries
 	// (later registrations win), inheriting the effective auth via the provider.

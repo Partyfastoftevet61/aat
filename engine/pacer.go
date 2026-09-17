@@ -63,7 +63,7 @@ func (e *Engine) WithPacer(p *Pacer) *Engine {
 }
 
 // send waits for the engine's pacer, then executes req.
-func (e *Engine) send(ctx context.Context, exec *adapter.HTTPExecutor, req *adapter.Request) (*adapter.Response, error) {
+func (e *Engine) send(ctx context.Context, exec adapter.Executor, req *adapter.Request) (*adapter.Response, error) {
 	if err := e.pacer.Wait(ctx); err != nil {
 		return nil, err
 	}

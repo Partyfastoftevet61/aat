@@ -192,7 +192,7 @@ func (e *Engine) executeCleanupEntry(ctx context.Context, entry CleanupEntry, no
 
 	// Resolve executor/config/rewrite for the cleanup node
 	exec, cfg, rewrite := e.router.Resolve(entry.NodeName)
-	base.ActualBaseURL = exec.BaseURL
+	base.ActualBaseURL = exec.Target()
 
 	req, err := adp.BuildRequest(inputs, cfg)
 	if err != nil {

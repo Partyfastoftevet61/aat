@@ -32,7 +32,7 @@ func TestExecutorRouter_AddResolvedOverride_ValueOnlyKeepsRoute(t *testing.T) {
 	})
 
 	exec, cfg, _ := router.Resolve("paymentCharge")
-	assert.Equal(t, "http://payments", exec.BaseURL, "a value-only override must not replace the glob route")
+	assert.Equal(t, "http://payments", exec.Target(), "a value-only override must not replace the glob route")
 	assert.Equal(t, "k", cfg.Headers["X-API-Key"])
 
 	values, ef := router.ResolveValueOverride("paymentCharge")
@@ -70,7 +70,7 @@ environments:
 	}
 
 	exec, _, _ := router.Resolve("paymentCharge")
-	assert.Equal(t, "https://child.example.com", exec.BaseURL)
+	assert.Equal(t, "https://child.example.com", exec.Target())
 }
 
 func TestExecutorRouter_DefaultRoute(t *testing.T) {
@@ -396,4 +396,55 @@ func TestExecutorRouter_ValueOverrideLastExpectFailureWins(t *testing.T) {
 	router.AddValueOverride("paymentCharge", nil, &plan.ExpectFailure{Status: []int{422}})
 	_, ef = router.ResolveValueOverride("paymentCharge")
 	assert.Equal(t, []int{422}, ef.Status, "exact beats glob")
+}
+
+// countingExecutor records how often Close was called, so the router's
+// deduplication and idempotence are observable.
+type countingExecutor struct {
+	target string
+	closes int
+	err    error
+}
+
+func (e *countingExecutor) Execute(context.Context, *adapter.Request) (*adapter.Response, error) {
+	return &adapter.Response{StatusCode: 200}, nil
+}
+func (e *countingExecutor) Protocol() string { return adapter.ProtocolHTTP }
+func (e *countingExecutor) Target() string   { return e.target }
+func (e *countingExecutor) Close() error     { e.closes++; return e.err }
+
+func TestExecutorRouter_CloseClosesEveryExecutorOnce(t *testing.T) {
+	def := &countingExecutor{target: "https://default.example.com"}
+	payments := &countingExecutor{target: "https://payments.example.com"}
+
+	router := NewExecutorRouter(def, &adapter.EnvironmentConfig{})
+	// The same executor under two patterns must still be closed once.
+	router.AddOverride("payment*", payments, &adapter.EnvironmentConfig{}, nil)
+	router.AddOverride("paymentCharge", payments, &adapter.EnvironmentConfig{}, nil)
+
+	require.NoError(t, router.Close())
+	assert.Equal(t, 1, def.closes, "the default executor is closed once")
+	assert.Equal(t, 1, payments.closes, "an executor registered twice is closed once")
+}
+
+func TestExecutorRouter_CloseReportsExecutorErrors(t *testing.T) {
+	failing := &countingExecutor{target: "https://broken.example.com", err: assert.AnError}
+	router := NewExecutorRouter(failing, &adapter.EnvironmentConfig{})
+
+	err := router.Close()
+	require.Error(t, err)
+	assert.ErrorIs(t, err, assert.AnError)
+}
+
+func TestExecutorRouter_CloseWithoutExecutors(t *testing.T) {
+	// A router built with no default, as the engine's zero-executor tests do.
+	assert.NoError(t, NewExecutorRouter(nil, nil).Close())
+}
+
+func TestHTTPExecutor_SatisfiesExecutor(t *testing.T) {
+	var exec adapter.Executor = adapter.NewHTTPExecutor("https://api.example.com")
+	assert.Equal(t, adapter.ProtocolHTTP, exec.Protocol())
+	assert.Equal(t, "https://api.example.com", exec.Target())
+	assert.NoError(t, exec.Close())
+	assert.NoError(t, exec.Close(), "Close is idempotent")
 }
