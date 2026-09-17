@@ -186,6 +186,62 @@ func TestValidate_NoDescriptorSetNamed(t *testing.T) {
 	assert.Contains(t, messages(t, result), "needs a descriptor set")
 }
 
+func TestValidate_ProjectDescriptorFallback(t *testing.T) {
+	// The graph names no descriptor set; aat-project.yaml does.
+	path := testutil.WriteDescriptorSet(t, "shop.protoset", testutil.ShopFile())
+	v := NewValidator().WithProjectDescriptors([]string{path})
+	require.NoError(t, v.LoadSpec(path, path))
+
+	result := v.Validate(&graph.Graph{Nodes: map[string]*graph.Node{
+		"createCart": {Proto: &graph.ProtoRef{Service: "shop.v1.Carts", Method: "CreateCart"}},
+	}})
+	assert.False(t, result.HasIssues(), messages(t, result))
+}
+
+func TestValidate_ProjectDescriptorStillCatchesAnUnknownMethod(t *testing.T) {
+	path := testutil.WriteDescriptorSet(t, "shop.protoset", testutil.ShopFile())
+	v := NewValidator().WithProjectDescriptors([]string{path})
+	require.NoError(t, v.LoadSpec(path, path))
+
+	result := v.Validate(&graph.Graph{Nodes: map[string]*graph.Node{
+		"createCart": {Proto: &graph.ProtoRef{Service: "shop.v1.Carts", Method: "Nope"}},
+	}})
+	require.True(t, result.HasErrors(), messages(t, result))
+	assert.Contains(t, messages(t, result), "Nope")
+}
+
+func TestValidate_GraphDescriptorWinsOverProject(t *testing.T) {
+	// The graph's ref is the one checked; a project ref that has never been
+	// loaded is not consulted and so cannot mask the graph's error.
+	v := loadedValidator(t).WithProjectDescriptors([]string{"unloaded.protoset"})
+
+	result := v.Validate(graphWith(&graph.Node{
+		Proto: &graph.ProtoRef{Service: "shop.v1.Carts", Method: "CreateCart"},
+	}))
+	assert.False(t, result.HasIssues(), messages(t, result))
+}
+
+func TestValidate_NoDescriptorAnywhereNamesAllThreePlaces(t *testing.T) {
+	result := NewValidator().Validate(&graph.Graph{Nodes: map[string]*graph.Node{
+		"createCart": {Proto: &graph.ProtoRef{Service: "shop.v1.Carts", Method: "CreateCart"}},
+	}})
+	require.True(t, result.HasErrors())
+	msg := messages(t, result)
+	assert.Contains(t, msg, "on the node")
+	assert.Contains(t, msg, "on the graph")
+	assert.Contains(t, msg, "aat-project.yaml")
+}
+
+func TestCountNodes(t *testing.T) {
+	g := &graph.Graph{Nodes: map[string]*graph.Node{
+		"a": {Proto: &graph.ProtoRef{Service: "shop.v1.Carts", Method: "CreateCart"}},
+		"b": {OAS: &graph.OASRef{OperationID: "listProducts"}},
+		"c": {},
+	}}
+	assert.Equal(t, 1, CountNodes(g))
+	assert.Equal(t, 0, CountNodes(&graph.Graph{}))
+}
+
 func TestCollectSpecPaths(t *testing.T) {
 	g := &graph.Graph{
 		Proto: "shop.protoset",

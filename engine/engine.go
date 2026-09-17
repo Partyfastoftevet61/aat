@@ -154,12 +154,21 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 		}
 	}
 
-	// 3. Validate adapter outputs match graph declarations (only for plan-used nodes)
+	// 3. Validate each node's protocol against its template's. This comes
+	// before the output check because a node pointed at a template of the
+	// wrong protocol trips that one too, and the mismatch is the root cause.
+	// It also means a mismatched project fails before the first step creates
+	// anything, rather than part-way through.
+	if err := ValidateNodeProtocolsForPlan(e.graph, e.registry, instantiatedPlan).Err(); err != nil {
+		return &RunResult{Outcome: OutcomeError, Error: err, InstantiatedPlan: instantiatedPlan}
+	}
+
+	// 3b. Validate adapter outputs match graph declarations (only for plan-used nodes)
 	if err := ValidateAdapterOutputsForPlan(e.graph, e.registry, instantiatedPlan); err != nil {
 		return &RunResult{Outcome: OutcomeError, Error: err, InstantiatedPlan: instantiatedPlan}
 	}
 
-	// 3b. Validate template required placeholders vs optional graph inputs
+	// 3c. Validate template required placeholders vs optional graph inputs
 	if err := ValidateTemplateInputsForPlan(e.graph, e.registry, instantiatedPlan); err != nil {
 		return &RunResult{Outcome: OutcomeError, Error: err, InstantiatedPlan: instantiatedPlan}
 	}

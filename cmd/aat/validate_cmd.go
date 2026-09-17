@@ -16,7 +16,6 @@ import (
 	"github.com/gburgyan/aat/engine"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/graph/oas"
-	"github.com/gburgyan/aat/graph/proto"
 	"github.com/gburgyan/aat/intent"
 	"github.com/gburgyan/aat/plan"
 	"github.com/spf13/cobra"
@@ -231,16 +230,18 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 			WithBodyInputFields(engine.TemplateBodyInputFields(g, registry)).
 			WithPathTemplates(engine.TemplatePaths(g, registry))
 	}
-	if section := specCheck("OAS validation", validator, g, m.GraphPath, args.Strict); section != nil {
+	// A manifest's oas: is for the MCP server's tools, not for validation, so
+	// no project paths are merged in here.
+	if section := specCheck("OAS validation", validator, g, m.GraphPath, nil, args.Strict); section != nil {
 		sections = append(sections, *section)
 	}
 
-	// 3b. Protobuf validation, for the graph's gRPC nodes.
-	protoValidator := proto.NewValidator()
-	if templateErr == nil {
-		protoValidator.WithOutputPaths(proto.OutputPaths(engine.OutputExtractPaths(g, registry)))
+	// 3b. Protobuf validation, for the project's gRPC nodes.
+	protoRegistry := registry
+	if templateErr != nil {
+		protoRegistry = nil
 	}
-	if section := specCheck("Protobuf validation", protoValidator, g, m.GraphPath, args.Strict); section != nil {
+	if section := protoSpecCheck(g, m.GraphPath, m.ProtoPaths, protoRegistry, args.Strict); section != nil {
 		sections = append(sections, *section)
 	}
 
@@ -263,6 +264,13 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 			Status: "OK",
 			Detail: "(" + pluralize(templateCount, "template") + ")",
 		})
+	}
+
+	// 4b. Node protocols — a node's proto: against its template's protocol:
+	if templateErr == nil {
+		if section := nodeProtocolSection(g, registry, args.Strict); section != nil {
+			sections = append(sections, *section)
+		}
 	}
 
 	// 5. Template inputs — check required placeholders vs optional graph inputs
@@ -601,6 +609,13 @@ func shortenManifestPaths(m *config.ProjectManifest) {
 	}
 	for i := range m.PlanDirs {
 		m.PlanDirs[i] = shorten(m.PlanDirs[i])
+	}
+	// Safe because a project's descriptor sets are opened exactly as the
+	// manifest resolved them, never joined onto the graph's directory, so a
+	// CWD-relative spelling still names the same file. OASPaths is left alone:
+	// nothing here reads it.
+	for i := range m.ProtoPaths {
+		m.ProtoPaths[i] = shorten(m.ProtoPaths[i])
 	}
 }
 

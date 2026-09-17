@@ -83,17 +83,10 @@ func BuildServerContextWithVars(manifest *ProjectManifest, vars map[string]strin
 	}
 	ctx.Registry = registry
 
-	// Load protobuf descriptors when the graph names any (gRPC nodes only).
-	protoPaths := proto.NewValidator().CollectSpecPaths(g)
-	if len(protoPaths) > 0 {
-		resolved := make([]string, len(protoPaths))
-		for i, p := range protoPaths {
-			resolved[i] = p
-			if !filepath.IsAbs(p) {
-				resolved[i] = filepath.Join(ctx.GraphDir, p)
-			}
-		}
-		reg, err := protoreg.LoadDescriptorSets(resolved...)
+	// Load protobuf descriptors when the project or graph names any (gRPC
+	// nodes only).
+	if protoPaths := collectProtoPaths(g, ctx.GraphDir, manifest); len(protoPaths) > 0 {
+		reg, err := protoreg.LoadDescriptorSets(protoPaths...)
 		if err != nil {
 			return nil, fmt.Errorf("loading descriptors: %w", err)
 		}
@@ -183,45 +176,30 @@ func (ctx *ServerContext) loadOASSpecs() error {
 }
 
 // collectSpecPaths returns the unique set of OAS spec file paths referenced
-// by the manifest and graph. Graph references resolve against graphDir;
-// manifest paths arrive resolved against the manifest's directory.
+// by the manifest and graph.
 func collectSpecPaths(g *graph.Graph, graphDir string, manifest *config.ProjectManifest) []string {
-	seen := make(map[string]bool)
-	var paths []string
-
-	addPath := func(raw, baseDir string) {
-		if raw == "" {
-			return
-		}
-		resolved := raw
-		if !filepath.IsAbs(raw) {
-			resolved = filepath.Join(baseDir, raw)
-		}
-		if !seen[resolved] {
-			seen[resolved] = true
-			paths = append(paths, resolved)
+	var graphRefs []string
+	if g != nil {
+		graphRefs = append(graphRefs, g.OAS)
+		for _, node := range g.Nodes {
+			if node != nil && node.OAS != nil {
+				graphRefs = append(graphRefs, node.OAS.Spec)
+			}
 		}
 	}
-
-	// Manifest-declared OAS paths, already resolved against the manifest's
-	// directory by LoadManifest. Joining them onto graphDir again doubled a
-	// relative prefix (examples/shop/examples/shop/openapi.yaml) when the
-	// manifest was loaded through a relative path.
+	var projectPaths []string
 	if manifest != nil {
-		for _, p := range manifest.OASPaths {
-			addPath(p, "")
-		}
+		projectPaths = manifest.OASPaths
 	}
+	return graph.SpecPathList(graph.ResolveSpecPaths(graphRefs, graphDir, projectPaths))
+}
 
-	// Graph-level default
-	addPath(g.OAS, graphDir)
-
-	// Node-level overrides
-	for _, node := range g.Nodes {
-		if node != nil && node.OAS != nil {
-			addPath(node.OAS.Spec, graphDir)
-		}
+// collectProtoPaths returns the unique set of descriptor set paths referenced
+// by the manifest and graph. See collectSpecPaths for the OpenAPI equivalent.
+func collectProtoPaths(g *graph.Graph, graphDir string, manifest *config.ProjectManifest) []string {
+	var projectPaths []string
+	if manifest != nil {
+		projectPaths = manifest.ProtoPaths
 	}
-
-	return paths
+	return graph.SpecPathList(graph.ResolveSpecPaths(proto.NewValidator().CollectSpecPaths(g), graphDir, projectPaths))
 }

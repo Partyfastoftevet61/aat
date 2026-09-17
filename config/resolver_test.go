@@ -247,6 +247,54 @@ plans: plans/
 	assert.Equal(t, filepath.Join(dir, "plans"), result.PlanDirs[0])
 }
 
+func TestResolveProjectPaths_ProtoPathsFromManifest(t *testing.T) {
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
+
+	content := `name: test
+graph: graph.yaml
+templates: templates/
+proto: payments.protoset
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "aat-project.yaml"), []byte(content), 0644))
+
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(origDir) }()
+	require.NoError(t, os.Chdir(dir))
+
+	result, err := ResolveProjectPaths(ProjectPaths{})
+	require.NoError(t, err)
+	require.Len(t, result.ProtoPaths, 1)
+	assert.Equal(t, filepath.Join(dir, "payments.protoset"), result.ProtoPaths[0])
+}
+
+func TestResolveProjectPaths_ProtoPathsNotInheritedAcrossManifests(t *testing.T) {
+	lower := t.TempDir()
+	lower, err := filepath.EvalSymlinks(lower)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(lower, "aat-project.yaml"), []byte(
+		"name: lower\ngraph: graph.yaml\ntemplates: templates/\nproto: payments.protoset\n"), 0644))
+
+	upper := t.TempDir()
+	upper, err = filepath.EvalSymlinks(upper)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(upper, "aat-project.yaml"), []byte(
+		"name: upper\ngraph: graph.yaml\ntemplates: templates/\n"), 0644))
+
+	t.Setenv("AAT_PROJECT", lower)
+
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(origDir) }()
+	require.NoError(t, os.Chdir(upper))
+
+	result, err := ResolveProjectPaths(ProjectPaths{})
+	require.NoError(t, err)
+	assert.Empty(t, result.ProtoPaths, "a manifest describes one project; proto: does not carry over")
+}
+
 func TestResolveProjectPaths_PlanDirsOverride(t *testing.T) {
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)

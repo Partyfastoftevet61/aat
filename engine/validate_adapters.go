@@ -25,14 +25,7 @@ func (e *AdapterValidationError) Error() string {
 // plan's steps and cleanup. This is used during Engine.Run() to avoid
 // failing on unrelated template issues for nodes not used in the plan.
 func ValidateAdapterOutputsForPlan(g *graph.Graph, registry *adapter.Registry, p *plan.Plan) error {
-	nodeSet := make(map[string]bool)
-	for _, step := range p.Execution.Steps {
-		nodeSet[step.Node] = true
-	}
-	for _, cs := range p.Execution.Cleanup {
-		nodeSet[cs.Node] = true
-	}
-	return validateAdapterOutputsForNodes(g, registry, nodeSet)
+	return validateAdapterOutputsForNodes(g, registry, planNodeSet(p))
 }
 
 // ValidateAdapterOutputs checks that graph-declared outputs match the

@@ -37,6 +37,7 @@ type runArgs struct {
 	EnvName           string // environment name for multi-env files
 	GraphPath         string
 	TemplatesPath     string
+	ProtoPaths        []string // descriptor sets from aat-project.yaml
 	OutputDir         string
 	DomainPath        string
 	JSON              bool
@@ -805,8 +806,8 @@ func loadRunContext(ctx context.Context, args *runArgs, logf func(string, ...any
 		logf("aat: pacing requests at least %s apart\n", interval)
 	}
 
-	// Load OAS specs for runtime validation (unless disabled)
-	protoRegistry, err := loadProtoRegistry(g, args.GraphPath)
+	// Descriptor sets for the project's gRPC nodes, from the manifest or the graph.
+	protoRegistry, err := loadProtoRegistry(g, args.GraphPath, args.ProtoPaths)
 	if err != nil {
 		return nil, err
 	}

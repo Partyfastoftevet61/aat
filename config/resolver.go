@@ -16,13 +16,18 @@ var ErrManifestNotFound = errors.New("manifest not found")
 // ProjectPaths holds resolved file paths for a project's artifacts.
 // Empty string means "not resolved from any source."
 type ProjectPaths struct {
-	GraphPath      string
-	TemplatesPath  string
-	EnvPath        string
-	DomainPath     string
-	WorkflowsDir   string
-	LayersDir      string
-	PlanDirs       []string
+	GraphPath     string
+	TemplatesPath string
+	EnvPath       string
+	DomainPath    string
+	WorkflowsDir  string
+	LayersDir     string
+	PlanDirs      []string
+	// ProtoPaths are the descriptor sets aat-project.yaml names, already
+	// resolved against the manifest's directory. OASPaths has no counterpart
+	// here on purpose: a manifest's oas: is for the MCP server's tools alone,
+	// while its proto: describes the project every command reads.
+	ProtoPaths     []string
 	ArchiveDir     string
 	TracesDir      string
 	VisualizersDir string
@@ -176,6 +181,9 @@ func applyManifest(result *ProjectPaths, pathOrDir string) (bool, error) {
 	}
 	if len(m.PlanDirs) > 0 {
 		result.PlanDirs = []string(m.PlanDirs)
+	}
+	if len(m.ProtoPaths) > 0 {
+		result.ProtoPaths = []string(m.ProtoPaths)
 	}
 	if m.ArchiveDir != "" {
 		result.ArchiveDir = m.ArchiveDir

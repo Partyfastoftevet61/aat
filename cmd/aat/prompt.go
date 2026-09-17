@@ -108,6 +108,7 @@ var promptCmd = &cobra.Command{
 			EnvName:           envName,
 			GraphPath:         resolved.GraphPath,
 			TemplatesPath:     resolved.TemplatesPath,
+			ProtoPaths:        resolved.ProtoPaths,
 			DomainPath:        resolved.DomainPath,
 			OutputDir:         outputDir,
 			SavePlan:          savePlan,
@@ -152,6 +153,7 @@ type promptArgs struct {
 	EnvName           string // environment name for multi-env files
 	GraphPath         string
 	TemplatesPath     string
+	ProtoPaths        []string // descriptor sets from aat-project.yaml
 	DomainPath        string
 	OutputDir         string
 	SavePlan          string
@@ -382,7 +384,7 @@ func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *prompt
 	fmt.Printf("aat: loaded %d templates\n", count)
 
 	// Create executor and environment config
-	protoRegistry, err := loadProtoRegistry(g, args.GraphPath)
+	protoRegistry, err := loadProtoRegistry(g, args.GraphPath, args.ProtoPaths)
 	if err != nil {
 		return err
 	}

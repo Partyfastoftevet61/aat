@@ -19,6 +19,9 @@ type Validator struct {
 	// template extracts it from, so the check follows the template rather than
 	// assuming a top-level field named after the output.
 	outputPaths OutputPaths
+	// projectRefs names descriptor sets that apply to the whole project, for a
+	// node whose graph names none.
+	projectRefs []string
 }
 
 // OutputPaths maps node name → output name → extract path. It mirrors
@@ -37,8 +40,34 @@ func (v *Validator) WithOutputPaths(paths OutputPaths) *Validator {
 	return v
 }
 
+// WithProjectDescriptors names the descriptor sets aat-project.yaml declares.
+// They stand in for a graph that names none of its own.
+//
+// The refs are the paths as graph.ResolveSpecPaths yields them for a project
+// entry — already resolved against the manifest's directory — because that is
+// the key LoadSpec stores them under. They are deliberately absent from
+// CollectSpecPaths, which returns only what the graph writes: a caller merges
+// the two with graph.ResolveSpecPaths, which knows that a project path must
+// never be joined onto the graph's directory.
+func (v *Validator) WithProjectDescriptors(refs []string) *Validator {
+	v.projectRefs = refs
+	return v
+}
+
+// CountNodes returns how many of a graph's nodes name a gRPC method.
+func CountNodes(g *graph.Graph) int {
+	n := 0
+	for _, node := range g.Nodes {
+		if node != nil && node.Proto != nil {
+			n++
+		}
+	}
+	return n
+}
+
 // CollectSpecPaths returns the descriptor sets the graph refers to: its own,
-// and any a node names for itself.
+// and any a node names for itself. A project's own descriptor sets are not
+// here — see WithProjectDescriptors.
 func (v *Validator) CollectSpecPaths(g *graph.Graph) []string {
 	seen := make(map[string]bool)
 	var paths []string
@@ -76,6 +105,17 @@ func ResolveNodeDescriptor(node *graph.Node, graphProto string) string {
 		return node.Proto.Descriptor
 	}
 	return graphProto
+}
+
+// descriptorRefs lists the descriptor sets a node is checked against, in the
+// order they are tried: its own when it names one, otherwise the graph's,
+// otherwise the project's. A node naming its own descriptor set means it, so
+// the project's are not also tried.
+func (v *Validator) descriptorRefs(node *graph.Node, graphProto string) []string {
+	if ref := ResolveNodeDescriptor(node, graphProto); ref != "" {
+		return []string{ref}
+	}
+	return v.projectRefs
 }
 
 // Validate cross-references every node carrying a proto ref against the loaded
@@ -118,20 +158,44 @@ func (v *Validator) validateNode(result *graph.SpecValidationResult, name string
 		})
 	}
 
-	ref := ResolveNodeDescriptor(node, graphProto)
-	if ref == "" {
-		fail("proto %s needs a descriptor set: name one on the node or on the graph", node.Proto.String())
-		return
-	}
-	reg, ok := v.registries[ref]
-	if !ok {
-		// The path was collected but did not load; LoadSpec already reported why.
+	refs := v.descriptorRefs(node, graphProto)
+	if len(refs) == 0 {
+		fail("proto %s needs a descriptor set: name one on the node, on the graph, or with proto: in aat-project.yaml", node.Proto.String())
 		return
 	}
 
-	md, err := reg.Method(node.Proto.Service, node.Proto.Method)
-	if err != nil {
-		fail("%s", err)
+	// With one candidate the error is whatever protoreg.Method says, including
+	// its "did you mean"; with several, no single set's suggestion is the
+	// answer, so the sets are named instead.
+	var md protoreflect.MethodDescriptor
+	var firstErr error
+	var loaded []string
+	for _, ref := range refs {
+		reg, ok := v.registries[ref]
+		if !ok {
+			// The path was collected but did not load; LoadSpec reported why.
+			continue
+		}
+		loaded = append(loaded, ref)
+		found, err := reg.Method(node.Proto.Service, node.Proto.Method)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		md = found
+		break
+	}
+	switch {
+	case md != nil:
+	case len(loaded) == 0:
+		return
+	case len(loaded) == 1:
+		fail("%s", firstErr)
+		return
+	default:
+		fail("%s is in none of the project's descriptor sets (%s)", node.Proto.String(), strings.Join(loaded, ", "))
 		return
 	}
 

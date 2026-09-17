@@ -68,6 +68,7 @@ var runPlanCmd = &cobra.Command{
 			EnvName:          envName,
 			GraphPath:        resolved.GraphPath,
 			TemplatesPath:    resolved.TemplatesPath,
+			ProtoPaths:       resolved.ProtoPaths,
 			OutputDir:        outputDir,
 			DomainPath:       resolved.DomainPath,
 			JSON:             jsonFlag,
