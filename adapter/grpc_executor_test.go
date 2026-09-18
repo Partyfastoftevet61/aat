@@ -331,7 +331,18 @@ func TestParseGRPCTarget(t *testing.T) {
 		{in: "https://api.example.com", wantErrStr: "is not a gRPC target"},
 		{in: "localhost:9090", wantErrStr: "is not a gRPC target"},
 		{in: "grpc://", wantErrStr: "names no host"},
+		{in: "grpc://unix:///run/api.sock", dial: "unix:///run/api.sock"},
+		{in: "grpc://[::1]:9090", dial: "[::1]:9090"},
+		// grpc-go would default a missing port to 443 either way. For grpcs://
+		// that is the right port, and it is written out; for grpc:// it is
+		// plaintext sent to a TLS port.
+		{in: "grpcs://api.example.com", dial: "api.example.com:443", secure: true},
+		{in: "grpcs://[2001:db8::1]", dial: "[2001:db8::1]:443", secure: true},
+		{in: "grpc://localhost", wantErrStr: "names no port"},
 		{in: "grpc://host/shop.v1.Carts", wantErrStr: "has a path"},
+		// A port has a colon too, and must not pass for a resolver's.
+		{in: "grpc://localhost:8767/shop.v1.Payments", wantErrStr: "has a path"},
+		{in: "grpcs://api.example.com:443/shop.v1.Payments/Charge", wantErrStr: "has a path"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {

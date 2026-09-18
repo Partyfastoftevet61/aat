@@ -110,6 +110,11 @@ the graph and plan formats may still change before 1.0.
   documentation always said it was. A status assertion written as a gRPC status name can no longer
   contradict `expectFailure` unnoticed.
 
+  A gRPC target with a path after its port — `grpc://localhost:8767/shop.v1.Payments`, the natural thing
+  to write — passed every check and then failed the step as `UNAVAILABLE`; only a target with no port was
+  checked for a path. And `grpc://localhost`, with no port, dialled 443 in plaintext. Both are now
+  errors that say what is wrong, from `aat validate` as well as from a run; `grpcs://host` means 443.
+
   The demo's gRPC replies carried an empty payment id. The HTTP payments API calls it `paymentId` and
   `payments.proto` called it `id`, and the sandbox's gRPC service discarded the field it could not
   place, so `examples/grpc-payments` extracted `""` and nothing asserted otherwise; a refund came back

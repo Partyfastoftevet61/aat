@@ -713,6 +713,27 @@ func printSections(out io.Writer, sections []sectionResult) {
 	}
 }
 
+// grpcTargetErrors reports the gRPC targets of an environment that cannot be
+// dialled: one with a path, or a plaintext one with no port. A run refuses
+// them too, but only once it reaches them, and what grpc-go makes of a target
+// it was never meant to see is an UNAVAILABLE that names neither problem.
+func grpcTargetErrors(env *config.Environment) []string {
+	var errs []string
+	check := func(where, target string) {
+		if !adapter.IsGRPCTarget(target) {
+			return
+		}
+		if _, _, err := adapter.ParseGRPCTarget(target); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %s", where, err))
+		}
+	}
+	check("apiBaseUrl", env.APIBaseURL)
+	for i, ov := range env.Overrides {
+		check(fmt.Sprintf("overrides[%d] (%s): baseUrl", i, ov.Match), ov.BaseURL)
+	}
+	return errs
+}
+
 // validateEnvironmentFile validates the environment file. For multi-env files,
 // it attempts to load each non-abstract environment to verify extends chains,
 // variable substitution, and structural validity. It returns the section
@@ -730,13 +751,16 @@ func validateEnvironmentFile(envPath, defaultEnv string, vars map[string]string)
 
 	if !isMulti {
 		// Legacy single-env file — validate it loads
-		_, err := config.LoadNamedEnvironmentWithVars(envPath, "", vars)
+		env, err := config.LoadNamedEnvironmentWithVars(envPath, "", vars)
 		if err != nil {
 			return &sectionResult{
 				Name:   "Environment",
 				Status: "FAILED",
 				Errors: []string{err.Error()},
 			}, errors.Is(err, config.ErrUnusableVars)
+		}
+		if targetErrs := grpcTargetErrors(env); len(targetErrs) > 0 {
+			return &sectionResult{Name: "Environment", Status: "FAILED", Errors: targetErrs}, false
 		}
 		return &sectionResult{
 			Name:   "Environment",
@@ -758,9 +782,14 @@ func validateEnvironmentFile(envPath, defaultEnv string, vars map[string]string)
 	var envErrors []string
 	unusableVars := false
 	for _, name := range names {
-		if _, err := config.LoadNamedEnvironmentWithVars(envPath, name, vars); err != nil {
+		env, err := config.LoadNamedEnvironmentWithVars(envPath, name, vars)
+		if err != nil {
 			envErrors = append(envErrors, fmt.Sprintf("%s: %s", name, err))
 			unusableVars = unusableVars || errors.Is(err, config.ErrUnusableVars)
+			continue
+		}
+		for _, targetErr := range grpcTargetErrors(env) {
+			envErrors = append(envErrors, fmt.Sprintf("%s: %s", name, targetErr))
 		}
 	}
 

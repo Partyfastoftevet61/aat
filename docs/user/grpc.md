@@ -183,7 +183,9 @@ apiBaseUrl: grpc://localhost:9090
 ```
 
 A target is a host and port. It carries no path — the template names the
-method.
+method — and `aat validate` reports one that does. `grpcs://` without a port
+means 443; `grpc://` has no default port, so leaving it out is an error rather
+than plaintext sent to 443, which is where gRPC would otherwise send it.
 
 **Mixed projects route per node**, with the same `overrides:` mechanism a
 multi-host HTTP project uses:

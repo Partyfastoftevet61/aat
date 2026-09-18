@@ -396,7 +396,7 @@ An empty or missing `type` field is treated as `none`.
 A node routed to a gRPC service takes a `grpc://` or `grpcs://` target instead
 of an HTTP base URL. `grpc://` is plaintext; `grpcs://` is TLS against the
 system roots. A target is a host and port, with no path — the template names
-the method.
+the method. `grpcs://` without a port means 443; `grpc://` must name one.
 
 ```yaml
 apiBaseUrl: grpc://localhost:9090

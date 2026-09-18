@@ -4,7 +4,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -56,16 +58,36 @@ func ParseGRPCTarget(target string) (dialTarget string, secure bool, err error) 
 		return "", false, fmt.Errorf("target %q is not a gRPC target: it must start with %q or %q", target, grpcScheme, grpcsScheme)
 	}
 
-	// A path would be a service or method, which the template names instead.
-	if host, rest, found := strings.Cut(dialTarget, "/"); found && rest != "" && !strings.Contains(host, ":") {
-		return "", false, fmt.Errorf("gRPC target %q has a path: a target is a host and port, and the template names the method", target)
+	// A target that names a resolver is grpc-go's to read, path and all.
+	if resolverTarget.MatchString(dialTarget) {
+		return dialTarget, secure, nil
 	}
+
 	dialTarget = strings.TrimSuffix(dialTarget, "/")
 	if dialTarget == "" {
 		return "", false, fmt.Errorf("gRPC target %q names no host", target)
 	}
+	// A path would be a service or method, which the template names instead.
+	if strings.Contains(dialTarget, "/") {
+		return "", false, fmt.Errorf("gRPC target %q has a path: a target is a host and port, and the template names the method", target)
+	}
+
+	// grpc-go dials port 443 when a target names none, whatever the scheme
+	// said. That is right for grpcs:// and is written out here; for grpc:// it
+	// would send plaintext to a TLS port and fail as UNAVAILABLE, or hang, with
+	// nothing to say the port was the problem.
+	if _, _, splitErr := net.SplitHostPort(dialTarget); splitErr != nil {
+		if !secure {
+			return "", false, fmt.Errorf("gRPC target %q names no port: a plaintext service has no default one, so write %s%s:PORT", target, grpcScheme, dialTarget)
+		}
+		dialTarget = net.JoinHostPort(strings.Trim(dialTarget, "[]"), "443")
+	}
 	return dialTarget, secure, nil
 }
+
+// resolverTarget matches a dial target that names a grpc-go resolver, such as
+// "dns:///host:443" or "unix:///run/api.sock".
+var resolverTarget = regexp.MustCompile(`^[a-z][a-z0-9+.-]*:(/|[^0-9/])`)
 
 // buildTLS turns a TLSConfig into the settings a secure connection dials with.
 func (c TLSConfig) build() (*tls.Config, error) {
