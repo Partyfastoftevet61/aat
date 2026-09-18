@@ -1,6 +1,7 @@
 package proto
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -90,7 +91,7 @@ func TestValidate_UnknownOutput(t *testing.T) {
 		Outputs: []graph.Output{{Name: "orderId", Type: "string"}},
 	}))
 	require.True(t, result.HasErrors())
-	assert.Contains(t, messages(t, result), `output "orderId" reads "orderId", which shop.v1.Cart does not declare`)
+	assert.Contains(t, messages(t, result), `output "orderId" reads "orderId": shop.v1.Cart does not declare "orderId"`)
 }
 
 func TestValidate_OutputPathWrittenWithTheProtoName(t *testing.T) {
@@ -125,6 +126,46 @@ func TestValidate_OutputPathsThroughMessagesAndLists(t *testing.T) {
 		},
 	}))
 	assert.False(t, result.HasIssues(), messages(t, result))
+}
+
+func TestValidate_OutputPathsFollowGJSON(t *testing.T) {
+	// Paths are read the way gjson reads them, not split on every dot: a query
+	// is one segment, and a modifier or a pipe ends what can be checked. Each
+	// path that fails names where it stopped making sense.
+	tests := []struct {
+		path    string
+		problem string // "" when the path resolves
+	}{
+		{path: "items.0.sku"},
+		{path: "items.#.sku"},
+		{path: "items.#"},
+		{path: `items.#(sku=="a.b").quantity`},
+		{path: `items.#(quantity>1)#.sku`},
+		{path: "cartId|@tostr"},
+		{path: "items.@reverse"},
+		{path: "items.#.sku|@join"},
+		{path: "items.sku", problem: `"items" is a list, so an index, # or a query comes next, not "sku"`},
+		{path: `items.#(sku=="a").nope`, problem: `shop.v1.LineItem does not declare "nope"`},
+		{path: "subtotal.x", problem: `"subtotal" is an int64, which has nothing below it`},
+		{path: "cartId.#", problem: `"cartId" is a string, which has nothing below it`},
+		{path: "status.0", problem: `"status" is an enum, which has nothing below it`},
+		{path: "items.0.skew", problem: `shop.v1.LineItem does not declare "skew"`},
+		{path: "cartIdd|@tostr", problem: `shop.v1.Cart does not declare "cartIdd"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			v := loadedValidator(t).WithOutputPaths(OutputPaths{"createCart": {"out": tt.path}})
+			result := v.Validate(graphWith(&graph.Node{
+				Proto:   &graph.ProtoRef{Service: "shop.v1.Carts", Method: "CreateCart"},
+				Outputs: []graph.Output{{Name: "out", Type: "string"}},
+			}))
+			if tt.problem == "" {
+				assert.False(t, result.HasIssues(), messages(t, result))
+				return
+			}
+			assert.Equal(t, fmt.Sprintf("error: output \"out\" reads %q: %s\n", tt.path, tt.problem), messages(t, result))
+		})
+	}
 }
 
 func TestValidate_OutputPathIntoAnUnknownField(t *testing.T) {

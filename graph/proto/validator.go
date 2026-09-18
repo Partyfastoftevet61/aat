@@ -236,59 +236,22 @@ func (v *Validator) checkOutputs(fail func(string, ...any), name string, node *g
 		if !hasPath {
 			path = out.Name
 		}
-		if fd, ok := resolvePath(msg, path); ok {
-			checkJSONName(fail, out.Name, path, fd)
+		res := walkPath(msg, strings.TrimPrefix(path, "$."))
+		if res.problem != "" {
+			fail("output %q reads %q: %s", out.Name, path, res.problem)
 			continue
 		}
-		if suggestion := suggestField(msg, firstSegment(path)); suggestion != "" {
-			fail("output %q reads %q, which %s does not declare%s", out.Name, path, msg.FullName(), suggestion)
-			continue
-		}
-		fail("output %q reads %q, which %s does not declare", out.Name, path, msg.FullName())
+		checkJSONName(fail, out.Name, path, res)
 	}
 }
 
 // checkJSONName reports an extract path written with a field's proto name when
 // the response encodes it under its JSON name. Both spellings resolve, so the
 // path would silently read nothing at runtime.
-func checkJSONName(fail func(string, ...any), output, path string, fd protoreflect.FieldDescriptor) {
-	last := path[strings.LastIndex(path, ".")+1:]
-	if last == string(fd.Name()) && fd.JSONName() != string(fd.Name()) {
-		fail("output %q reads %q, but the response encodes that field as %q", output, path, fd.JSONName())
+func checkJSONName(fail func(string, ...any), output, path string, res walkResult) {
+	if res.last != nil && res.lastKey == string(res.last.Name()) && res.last.JSONName() != res.lastKey {
+		fail("output %q reads %q, but the response encodes that field as %q", output, path, res.last.JSONName())
 	}
-}
-
-// resolvePath walks a dotted extract path through the message, stepping into
-// message fields and past list indexes.
-func resolvePath(msg protoreflect.MessageDescriptor, path string) (protoreflect.FieldDescriptor, bool) {
-	path = strings.TrimPrefix(path, "$.")
-	if path == "" {
-		return nil, false
-	}
-	var fd protoreflect.FieldDescriptor
-	current := msg
-	for _, segment := range strings.Split(path, ".") {
-		if segment == "" {
-			return nil, false
-		}
-		if isIndex(segment) {
-			// An index selects an element; the field it indexes stays current.
-			continue
-		}
-		if current == nil {
-			return nil, false
-		}
-		fd = fieldByAnyName(current, segment)
-		if fd == nil {
-			return nil, false
-		}
-		if fd.Kind() == protoreflect.MessageKind || fd.Kind() == protoreflect.GroupKind {
-			current = fd.Message()
-		} else {
-			current = nil
-		}
-	}
-	return fd, fd != nil
 }
 
 // fieldByAnyName finds a field by its proto name or its JSON name, because a
@@ -322,26 +285,6 @@ func suggestField(msg protoreflect.MessageDescriptor, name string) string {
 // "OrderID" compare equal.
 func normalize(s string) string {
 	return strings.ToLower(strings.ReplaceAll(s, "_", ""))
-}
-
-func firstSegment(path string) string {
-	path = strings.TrimPrefix(path, "$.")
-	if i := strings.IndexByte(path, '.'); i >= 0 {
-		return path[:i]
-	}
-	return path
-}
-
-func isIndex(segment string) bool {
-	if segment == "#" {
-		return true // GJSON's "every element" selector
-	}
-	for i := 0; i < len(segment); i++ {
-		if segment[i] < '0' || segment[i] > '9' {
-			return false
-		}
-	}
-	return segment != ""
 }
 
 func streamKind(md protoreflect.MethodDescriptor) string {
