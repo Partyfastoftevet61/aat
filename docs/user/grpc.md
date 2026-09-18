@@ -340,6 +340,17 @@ a success:
 }
 ```
 
+`details` holds the status details the server attached. Google's standard
+ones — `google.rpc.BadRequest`, `ErrorInfo`, `RetryInfo`, and the rest of
+`error_details.proto` — are read whether or not your descriptor set includes
+them, so `details.0.fieldViolations.0.field` is there to assert on. A detail of
+a type neither your descriptors nor AAT knows keeps its `@type` and nothing
+else.
+
+Only what the server said is a response. A run you interrupt, or a cleanup
+that runs out of an aborted run's time, is an error on the step, as it is over
+HTTP, and not a `CANCELLED` or `DEADLINE_EXCEEDED` to assert on.
+
 ## Encoding
 
 Messages cross into AAT as JSON, using the canonical proto3 JSON mapping. Most
@@ -355,7 +366,7 @@ of it is unsurprising. These are the parts that are:
 | `google.protobuf.Duration` | `"3s"` | A string, not a number |
 | `google.protobuf.FieldMask` | comma-joined paths | — |
 | `google.protobuf.Struct`, `Value` | plain JSON | The easy case. `aat validate` can't check a path below one, since any JSON may be there |
-| `google.protobuf.Any` | `{"@type": "...", ...}` | Its type must be in your descriptor set, so pass `--include_imports`. `aat validate` checks `@type` and nothing past it |
+| `google.protobuf.Any` | `{"@type": "...", ...}` | Its type must be in your descriptor set, so pass `--include_imports`; `google.rpc`'s error details are the exception, and are always known. `aat validate` checks `@type` and nothing past it |
 | wrappers (`Int32Value`, …) | the bare value, or `null` | How proto3 expresses real presence |
 | `map<k,v>` | an object; keys always strings | Read a value by its key: `labels.region`, `payload.city.stringValue`. A dotted key needs escaping: `labels.my\.key` |
 | `float` NaN / Infinity | `"NaN"`, `"Infinity"` | Strings, so numeric predicates will not match |
@@ -435,10 +446,8 @@ it would mean a second execution model. For a flow that genuinely needs one,
   method, metadata, and message.
 - gRPC-Web and the Connect protocol are not supported.
 - A call gets the same fixed 30-second timeout an HTTP request gets, and fails
-  in the `timeout` category. It is not configurable.
-- A response message larger than 4 MiB, gRPC's default receive limit, fails
-  with `RESOURCE_EXHAUSTED`. That code is transient, so a step with a `retry`
-  rule retries it to no effect; page the request instead.
+  in the `timeout` category. It is not configurable. A reply is read whatever
+  its size, as an HTTP response is: gRPC's 4 MiB default does not apply.
 - The MCP server has no tools for browsing a descriptor set, as it has for an
   OpenAPI spec. An assistant writing new gRPC nodes reads the `.proto` source.
 - gRPC's own retry and load-balancing configuration is deliberately disabled;

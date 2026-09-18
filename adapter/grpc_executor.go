@@ -25,7 +25,9 @@ import (
 type GRPCExecutor struct {
 	target string
 	pool   *ConnPool
-	reg    *protoreg.Registry
+	// ownsPool is set when the executor was given no pool and made one.
+	ownsPool bool
+	reg      *protoreg.Registry
 	secure bool
 	tls    TLSConfig
 	// timeout bounds one call, as http.Client.Timeout bounds one request. It
@@ -46,10 +48,11 @@ func NewGRPCExecutor(target string, pool *ConnPool, reg *protoreg.Registry, tlsC
 	if err != nil {
 		return nil, err
 	}
-	if pool == nil {
+	ownsPool := pool == nil
+	if ownsPool {
 		pool = NewConnPool()
 	}
-	return &GRPCExecutor{target: target, pool: pool, reg: reg, secure: secure, tls: tlsCfg, timeout: DefaultRequestTimeout}, nil
+	return &GRPCExecutor{target: target, pool: pool, ownsPool: ownsPool, reg: reg, secure: secure, tls: tlsCfg, timeout: DefaultRequestTimeout}, nil
 }
 
 // Protocol names the wire protocol: gRPC.
@@ -58,8 +61,15 @@ func (e *GRPCExecutor) Protocol() string { return ProtocolGRPC }
 // Target returns the target requests are sent to.
 func (e *GRPCExecutor) Target() string { return e.target }
 
-// Close releases nothing: the pool owns the connections, and the run closes it.
-func (e *GRPCExecutor) Close() error { return nil }
+// Close releases nothing when the executor was given a pool: the pool owns the
+// connections, and the run closes it. An executor made without one made its
+// own, which nothing else can reach, and closes that.
+func (e *GRPCExecutor) Close() error {
+	if e.ownsPool {
+		return e.pool.Close()
+	}
+	return nil
+}
 
 // Execute sends req as a unary call and returns the response.
 //
@@ -122,6 +132,14 @@ func (e *GRPCExecutor) Execute(ctx context.Context, req *Request) (*Response, er
 		grpc.Header(&header), grpc.Trailer(&trailer))
 
 	if invokeErr != nil {
+		// A run that was interrupted, or whose own deadline passed, did not
+		// get an answer, and grpc-go's CANCELLED or DEADLINE_EXCEEDED for it is
+		// not something the server said. Returning it as a response would have
+		// the step's assertions run against it, and the archive record an
+		// exchange that never finished. It is an error, as it is over HTTP.
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("executing %s: %w", req.Path, ctx.Err())
+		}
 		// A DEADLINE_EXCEEDED the caller never asked for reads as a server
 		// behaviour rather than aat's limit, so the limit says so itself. A
 		// cancelled run, or a deadline the server hit on its own terms before

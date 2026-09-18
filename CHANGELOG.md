@@ -115,6 +115,14 @@ the graph and plan formats may still change before 1.0.
   checked for a path. And `grpc://localhost`, with no port, dialled 443 in plaintext. Both are now
   errors that say what is wrong, from `aat validate` as well as from a run; `grpcs://host` means 443.
 
+  A gRPC step interrupted with Ctrl-C, or cut off by the time an aborted run allows its cleanup, was
+  recorded as a `CANCELLED` or `DEADLINE_EXCEEDED` response: a client error with a body, which the
+  step's assertions then ran against. It is an error on the step, as it is over HTTP. The details a
+  server attaches to a failure — `google.rpc.BadRequest` and its field violations, `ErrorInfo`,
+  `RetryInfo` — were archived as a bare type URL unless the project's descriptor set happened to include
+  `error_details.proto`; they are now always read. And a reply over 4 MiB, gRPC's default limit, failed
+  as `RESOURCE_EXHAUSTED` and was retried as transient; a reply is now read whatever its size.
+
   The demo's gRPC replies carried an empty payment id. The HTTP payments API calls it `paymentId` and
   `payments.proto` called it `id`, and the sandbox's gRPC service discarded the field it could not
   place, so `examples/grpc-payments` extracted `""` and nothing asserted otherwise; a refund came back

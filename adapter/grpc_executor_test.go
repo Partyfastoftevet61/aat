@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 	"github.com/gburgyan/aat/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -450,8 +453,10 @@ func TestGRPCExecutor_TimeoutNamesTheLimit(t *testing.T) {
 	assert.Contains(t, err.Error(), "no response within aat's 100ms request timeout")
 }
 
-// A run the user interrupted is not blamed on the timeout.
-func TestGRPCExecutor_CancelledContextDoesNotBlameTheTimeout(t *testing.T) {
+// A run the user interrupted got no answer. grpc-go reports it as CANCELLED,
+// which is not something the server said, so it is an error, as it is over
+// HTTP, and is not blamed on the timeout either.
+func TestGRPCExecutor_CancelledRunIsAnErrorNotAResponse(t *testing.T) {
 	block := make(chan struct{})
 	t.Cleanup(func() { close(block) })
 
@@ -471,12 +476,109 @@ func TestGRPCExecutor_CancelledContextDoesNotBlameTheTimeout(t *testing.T) {
 	}()
 
 	resp, err := exec.Execute(ctx, grpcRequest(`{}`))
-	if err != nil {
-		assert.NotContains(t, err.Error(), "request timeout")
-	} else {
-		require.NotNil(t, resp.GRPC)
-		assert.Equal(t, "CANCELLED", resp.GRPC.Name)
-	}
+	require.Error(t, err)
+	assert.Nil(t, resp, "nothing to assert on, and nothing to archive as an exchange")
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.NotContains(t, err.Error(), "request timeout")
+}
+
+// The same for a deadline the caller set, such as the budget an aborted run
+// gives its cleanup: it is aat's deadline, not the server's DEADLINE_EXCEEDED.
+func TestGRPCExecutor_CallersDeadlineIsAnErrorNotAResponse(t *testing.T) {
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
+
+	exec := startShopServer(t, func(ctx context.Context, _ *dynamicpb.Message) (proto.Message, error) {
+		select {
+		case <-block:
+		case <-ctx.Done():
+		}
+		return nil, ctx.Err()
+	})
+	exec.timeout = time.Minute
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	resp, err := exec.Execute(ctx, grpcRequest(`{}`))
+	require.Error(t, err)
+	assert.Nil(t, resp)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+// A deadline the server reports on its own account is still a response.
+func TestGRPCExecutor_ServersDeadlineExceededIsAResponse(t *testing.T) {
+	exec := startShopServer(t, func(context.Context, *dynamicpb.Message) (proto.Message, error) {
+		return nil, status.Error(codes.DeadlineExceeded, "the inventory service did not answer")
+	})
+
+	resp, err := exec.Execute(context.Background(), grpcRequest(`{}`))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GRPC)
+	assert.Equal(t, "DEADLINE_EXCEEDED", resp.GRPC.Name)
+}
+
+// google.rpc's error details are what a server says was wrong with a request,
+// and a project's descriptor set rarely includes them. They are read anyway.
+func TestGRPCExecutor_StandardErrorDetailsAreRead(t *testing.T) {
+	exec := startShopServer(t, func(context.Context, *dynamicpb.Message) (proto.Message, error) {
+		st, err := status.New(codes.InvalidArgument, "the cart is not valid").WithDetails(
+			&errdetails.BadRequest{FieldViolations: []*errdetails.BadRequest_FieldViolation{
+				{Field: "currency", Description: "must be an ISO 4217 code"},
+			}},
+			&errdetails.ErrorInfo{Reason: "CURRENCY_UNKNOWN", Domain: "shop.example.com"},
+		)
+		require.NoError(t, err)
+		return nil, st.Err()
+	})
+
+	resp, err := exec.Execute(context.Background(), grpcRequest(`{}`))
+	require.NoError(t, err)
+	require.Len(t, resp.GRPC.Details, 2)
+	first := gjson.ParseBytes(resp.GRPC.Details[0])
+	assert.Equal(t, "type.googleapis.com/google.rpc.BadRequest", first.Get("@type").String())
+	assert.Equal(t, "currency", first.Get("fieldViolations.0.field").String(), "the detail itself, not its type URL alone")
+	assert.Equal(t, "CURRENCY_UNKNOWN", gjson.GetBytes(resp.Body, "details.1.reason").String(),
+		"and an assertion reads them from the body")
+}
+
+// grpc-go refuses a reply over 4 MiB unless told otherwise, as
+// RESOURCE_EXHAUSTED: a transient status, retried to no end. An HTTP response
+// of any size is read, and so is this.
+func TestGRPCExecutor_ReadsAReplyOverFourMiB(t *testing.T) {
+	var reply proto.Message
+	exec := startShopServer(t, func(context.Context, *dynamicpb.Message) (proto.Message, error) {
+		return reply, nil
+	})
+	md, err := exec.reg.Method("shop.v1.Carts", "CreateCart")
+	require.NoError(t, err)
+	big := strings.Repeat("x", 5<<20)
+	reply = cartReply(t, exec.reg, md.Output(), `{"cartId":"`+big+`"}`)
+
+	resp, err := exec.Execute(context.Background(), grpcRequest(`{}`))
+	require.NoError(t, err)
+	assert.Equal(t, "OK", resp.GRPC.Name)
+	assert.Greater(t, len(resp.Body), 5<<20)
+}
+
+// An executor given no pool makes one nothing else can reach, so closing the
+// executor has to close it.
+func TestGRPCExecutor_ClosesAPoolItMade(t *testing.T) {
+	reg := exec_reg(t)
+
+	owned, err := NewGRPCExecutor("grpc://localhost:9090", nil, reg, TLSConfig{})
+	require.NoError(t, err)
+	require.NoError(t, owned.Close())
+	_, err = owned.pool.Get("grpc://localhost:9090", false, TLSConfig{})
+	require.Error(t, err, "the pool it made is closed")
+
+	pool := NewConnPool()
+	shared, err := NewGRPCExecutor("grpc://localhost:9090", pool, reg, TLSConfig{})
+	require.NoError(t, err)
+	require.NoError(t, shared.Close())
+	_, err = pool.Get("grpc://localhost:9090", false, TLSConfig{})
+	require.NoError(t, err, "a pool it was given is the run's to close")
+	require.NoError(t, pool.Close())
 }
 
 // headerKeys returns a header map's keys as stored, sorted, for asserting the

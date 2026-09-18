@@ -3,6 +3,7 @@ package adapter
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 
 	"google.golang.org/grpc"
@@ -67,6 +68,10 @@ func (p *ConnPool) Get(target string, secure bool, tlsCfg TLSConfig) (*grpc.Clie
 		// pacing. Leaving gRPC's retry on as well would double every attempt
 		// and miscount the requests a mutation made.
 		grpc.WithDisableRetry(),
+		// grpc-go refuses a reply over 4 MiB as RESOURCE_EXHAUSTED, which reads
+		// as the server's complaint and, being transient, is retried to no
+		// end. An HTTP response is read whatever its size, and so is this.
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to %s: %w", target, err)
