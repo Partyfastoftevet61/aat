@@ -649,3 +649,41 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+// A protobuf 64-bit integer arrives as a JSON string, so a predicate orders a
+// decimal string against a number by value. Equality between the two stays an
+// error that says how to write it.
+func TestEval_DecimalStringsOrderAgainstNumbers(t *testing.T) {
+	fields := map[string]any{"size": "147456", "count": "3", "amount": "12.50", "name": "abc"}
+	tests := []struct {
+		expr    string
+		want    bool
+		wantErr string
+	}{
+		{expr: "size > 0", want: true},
+		{expr: "size > 200000", want: false},
+		{expr: "0 < size", want: true},
+		{expr: "count >= 3 && count <= 3", want: true},
+		{expr: "count < 10", want: true}, // as numbers: "3" < 10, where text would put "10" first
+		{expr: "amount > 12.4", want: true},
+		{expr: "amount < 12.5", want: false},
+		{expr: `size > "0"`, want: true},
+		{expr: "count == 3", wantErr: `cannot compare string "3" with number 3 for equality: quote the number, as in "3"`},
+		{expr: "count != 3", wantErr: "for equality"},
+		{expr: "name > 1", wantErr: `cannot order string "abc" against number 1: the string is not a decimal number`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.expr, func(t *testing.T) {
+			p, err := Parse(tt.expr)
+			require.NoError(t, err)
+			got, err := p.Eval(fields)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

@@ -322,7 +322,7 @@ of it is unsurprising. These are the parts that are:
 
 | Type | Encodes as | Watch out for |
 |---|---|---|
-| `int64`, `uint64`, `fixed64` | a JSON **string**: `"4200"` | `fieldEquals: 4200` fails; write `"4200"`. Comparisons like `total > 100` still work |
+| `int64`, `uint64`, `fixed64` | a JSON **string**: `"4200"` | `fieldEquals: 4200` fails; write `"4200"`, and in a predicate `total == "4200"`. Ordering compares by value, so `total > 100` works |
 | `int32`, `float`, `double` | a JSON number | — |
 | `bytes` | base64 | Decode in a [Lua transform](lua-transforms.md) if you need the bytes |
 | `enum` | the name: `"SHIPPED"` | A value newer than your `.proto` arrives as a bare number |

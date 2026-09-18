@@ -66,6 +66,11 @@ the graph and plan formats may still change before 1.0.
   ground so agents author gRPC plans correctly.
 
 ### Fixed
+- **A predicate orders a number sent as a string against a number.** `size > 0` failed with
+  "cannot compare string with float64" when `size` was `"147456"` — which is how protobuf's 64-bit
+  integers, and many APIs' amounts, arrive — although the gRPC guide promised it worked. `<`, `>`,
+  `<=`, and `>=` now compare a decimal string with a number by value. `==` and `!=` stay strict,
+  and the error says to quote the number.
 - **`fieldEquals` compares a list or an object by its structure.** Anything but a scalar used to be
   compared by its printed form, so `{population: 3645000}` failed against the JSON
   `{"population": 3645000}` (a float prints as `3.645e+06`), and `["4"]` passed against `[4]`. Lists
