@@ -448,3 +448,27 @@ func TestGenerateDocs_ConfigurableInput(t *testing.T) {
 	// Required input shows "yes".
 	assert.Contains(t, result, "| query | string | yes |")
 }
+
+func TestGenerateDocs_GRPCNodeNamesItsMethod(t *testing.T) {
+	g, err := Parse([]byte(`version: "1.0.0"
+proto: qdrant.protoset
+nodes:
+  createCollection:
+    description: Create a collection.
+    adapter: createCollection
+    proto: qdrant.Collections/Create
+    inputs:
+      - name: collectionName
+        type: string
+    outputs:
+      - name: collectionName
+        type: string
+        fromInput: collectionName
+`))
+	require.NoError(t, err)
+
+	result := GenerateDocs(g, nil)
+
+	assert.Contains(t, result, "**gRPC:** `qdrant.Collections/Create`")
+	assert.Contains(t, result, "| collectionName | string | (echoes input `collectionName`) |")
+}

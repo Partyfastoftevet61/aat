@@ -213,6 +213,9 @@ func writeNodeSection(b *strings.Builder, name string, node *Node, g *Graph, opt
 	if node.Adapter != "" {
 		fmt.Fprintf(b, "**Adapter:** `%s`\n\n", node.Adapter)
 	}
+	if node.Proto != nil {
+		fmt.Fprintf(b, "**gRPC:** `%s`\n\n", node.Proto.String())
+	}
 
 	// User-provided docs
 	if opts.NodeDocs != nil {
