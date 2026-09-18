@@ -472,3 +472,32 @@ nodes:
 	assert.Contains(t, result, "**gRPC:** `qdrant.Collections/Create`")
 	assert.Contains(t, result, "| collectionName | string | (echoes input `collectionName`) |")
 }
+
+func TestFormatDefaultValue(t *testing.T) {
+	points := []any{
+		map[string]any{"id": map[string]any{"num": "1"}, "payload": map[string]any{"city": map[string]any{"stringValue": "Berlin"}}},
+		map[string]any{"id": map[string]any{"num": "2"}, "payload": map[string]any{"city": map[string]any{"stringValue": "London"}}},
+	}
+	tests := []struct {
+		name  string
+		value any
+		max   int
+		want  string
+	}{
+		{"a scalar as it is", 4, 0, "4"},
+		{"a string as it is", "aat-qdrant-{{random 8}}", 0, "aat-qdrant-{{random 8}}"},
+		{"a list of strings as JSON", []any{"", "extra"}, 0, `["","extra"]`},
+		{"an object as JSON, strings quoted", map[string]any{"num": "1"}, 0, `{"num":"1"}`},
+		{"a YAML map with non-string keys", map[any]any{"num": "1"}, 0, `{"num":"1"}`},
+		{"a list of objects in full", points, 0,
+			`[{"id":{"num":"1"},"payload":{"city":{"stringValue":"Berlin"}}},{"id":{"num":"2"},"payload":{"city":{"stringValue":"London"}}}]`},
+		{"a long list as its first element and a count", points, 80,
+			`[{"id":{"num":"1"},"payload":{"city":{"stringValue":"Berlin"}}}, … 2 items]`},
+		{"a long object cut short", map[string]any{"a": "0123456789"}, 10, `{"a":"0123…`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, FormatDefaultValue(tt.value, tt.max))
+		})
+	}
+}

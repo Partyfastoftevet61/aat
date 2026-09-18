@@ -186,12 +186,12 @@ func formatGraphDefault(d *graph.InputDefault) string {
 		return ""
 	}
 	if d.Value != nil {
-		return fmt.Sprintf("%v", d.Value)
+		return graph.FormatDefaultValue(d.Value, 0)
 	}
 	if len(d.Pool) > 0 {
 		var items []string
 		for _, v := range d.Pool {
-			items = append(items, fmt.Sprintf("%v", v))
+			items = append(items, graph.FormatDefaultValue(v, 0))
 		}
 		if len(items) > 3 {
 			items = append(items[:3], "...")

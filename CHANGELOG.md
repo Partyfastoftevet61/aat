@@ -75,6 +75,11 @@ the graph and plan formats may still change before 1.0.
   integers, and many APIs' amounts, arrive — although the gRPC guide promised it worked. `<`, `>`,
   `<=`, and `>=` now compare a decimal string with a number by value. `==` and `!=` stay strict,
   and the error says to quote the number.
+- **A list or an object default reads as JSON.** The MCP node tools and `aat docs generate` printed
+  an input's default with Go's `%v`, so a list of objects came out as `[map[id:map[num:1]]]`,
+  unreadable, and with the quotes gone that made `"1"` a string, which an assistant copying it would
+  get wrong. They now print JSON; generated docs shorten a long list to its first element and a
+  count.
 - **`fieldEquals` compares a list or an object by its structure.** Anything but a scalar used to be
   compared by its printed form, so `{population: 3645000}` failed against the JSON
   `{"population": 3645000}` (a float prints as `3.645e+06`), and `["4"]` passed against `[4]`. Lists
