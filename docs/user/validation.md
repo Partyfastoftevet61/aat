@@ -88,7 +88,7 @@ A manifest that exists but fails to load is an error for every command that disc
 | OAS validation | OpenAPI spec loading, operationId alignment, inputs and required parameters, outputs present in the 2xx response schema at their template extract paths (nested objects and array items included) |
 | Adapter outputs | Template extraction paths match graph output declarations |
 | Node protocols | A node's `proto:` agrees with its template's `protocol:` and `rpc:` |
-| Template inputs | Required template placeholders vs optional graph inputs |
+| Template inputs | Required template placeholders vs optional graph inputs, in a path, headers, a body, form fields, or a gRPC message and metadata |
 | Workflow compatibility | Addon `AUTOWIRE` inputs are produced in every base the addon attaches to; a slot counts when all of its options produce the input, because slots are filled before addons are spliced. A plain `AUTOWIRE` in a base or slot option must be produced by the base or its slots; the warning names any addon that produces the output and suggests `AUTOWIRE?` for an optional input. `AUTOWIRE?` never warns as unfed, but it does warn on a required input with no graph default |
 | Workflows | Workflow directory files, subdirectories included, parse correctly and validate against graph. Warns about a required input that takes `from:` an optional output |
 | Layers | Layer files parse, names are unique, every input key matches a node input in the graph, and values fit the input's shape |

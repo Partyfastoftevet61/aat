@@ -43,7 +43,9 @@ the graph and plan formats may still change before 1.0.
   status AAT maps it to, labels request and response metadata as metadata, gives trailers a pane of
   their own, and offers **Copy as grpcurl** in place of Copy as cURL. `aat run show`, the run
   progress lines, and the MCP archive tools do the same, and the MCP template and node tools describe
-  a gRPC operation by its service, method, metadata, and message. `aat generate` does not understand
+  a gRPC operation by its service, method, metadata, message, and the inputs the message and
+  metadata need. `aat validate` reports an optional input with no default that a message or
+  metadata always sends, as it does for a body, rather than leaving it to fail at run time. `aat generate` does not understand
   gRPC yet.
 
   This adds `google.golang.org/grpc` and `google.golang.org/protobuf`, which take a `go install`

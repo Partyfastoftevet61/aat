@@ -1146,6 +1146,25 @@ func TestClassifyInputs(t *testing.T) {
 			wantIterable:    []string{"productIds"},
 		},
 		{
+			name: "a gRPC template's message and metadata",
+			tmpl: &Template{
+				Protocol: ProtocolGRPC,
+				Request: TemplateRequest{
+					RPC:      "qdrant.Points/Scroll",
+					Metadata: map[string]string{"x-tenant": "{{tenant}}"},
+					Message: `{
+  "collectionName": "{{collectionName}}",
+  "limit": {{limit}}{{?offsetNum}},
+  "offset": {"num": "{{offsetNum}}"}{{/offsetNum}},
+  "ids": [{{#ids}}{"num": "{{.}}"}{{/ids}}]
+}`,
+				},
+			},
+			wantRequired:    []string{"collectionName", "limit", "tenant"},
+			wantConditional: []string{"offsetNum"},
+			wantIterable:    []string{"ids"},
+		},
+		{
 			name: "bracketed conditional key is not required",
 			tmpl: &Template{
 				Request: TemplateRequest{

@@ -1007,10 +1007,11 @@ func ClassifyInputs(tmpl *Template) (required, conditional, iterable []string) {
 	condInnerKeys := make(map[string]bool)
 	allKeys := make(map[string]bool)
 
-	// Analyze all text sources: path, header values, body, and form values. A
-	// header or form value that is one placeholder is left out when its input
-	// has no value, so that input is conditional unless another part of the
-	// template needs it.
+	// Analyze all text sources: path, header values, body, form values, and a
+	// gRPC template's message and metadata. A header or form value that is one
+	// placeholder is left out when its input has no value, so that input is
+	// conditional unless another part of the template needs it. A metadata
+	// value is always rendered, so its placeholders are required.
 	sources := []string{tmpl.Request.Path}
 	var whole []string
 	addSource := func(src string) {
@@ -1028,6 +1029,12 @@ func ClassifyInputs(tmpl *Template) (required, conditional, iterable []string) {
 	}
 	for _, text := range tmpl.Request.Form.texts() {
 		addSource(text)
+	}
+	if tmpl.Request.Message != "" {
+		sources = append(sources, tmpl.Request.Message)
+	}
+	for _, v := range tmpl.Request.Metadata {
+		sources = append(sources, v)
 	}
 
 	for _, src := range sources {
