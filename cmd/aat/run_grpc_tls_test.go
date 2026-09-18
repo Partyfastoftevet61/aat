@@ -96,6 +96,7 @@ func TestRunCommand_GRPCOverTLS(t *testing.T) {
     caFile: certs/ca.pem
     certFile: certs/client.pem
     keyFile: certs/client-key.pem
+    serverName: `+testutil.ServerName+`
 `)
 		require.NoError(t, res.err)
 	})

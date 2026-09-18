@@ -9,7 +9,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
-	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,13 +32,15 @@ type TLSFiles struct {
 	server tls.Certificate
 }
 
-// ServerName is a name the server certificate carries besides 127.0.0.1, for
-// a test that reaches the server by an address its certificate does not name.
+// ServerName is the one name the server certificate carries. A test reaches
+// the server at 127.0.0.1, which the certificate deliberately does not name, so
+// verifying it takes a serverName, as it does for a service reached by an
+// address in production. Nothing here depends on how a host resolves a name.
 const ServerName = "api.internal"
 
 // WriteTLSFiles makes a certificate authority, a server certificate for
-// 127.0.0.1 and ServerName, and a client certificate, and writes the PEM files
-// a client needs into a temporary directory.
+// ServerName, and a client certificate, and writes the PEM files a client needs
+// into a temporary directory.
 func WriteTLSFiles(t *testing.T) *TLSFiles {
 	t.Helper()
 	dir := t.TempDir()
@@ -72,7 +73,6 @@ func WriteTLSFiles(t *testing.T) *TLSFiles {
 		SerialNumber: big.NewInt(2),
 		Subject:      pkix.Name{CommonName: "aat test server"},
 		DNSNames:     []string{ServerName},
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	})
 	files.server = tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}

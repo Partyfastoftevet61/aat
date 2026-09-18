@@ -2,7 +2,6 @@ package adapter
 
 import (
 	"context"
-	"net"
 	"testing"
 
 	"github.com/gburgyan/aat/internal/protoreg"
@@ -35,8 +34,7 @@ func serveShopTLS(t *testing.T, requireClientCert bool) (string, *protoreg.Regis
 
 func TestGRPCExecutor_TLS(t *testing.T) {
 	addr, reg, files := serveShopTLS(t, false)
-	_, port, err := net.SplitHostPort(addr)
-	require.NoError(t, err)
+	ca := files.Path(files.CAFile)
 
 	tests := []struct {
 		name   string
@@ -44,34 +42,35 @@ func TestGRPCExecutor_TLS(t *testing.T) {
 		tls    TLSConfig
 		// wantStatus is the gRPC status of a call that was answered.
 		wantStatus string
-		// wantErr is part of the error of a call whose handshake failed. It is
-		// an error, not an UNAVAILABLE response, because UNAVAILABLE is
-		// retried and a certificate problem fails the same way every time.
-		wantErr string
+		// wantErr marks a call whose handshake must fail. It is an error, not
+		// an UNAVAILABLE response, because UNAVAILABLE is retried and a
+		// certificate problem fails the same way every time. What crypto/x509
+		// says differs by platform, so only the fact of it is asserted.
+		wantErr bool
 	}{
 		{
-			name:       "a private CA named by caFile",
+			name:       "a private CA, and the name its certificate carries",
 			target:     "grpcs://" + addr,
-			tls:        TLSConfig{CAFile: files.Path(files.CAFile)},
+			tls:        TLSConfig{CAFile: ca, ServerName: testutil.ServerName},
 			wantStatus: "OK",
 		},
 		{
 			name:    "the system roots do not know a private CA",
 			target:  "grpcs://" + addr,
-			tls:     TLSConfig{},
-			wantErr: "certificate is not trusted",
+			tls:     TLSConfig{ServerName: testutil.ServerName},
+			wantErr: true,
 		},
 		{
 			name:    "an address the certificate does not name",
-			target:  "grpcs://localhost:" + port,
-			tls:     TLSConfig{CAFile: files.Path(files.CAFile)},
-			wantErr: "not localhost",
+			target:  "grpcs://" + addr,
+			tls:     TLSConfig{CAFile: ca},
+			wantErr: true,
 		},
 		{
-			name:       "serverName says which name to verify",
-			target:     "grpcs://localhost:" + port,
-			tls:        TLSConfig{CAFile: files.Path(files.CAFile), ServerName: testutil.ServerName},
-			wantStatus: "OK",
+			name:    "a serverName the certificate does not carry",
+			target:  "grpcs://" + addr,
+			tls:     TLSConfig{CAFile: ca, ServerName: "other.internal"},
+			wantErr: true,
 		},
 		{
 			name:       "insecureSkipVerify, for a sandbox",
@@ -80,6 +79,8 @@ func TestGRPCExecutor_TLS(t *testing.T) {
 			wantStatus: "OK",
 		},
 		{
+			// No handshake is attempted, so there is no TLS error to report:
+			// the server drops a client that does not speak TLS.
 			name:       "plaintext to a TLS port",
 			target:     "grpc://" + addr,
 			tls:        TLSConfig{},
@@ -92,11 +93,10 @@ func TestGRPCExecutor_TLS(t *testing.T) {
 
 			resp, err := exec.Execute(context.Background(), grpcRequest(`{}`))
 
-			if tt.wantErr != "" {
+			if tt.wantErr {
 				require.Error(t, err)
 				assert.Nil(t, resp)
-				assert.Contains(t, err.Error(), "the TLS handshake failed")
-				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.Contains(t, err.Error(), "the TLS handshake failed: x509: ")
 				assert.Contains(t, err.Error(), "grpc.tls", "the error says where the setting is")
 				return
 			}
@@ -113,9 +113,10 @@ func TestGRPCExecutor_MutualTLS(t *testing.T) {
 
 	t.Run("a client certificate the server's CA signed", func(t *testing.T) {
 		exec := shopExecutor(t, "grpcs://"+addr, reg, TLSConfig{
-			CAFile:   ca,
-			CertFile: files.Path(files.ClientCertFile),
-			KeyFile:  files.Path(files.ClientKeyFile),
+			CAFile:     ca,
+			ServerName: testutil.ServerName,
+			CertFile:   files.Path(files.ClientCertFile),
+			KeyFile:    files.Path(files.ClientKeyFile),
 		})
 
 		resp, err := exec.Execute(context.Background(), grpcRequest(`{}`))
@@ -124,14 +125,22 @@ func TestGRPCExecutor_MutualTLS(t *testing.T) {
 		assert.Equal(t, "OK", resp.GRPC.Name, "body: %s", resp.Body)
 	})
 
-	t.Run("no client certificate is refused", func(t *testing.T) {
-		exec := shopExecutor(t, "grpcs://"+addr, reg, TLSConfig{CAFile: ca})
+	// Under TLS 1.3 a server refuses a missing client certificate after the
+	// client's handshake has finished, so the client learns of it on its first
+	// read: as the server's alert if that arrives first, and as a closed
+	// connection if the close does. Which one is a race the client cannot win,
+	// so the call is either the TLS error or UNAVAILABLE. It is never answered.
+	t.Run("no client certificate is never answered", func(t *testing.T) {
+		exec := shopExecutor(t, "grpcs://"+addr, reg, TLSConfig{CAFile: ca, ServerName: testutil.ServerName})
 
 		resp, err := exec.Execute(context.Background(), grpcRequest(`{}`))
 
-		require.Error(t, err)
-		assert.Nil(t, resp)
-		assert.Contains(t, err.Error(), "certificate required")
-		assert.Contains(t, err.Error(), "certFile")
+		if err != nil {
+			assert.Contains(t, err.Error(), "the TLS handshake failed")
+			assert.Contains(t, err.Error(), "certFile")
+			return
+		}
+		require.NotNil(t, resp.GRPC)
+		assert.Equal(t, "UNAVAILABLE", resp.GRPC.Name, "body: %s", resp.Body)
 	})
 }

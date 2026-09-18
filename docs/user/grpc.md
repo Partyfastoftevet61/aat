@@ -265,8 +265,13 @@ says what TLS objected to and names these settings:
 connecting to grpcs://api.internal:443: the TLS handshake failed: x509: certificate signed by unknown authority (check the scheme, and the environment's grpc.tls settings: caFile, certFile and keyFile, serverName)
 ```
 
-`grpc://` to a port that expects TLS has no handshake to fail, and reads as
-`UNAVAILABLE` with `error reading server preface`; check the scheme first.
+Two failures can't be told from an unreachable service, and read as
+`UNAVAILABLE` with `error reading server preface`. One is `grpc://` to a port
+that expects TLS, where no handshake is attempted: check the scheme first. The
+other is a server that wants a client certificate and gets none. TLS 1.3
+refuses that after the handshake, so it arrives as the error above
+(`tls: certificate required`) when the server's alert is read first, and as a
+closed connection when it isn't: check `certFile` and `keyFile`.
 
 One `grpc:` block serves every
 `grpcs://` route of the environment; an override cannot carry its own. In a
