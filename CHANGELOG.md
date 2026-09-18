@@ -31,9 +31,11 @@ the graph and plan formats may still change before 1.0.
   is checked where the template's `message:` places it, however deep — `vectorsConfig.params.size`,
   a oneof member, a map value — rather than required to name a top-level field. It reads
   an extract path the way extraction does — an escaped dot stays in its key, a `#(...)` query is one
-  step, a map field's next step is any key, and a modifier or a pipe ends what it checks — and a
-  path that reads nothing says where it went wrong: a list read without an index, or a scalar read
-  into.
+  step, a map field's next step is any key, a well-known type is walked by its JSON form (a
+  `Timestamp` is a string, a `Struct` any JSON), and a modifier or a pipe ends what it checks — and
+  a path that reads nothing says where it went wrong: a list read without an index, or a scalar
+  read into. A field spelled by its proto name is caught at any depth, with the path to read
+  instead.
 
   Streaming methods are rejected: a step is one request and one response. Server-streaming may come
   later; bidirectional will not.

@@ -246,7 +246,7 @@ node "paymentCharge": service "shop.v1.Payment" not found (did you mean "shop.v1
 node "paymentCharge": shop.v1.Payments/Watch is a server-streaming method; aat runs unary methods
 node "createCollection": input "vectorSize" is sent at "vectorsConfig.Params.size": qdrant.VectorsConfig does not declare "Params" (did you mean "params"?)
 node "getCollection": output "project" reads "result.config.metadta.project": qdrant.CollectionConfig does not declare "metadta"
-node "paymentCharge": output "orderId" reads "order_id", but the response encodes that field as "orderId"
+node "paymentCharge": output "orderId" reads "order_id", but the response encodes that field as "orderId": read "orderId"
 ```
 
 Inputs are checked where the template's `message:` puts them, however deep:
@@ -329,11 +329,11 @@ of it is unsurprising. These are the parts that are:
 | `int32`, `float`, `double` | a JSON number | — |
 | `bytes` | base64 | Decode in a [Lua transform](lua-transforms.md) if you need the bytes |
 | `enum` | the name: `"SHIPPED"` | A value newer than your `.proto` arrives as a bare number |
-| `google.protobuf.Timestamp` | RFC 3339: `"2026-09-17T12:00:00Z"` | Sorts correctly as a string |
+| `google.protobuf.Timestamp` | RFC 3339: `"2026-09-17T12:00:00Z"` | Sorts correctly as a string. A path stops at it: `createdAt.seconds` reads nothing, and `aat validate` says so |
 | `google.protobuf.Duration` | `"3s"` | A string, not a number |
 | `google.protobuf.FieldMask` | comma-joined paths | — |
-| `google.protobuf.Struct`, `Value` | plain JSON | The easy case |
-| `google.protobuf.Any` | `{"@type": "...", ...}` | Its type must be in your descriptor set, so pass `--include_imports` |
+| `google.protobuf.Struct`, `Value` | plain JSON | The easy case. `aat validate` can't check a path below one, since any JSON may be there |
+| `google.protobuf.Any` | `{"@type": "...", ...}` | Its type must be in your descriptor set, so pass `--include_imports`. `aat validate` checks `@type` and nothing past it |
 | wrappers (`Int32Value`, …) | the bare value, or `null` | How proto3 expresses real presence |
 | `map<k,v>` | an object; keys always strings | Read a value by its key: `labels.region`, `payload.city.stringValue`. A dotted key needs escaping: `labels.my\.key` |
 | `float` NaN / Infinity | `"NaN"`, `"Infinity"` | Strings, so numeric predicates will not match |
@@ -348,8 +348,10 @@ Two rules apply throughout:
 
 **Field names are lowerCamelCase.** `order_id` in your `.proto` is `orderId` in
 JSON, which is what extract paths must use. Requests accept either spelling,
-so only extraction is affected — and `aat validate` reports a path written the
-wrong way rather than letting it silently read nothing.
+so only extraction is affected — and `aat validate` reports a path that spells
+any field the wrong way, at any depth, rather than letting it silently read
+nothing, and gives the path to read instead. A map key is the map's own and is
+never renamed.
 
 **Zero values are present.** A field that is `0`, `""`, or `false` appears in
 the JSON rather than being omitted, so an extract rule for it does not fail. An

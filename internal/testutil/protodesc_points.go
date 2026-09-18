@@ -2,7 +2,14 @@ package testutil
 
 import (
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
+	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // PointsFile describes a vector-database proto shaped like Qdrant's, for the
@@ -274,4 +281,69 @@ func serviceProto(name, pkg string, methods ...[3]string) *descriptorpb.ServiceD
 		})
 	}
 	return s
+}
+
+// WellKnownFiles returns the descriptors of the google.protobuf well-known
+// types SnapshotsFile imports, as protoc --include_imports would add them.
+func WellKnownFiles() []*descriptorpb.FileDescriptorProto {
+	return []*descriptorpb.FileDescriptorProto{
+		protodesc.ToFileDescriptorProto(timestamppb.File_google_protobuf_timestamp_proto),
+		protodesc.ToFileDescriptorProto(durationpb.File_google_protobuf_duration_proto),
+		protodesc.ToFileDescriptorProto(structpb.File_google_protobuf_struct_proto),
+		protodesc.ToFileDescriptorProto(anypb.File_google_protobuf_any_proto),
+		protodesc.ToFileDescriptorProto(wrapperspb.File_google_protobuf_wrappers_proto),
+		protodesc.ToFileDescriptorProto(fieldmaskpb.File_google_protobuf_field_mask_proto),
+	}
+}
+
+// SnapshotsFile describes a message built from the well-known types, which the
+// JSON codec encodes by their own rules rather than as their fields:
+//
+//	syntax = "proto3";
+//	package vectors.v1;
+//	import "google/protobuf/{timestamp,duration,struct,any,wrappers,field_mask}.proto";
+//
+//	message GetSnapshot { string name = 1; }
+//	message Snapshot {
+//	  string name = 1; google.protobuf.Timestamp created_at = 2;
+//	  google.protobuf.Duration took = 3; google.protobuf.Struct extra = 4;
+//	  google.protobuf.Any detail = 5; google.protobuf.Int64Value version = 6;
+//	  google.protobuf.FieldMask mask = 7; google.protobuf.Value any_value = 8;
+//	}
+//	service Snapshots { rpc Get(GetSnapshot) returns (Snapshot); }
+//
+// Load it with WellKnownFiles, which it imports.
+func SnapshotsFile() *descriptorpb.FileDescriptorProto {
+	const pkg = ".vectors.v1."
+	return &descriptorpb.FileDescriptorProto{
+		Name:    proto.String("vectors/v1/snapshots.proto"),
+		Package: proto.String("vectors.v1"),
+		Syntax:  proto.String("proto3"),
+		Dependency: []string{
+			"google/protobuf/timestamp.proto", "google/protobuf/duration.proto", "google/protobuf/struct.proto",
+			"google/protobuf/any.proto", "google/protobuf/wrappers.proto", "google/protobuf/field_mask.proto",
+		},
+		MessageType: []*descriptorpb.DescriptorProto{
+			{
+				Name:  proto.String("GetSnapshot"),
+				Field: []*descriptorpb.FieldDescriptorProto{fieldProto("name", 1, tString, one, "")},
+			},
+			{
+				Name: proto.String("Snapshot"),
+				Field: []*descriptorpb.FieldDescriptorProto{
+					fieldProto("name", 1, tString, one, ""),
+					fieldProto("created_at", 2, tMessage, one, ".google.protobuf.Timestamp"),
+					fieldProto("took", 3, tMessage, one, ".google.protobuf.Duration"),
+					fieldProto("extra", 4, tMessage, one, ".google.protobuf.Struct"),
+					fieldProto("detail", 5, tMessage, one, ".google.protobuf.Any"),
+					fieldProto("version", 6, tMessage, one, ".google.protobuf.Int64Value"),
+					fieldProto("mask", 7, tMessage, one, ".google.protobuf.FieldMask"),
+					fieldProto("any_value", 8, tMessage, one, ".google.protobuf.Value"),
+				},
+			},
+		},
+		Service: []*descriptorpb.ServiceDescriptorProto{
+			serviceProto("Snapshots", pkg, [3]string{"Get", "GetSnapshot", "Snapshot"}),
+		},
+	}
 }

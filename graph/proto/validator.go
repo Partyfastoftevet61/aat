@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gburgyan/aat/graph"
+	"github.com/gburgyan/aat/internal/gjsonpath"
 	"github.com/gburgyan/aat/internal/protoreg"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -267,22 +268,34 @@ func (v *Validator) checkOutputs(fail func(string, ...any), name string, node *g
 		if !hasPath {
 			path = out.Name
 		}
-		res := walkPath(msg, strings.TrimPrefix(path, "$."))
+		trimmed := strings.TrimPrefix(path, "$.")
+		res := walkPath(msg, trimmed)
 		if res.problem != "" {
 			fail("output %q reads %q: %s", out.Name, path, res.problem)
 			continue
 		}
-		checkJSONName(fail, out.Name, path, res)
+		checkJSONNames(fail, out.Name, path, trimmed, res.protoNames)
 	}
 }
 
-// checkJSONName reports an extract path written with a field's proto name when
-// the response encodes it under its JSON name. Both spellings resolve, so the
-// path would silently read nothing at runtime.
-func checkJSONName(fail func(string, ...any), output, path string, res walkResult) {
-	if res.last != nil && res.lastKey == string(res.last.Name()) && res.last.JSONName() != res.lastKey {
-		fail("output %q reads %q, but the response encodes that field as %q", output, path, res.last.JSONName())
+// checkJSONNames reports an extract path that spells any field by its proto
+// name where the response encodes it under its JSON name. Both spellings
+// resolve against the descriptor, so the path would silently read nothing at
+// run time. The report gives the path to read instead.
+func checkJSONNames(fail func(string, ...any), output, path, trimmed string, uses []protoNameUse) {
+	if len(uses) == 0 {
+		return
 	}
+	segs := gjsonpath.Split(trimmed)
+	for _, u := range uses {
+		segs[u.segment] = gjsonpath.KeySegment(u.field.JSONName())
+	}
+	corrected := gjsonpath.Join(segs)
+	if len(uses) == 1 {
+		fail("output %q reads %q, but the response encodes that field as %q: read %q", output, path, uses[0].field.JSONName(), corrected)
+		return
+	}
+	fail("output %q reads %q, but the response encodes fields by their JSON names: read %q", output, path, corrected)
 }
 
 // fieldByAnyName finds a field by its proto name or its JSON name, because a

@@ -179,7 +179,7 @@ silently — an extract path written with
 a field's `.proto` name when the response encodes it under its JSON name:
 
 ```
-node "paymentCharge": output "orderId" reads "order_id", but the response encodes that field as "orderId"
+node "paymentCharge": output "orderId" reads "order_id", but the response encodes that field as "orderId": read "orderId"
 ```
 
 See [gRPC](grpc.md).
