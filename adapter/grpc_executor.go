@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/gburgyan/aat/internal/grpcstatus"
 	"github.com/gburgyan/aat/internal/protoreg"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/dynamicpb"
@@ -113,7 +115,8 @@ func (e *GRPCExecutor) Execute(ctx context.Context, req *Request) (*Response, er
 		for k, v := range req.Headers {
 			// Metadata keys are lowercase on the wire; grpc-go rejects
 			// anything else rather than folding it.
-			pairs = append(pairs, strings.ToLower(k), v)
+			key := strings.ToLower(k)
+			pairs = append(pairs, key, outgoingMetadataValue(key, v))
 		}
 		ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
 	}
@@ -188,6 +191,16 @@ func (e *GRPCExecutor) errorResponse(invokeErr error, header, trailer metadata.M
 	if !ok {
 		return nil, fmt.Errorf("executing gRPC request: %w", invokeErr)
 	}
+	// A handshake that failed is not the service being unavailable. grpc-go
+	// reports it as UNAVAILABLE, which is transient and so retried, but a
+	// certificate that is not trusted, or a client certificate the server
+	// wanted and did not get, fails the same way every time: it is the
+	// environment's grpc.tls block that is wrong. It is an error, which is not
+	// retried, and it says where to look.
+	if st.Code() == codes.Unavailable && isTLSFailure(st.Message()) {
+		return nil, fmt.Errorf("connecting to %s: the TLS handshake failed: %s (check the scheme, and the environment's grpc.tls settings: caFile, certFile and keyFile, serverName)", e.target, tlsFailureDetail(st.Message()))
+	}
+
 	code := uint32(st.Code())
 	if code > grpcstatus.MaxCode {
 		return nil, fmt.Errorf("executing gRPC request: %w", invokeErr)
@@ -252,7 +265,60 @@ func metadataHeader(md metadata.MD) http.Header {
 	}
 	out := make(http.Header, len(md))
 	for k, values := range md {
-		out[k] = append(out[k], values...)
+		for _, v := range values {
+			out[k] = append(out[k], incomingMetadataValue(k, v))
+		}
 	}
 	return out
+}
+
+// binarySuffix marks a metadata key whose value is bytes rather than text.
+// gRPC base64-encodes such a value on the wire, and grpc-go does that
+// encoding and decoding itself, so what it hands over and takes is the bytes.
+const binarySuffix = "-bin"
+
+// outgoingMetadataValue gives grpc-go the value to send. A binary key's value
+// is written in a template as base64, which is the only way YAML can hold
+// arbitrary bytes and is what grpcurl takes; it is decoded here so that
+// grpc-go's own encoding does not encode it twice. A value that is not base64
+// is sent as its bytes, as grpcurl does.
+func outgoingMetadataValue(key, value string) string {
+	if !strings.HasSuffix(key, binarySuffix) {
+		return value
+	}
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
+		if raw, err := enc.DecodeString(value); err == nil {
+			return string(raw)
+		}
+	}
+	return value
+}
+
+// incomingMetadataValue is the form a value is recorded in. A binary value is
+// base64 again, as it was on the wire: its bytes are rarely text, and an
+// archive is JSON, which would replace what it cannot encode.
+func incomingMetadataValue(key, value string) string {
+	if !strings.HasSuffix(key, binarySuffix) {
+		return value
+	}
+	return base64.StdEncoding.EncodeToString([]byte(value))
+}
+
+// isTLSFailure reports whether a connection error came from the TLS handshake
+// or from the peer's TLS alert. grpc-go gives these no code of their own, so
+// they are told apart by Go's own error prefixes, which crypto/tls and
+// crypto/x509 put on everything they return.
+func isTLSFailure(message string) bool {
+	return strings.Contains(message, "tls: ") || strings.Contains(message, "x509: ")
+}
+
+// tlsFailureDetail drops grpc-go's wrapping from a handshake error, leaving
+// what crypto/tls said.
+func tlsFailureDetail(message string) string {
+	for _, marker := range []string{"x509: ", "tls: "} {
+		if i := strings.Index(message, marker); i >= 0 {
+			return strings.TrimRight(message[i:], `"`)
+		}
+	}
+	return message
 }

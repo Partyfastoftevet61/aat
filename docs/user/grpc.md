@@ -7,6 +7,13 @@ returned goes straight into a gRPC charge, with nothing in between.
 
 Unary methods only. See [Streaming](#streaming) for why.
 
+It has been run against three server implementations: grpc-go, in the sandbox
+here; Rust's tonic, in [aat-qdrant](https://github.com/gburgyan/aat-qdrant),
+which drives all 52 of Qdrant's unary methods on every push; and a public
+`grpcs://` endpoint verified against the system roots. A private CA, mutual
+TLS, `serverName`, and `insecureSkipVerify` are each tested against a server
+that needs them.
+
 ## The 60-second version
 
 The sandbox serves a gRPC payments service beside its HTTP shop, and
@@ -54,6 +61,9 @@ protoc --descriptor_set_out=payments.protoset --proto_path=proto proto/payments.
 
 # or with buf
 buf build -o payments.protoset
+
+# or, with no .proto files at all, from a server that runs reflection
+grpcurl -protoset-out payments.protoset api.example.com:443 describe shop.v1.Payments
 ```
 
 Include imports if your protos have them:
@@ -174,6 +184,11 @@ because that is what AAT turns a protobuf message into, so paths, `optional`,
 `extract` rule with `header:` reads response metadata, and falls back to
 trailing metadata.
 
+**Binary metadata is base64.** A key ending in `-bin` carries bytes, which
+gRPC base64-encodes on the wire. Write the value as base64 in `metadata:`, as
+you would for `grpcurl -H`; AAT sends the bytes it names, and records a binary
+value a server returns as base64 too, in the archive and to an `extract` rule.
+
 Mixing the two protocols' fields is an error rather than a thing quietly
 ignored:
 
@@ -239,7 +254,21 @@ grpc:
     insecureSkipVerify: false      # a sandbox with a self-signed certificate, nothing else
 ```
 
-Paths resolve beside the environment file. One `grpc:` block serves every
+Paths resolve beside the environment file.
+
+A handshake that fails is an error on the step, and is not retried: a
+certificate that is not trusted fails the same way every time, so it is the
+configuration that is wrong, not the service that is unavailable. The error
+says what TLS objected to and names these settings:
+
+```
+connecting to grpcs://api.internal:443: the TLS handshake failed: x509: certificate signed by unknown authority (check the scheme, and the environment's grpc.tls settings: caFile, certFile and keyFile, serverName)
+```
+
+`grpc://` to a port that expects TLS has no handshake to fail, and reads as
+`UNAVAILABLE` with `error reading server preface`; check the scheme first.
+
+One `grpc:` block serves every
 `grpcs://` route of the environment; an override cannot carry its own. In a
 multi-environment file, an environment that declares `grpc:` replaces the block
 it inherits whole, as it does for `auth`.
@@ -462,12 +491,6 @@ it would mean a second execution model. For a flow that genuinely needs one,
   its size, as an HTTP response is: gRPC's 4 MiB default does not apply.
 - The MCP server has no tools for browsing a descriptor set, as it has for an
   OpenAPI spec. An assistant writing new gRPC nodes reads the `.proto` source.
-- Binary metadata, a key ending in `-bin`, is not handled specially. gRPC
-  base64-encodes such a value itself, so a template writes the raw value and
-  cannot write arbitrary bytes; a binary value a server returns is not valid
-  text, and is archived with its unreadable bytes replaced.
-- `unknown` in `retry.on` or `retry.failOn` is the gRPC status `UNKNOWN`. No
-  error category has that name, so nothing else could be meant.
 - gRPC's own retry and load-balancing configuration is deliberately disabled;
   AAT [retries steps](running.md#retries) itself, and both would double every
   attempt.

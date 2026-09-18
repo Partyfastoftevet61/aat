@@ -13,7 +13,7 @@ the graph and plan formats may still change before 1.0.
   `{"result": true}` — so a later step and the node's cleanup can read the name like any other
   output. `aat validate` checks that the input exists and that the template doesn't also extract
   the output.
-- **gRPC, for unary methods (experimental).** A graph node names a gRPC method with `proto:`, a
+- **gRPC, for unary methods.** A graph node names a gRPC method with `proto:`, a
   template declares `protocol: grpc` and describes the call with `rpc:`, `metadata:`, and `message:`,
   and an environment routes to it with a `grpc://` or `grpcs://` target. Descriptors come from a
   descriptor set — what `protoc --descriptor_set_out` and `buf build -o` write — named by `proto:` in
@@ -141,6 +141,16 @@ the graph and plan formats may still change before 1.0.
   **Copy as grpcurl** produced a command that failed against any server without reflection, the
   sandbox included, with nothing to say why; it now opens with a comment naming the `-protoset` flag
   to add.
+
+  No call had ever been made over TLS: `grpcs://`, a private CA, mutual TLS, `serverName`, and
+  `insecureSkipVerify` were tested only as far as building their settings. Each is now tested against
+  a server that needs it, from `env.yaml` to the handshake, and a run against a public `grpcs://`
+  endpoint verified the system roots. Doing it found that a failed handshake came back as
+  `UNAVAILABLE`, which is transient and so retried, though an untrusted certificate fails the same way
+  every time; it is now an error on the step that says what TLS objected to and names the `grpc.tls`
+  settings. Binary metadata, a key ending in `-bin`, was encoded twice on the way out and written into
+  archives as bytes JSON cannot hold; a template now writes it as base64, as `grpcurl -H` takes it, and
+  an archive records it the same way.
 
   The demo's gRPC replies carried an empty payment id. The HTTP payments API calls it `paymentId` and
   `payments.proto` called it `id`, and the sandbox's gRPC service discarded the field it could not

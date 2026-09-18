@@ -30,9 +30,12 @@ Roughly in priority order. None of these have dates.
 - **More example integrations.** Duffel, Stripe, and Shippo have shipped as sister repositories. Still
   wanted: an API with no sandbox, where cleanup matters and rate limits bite, and nightly CI for the
   projects that exist, so their published numbers are reproducible from the repository.
-- **Finishing gRPC.** Unary gRPC runs, every surface reads it, and an offline demo exercises it in
-  CI (see `CHANGELOG.md`). What is left: `aat generate` does not scaffold a graph from a descriptor
-  set, and server-streaming, as a bounded collect, would come after that.
+- **More of gRPC.** Unary gRPC is done: every surface reads it, it is tested over TLS and mutual TLS,
+  an offline demo exercises it in CI, and [aat-qdrant](https://github.com/gburgyan/aat-qdrant) drives a
+  real API's 52 methods with it on every push. What is left is more of it: `aat generate` does not
+  scaffold a graph from a descriptor set, `repeat.next` follows a string or integer cursor but not one
+  that is a message, the MCP server cannot browse a descriptor set as it can an OpenAPI spec, and
+  server-streaming, as a bounded collect, would come after those.
 - **Docs site on Zensical.** The site is built with Material for MkDocs, which gets critical fixes
   only until 2026-11-05; its successor, Zensical, aims to build existing Material projects.
 

@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"encoding/base64"
 	"net"
 	"net/http"
 	"os"
@@ -35,6 +36,24 @@ type handler func(ctx context.Context, in *dynamicpb.Message) (proto.Message, er
 // given handler, and returns the executor that talks to it.
 func startShopServer(t *testing.T, h handler) *GRPCExecutor {
 	t.Helper()
+	addr, reg := serveShop(t, h)
+	return shopExecutor(t, "grpc://"+addr, reg, TLSConfig{})
+}
+
+// shopExecutor returns an executor for target with a pool the test closes.
+func shopExecutor(t *testing.T, target string, reg *protoreg.Registry, tlsCfg TLSConfig) *GRPCExecutor {
+	t.Helper()
+	pool := NewConnPool()
+	t.Cleanup(func() { _ = pool.Close() })
+	exec, err := NewGRPCExecutor(target, pool, reg, tlsCfg)
+	require.NoError(t, err)
+	return exec
+}
+
+// serveShop runs the server, plaintext or with the given server options, and
+// returns the address it listens on and the descriptors it serves.
+func serveShop(t *testing.T, h handler, opts ...grpc.ServerOption) (string, *protoreg.Registry) {
+	t.Helper()
 
 	path := testutil.WriteDescriptorSet(t, "shop.protoset", testutil.ShopFile())
 	reg, err := protoreg.LoadDescriptorSets(path)
@@ -64,17 +83,12 @@ func startShopServer(t *testing.T, h handler) *GRPCExecutor {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(opts...)
 	srv.RegisterService(desc, struct{}{})
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 
-	pool := NewConnPool()
-	t.Cleanup(func() { _ = pool.Close() })
-
-	exec, err := NewGRPCExecutor("grpc://"+lis.Addr().String(), pool, reg, TLSConfig{})
-	require.NoError(t, err)
-	return exec
+	return lis.Addr().String(), reg
 }
 
 // cartReply builds a shop.v1.Cart from JSON.
@@ -576,6 +590,42 @@ func TestGRPCExecutor_ClosesAPoolItMade(t *testing.T) {
 	_, err = pool.Get("grpc://localhost:9090", false, TLSConfig{})
 	require.NoError(t, err, "a pool it was given is the run's to close")
 	require.NoError(t, pool.Close())
+}
+
+// A key ending in -bin carries bytes. A template writes them as base64 and an
+// archive records them as base64, which is how they travel; between the two
+// grpc-go does the wire encoding, so aat must neither encode twice on the way
+// out nor write raw bytes into JSON on the way back.
+func TestGRPCExecutor_BinaryMetadata(t *testing.T) {
+	sent := []byte{0x00, 0xff, 0x10, 0x80}
+	reply := []byte{0xde, 0xad, 0xbe, 0xef}
+
+	var got []string
+	exec := startShopServer(t, func(ctx context.Context, _ *dynamicpb.Message) (proto.Message, error) {
+		md, _ := metadata.FromIncomingContext(ctx)
+		got = md.Get("x-trace-bin")
+		require.NoError(t, grpc.SetTrailer(ctx, metadata.Pairs("x-signature-bin", string(reply))))
+		return nil, status.Error(codes.NotFound, "no such cart")
+	})
+
+	req := grpcRequest(`{}`)
+	req.Headers = map[string]string{"X-Trace-Bin": base64.StdEncoding.EncodeToString(sent)}
+	resp, err := exec.Execute(context.Background(), req)
+	require.NoError(t, err)
+
+	require.Len(t, got, 1)
+	assert.Equal(t, sent, []byte(got[0]), "the server reads the bytes the template's base64 named")
+	// Keys are stored as the wire spells them, so the map is read as a map.
+	trailers := map[string][]string(resp.Trailers)
+	assert.Equal(t, []string{base64.StdEncoding.EncodeToString(reply)}, trailers["x-signature-bin"],
+		"a binary value is recorded as base64, not as bytes JSON cannot hold")
+}
+
+func TestOutgoingMetadataValue(t *testing.T) {
+	assert.Equal(t, "aGVsbG8=", outgoingMetadataValue("x-note", "aGVsbG8="), "a text key is sent as written")
+	assert.Equal(t, "hello", outgoingMetadataValue("x-note-bin", "aGVsbG8="))
+	assert.Equal(t, "hello", outgoingMetadataValue("x-note-bin", "aGVsbG8"), "unpadded base64 is base64 too")
+	assert.Equal(t, "not base64!", outgoingMetadataValue("x-note-bin", "not base64!"), "anything else is sent as its bytes")
 }
 
 // headerKeys returns a header map's keys as stored, sorted, for asserting the
