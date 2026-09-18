@@ -323,8 +323,14 @@ of it is unsurprising. These are the parts that are:
 | `google.protobuf.Struct`, `Value` | plain JSON | The easy case |
 | `google.protobuf.Any` | `{"@type": "...", ...}` | Its type must be in your descriptor set, so pass `--include_imports` |
 | wrappers (`Int32Value`, …) | the bare value, or `null` | How proto3 expresses real presence |
-| `map<k,v>` | keys always strings | A dotted key needs escaping in an extract path: `labels.my\.key` |
+| `map<k,v>` | an object; keys always strings | Read a value by its key: `labels.region`, `payload.city.stringValue`. A dotted key needs escaping: `labels.my\.key` |
 | `float` NaN / Infinity | `"NaN"`, `"Infinity"` | Strings, so numeric predicates will not match |
+
+Only Google's own well-known types get the special forms above. A message
+that merely copies one — Qdrant's `qdrant.Value`, a fork of
+`google.protobuf.Value` — is an ordinary message, so a payload value arrives
+as `{"stringValue": "Berlin"}`, not as `"Berlin"`, and a template writes it
+that way too.
 
 Two rules apply throughout:
 

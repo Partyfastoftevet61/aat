@@ -13,6 +13,7 @@ type cursorKind int
 const (
 	atMessage cursorKind = iota // a message: the next segment names a field
 	atList                      // a repeated field: the next segment picks elements
+	atMap                       // a map field: the next segment is a key, any key
 	atLeaf                      // a scalar or enum: nothing is below it
 	atOpen                      // somewhere the descriptors don't describe: nothing below is checked
 )
@@ -22,6 +23,9 @@ type cursor struct {
 	kind  cursorKind
 	msg   protoreflect.MessageDescriptor // atMessage
 	field protoreflect.FieldDescriptor   // the field the walk arrived through, if any
+	// name is what the path called this position — a field's JSON name, or
+	// a map key — for problem messages.
+	name string
 }
 
 // walkResult is where a path walk ended.
@@ -66,10 +70,19 @@ func walkPath(msg protoreflect.MessageDescriptor, path string) walkResult {
 			case seg.IsIndex(), seg.Kind == gjsonpath.Query, seg.Kind == gjsonpath.All:
 				// "#" last is the count, and a count is a leaf; otherwise each
 				// of these picks elements, and the walk goes on in one.
-				cur = enterElement(cur.field)
+				cur = enterElement(cur.field, cur.name)
 			default:
 				return walkResult{problem: fmt.Sprintf("%s is a list, so an index, # or a query comes next, not %q", describe(cur), seg.Raw)}
 			}
+		case atMap:
+			// A map encodes as a JSON object keyed by the map's keys, so any
+			// key reads a value; gjson reads "#" and digits on an object as
+			// keys too. A query over an object's values is past what the
+			// descriptors say.
+			if seg.Kind == gjsonpath.Query {
+				return walkResult{}
+			}
+			cur = enterElement(cur.field.MapValue(), seg.Key)
 		case atLeaf:
 			return walkResult{problem: fmt.Sprintf("%s is %s, which has nothing below it", describe(cur), kindName(cur.field))}
 		}
@@ -79,25 +92,28 @@ func walkPath(msg protoreflect.MessageDescriptor, path string) walkResult {
 
 // enterField is the cursor after a segment names fd.
 func enterField(fd protoreflect.FieldDescriptor) cursor {
-	if fd.IsList() {
-		return cursor{kind: atList, field: fd}
+	switch {
+	case fd.IsMap():
+		return cursor{kind: atMap, field: fd, name: fd.JSONName()}
+	case fd.IsList():
+		return cursor{kind: atList, field: fd, name: fd.JSONName()}
 	}
-	return enterElement(fd)
+	return enterElement(fd, fd.JSONName())
 }
 
-// enterElement is the cursor on one value of fd: an element when fd is
-// repeated, the value itself when it is not.
-func enterElement(fd protoreflect.FieldDescriptor) cursor {
+// enterElement is the cursor on one value of fd, which the path calls name: an
+// element when fd is repeated, a map's value, or the value itself.
+func enterElement(fd protoreflect.FieldDescriptor, name string) cursor {
 	if fd.Kind() == protoreflect.MessageKind || fd.Kind() == protoreflect.GroupKind {
-		return cursor{kind: atMessage, msg: fd.Message(), field: fd}
+		return cursor{kind: atMessage, msg: fd.Message(), field: fd, name: name}
 	}
-	return cursor{kind: atLeaf, field: fd}
+	return cursor{kind: atLeaf, field: fd, name: name}
 }
 
 // describe names what the cursor stands on, for a problem message.
 func describe(c cursor) string {
-	if c.field != nil {
-		return fmt.Sprintf("%q", c.field.JSONName())
+	if c.name != "" {
+		return fmt.Sprintf("%q", c.name)
 	}
 	return string(c.msg.FullName())
 }
