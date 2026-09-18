@@ -19,26 +19,26 @@ import (
 
 func TestExecutorRouter_AddResolvedOverride_ValueOnlyKeepsRoute(t *testing.T) {
 	router := NewExecutorRouter(adapter.NewHTTPExecutor("http://shop"), &adapter.EnvironmentConfig{BaseURL: "http://shop"})
-	router.AddResolvedOverride(config.ResolvedOverride{
+	require.NoError(t, router.AddResolvedOverride(config.ResolvedOverride{
 		Pattern:   "payment*",
 		Routes:    true,
 		APIConfig: config.APIConfig{BaseURL: "http://payments", Headers: map[string]string{"X-API-Key": "k"}},
-	})
-	router.AddResolvedOverride(config.ResolvedOverride{
+	}))
+	require.NoError(t, router.AddResolvedOverride(config.ResolvedOverride{
 		Pattern:       "paymentCharge",
 		APIConfig:     config.APIConfig{BaseURL: "http://shop"},
 		Values:        map[string]any{"cardNumber": "4000000000000002"},
-		ExpectFailure: &config.OverrideExpectFailure{Status: []int{402}},
-	})
+		ExpectFailure: &config.OverrideExpectFailure{Status: config.HTTPStatuses([]int{402})},
+	}))
 
 	exec, cfg, _ := router.Resolve("paymentCharge")
-	assert.Equal(t, "http://payments", exec.BaseURL, "a value-only override must not replace the glob route")
+	assert.Equal(t, "http://payments", exec.Target(), "a value-only override must not replace the glob route")
 	assert.Equal(t, "k", cfg.Headers["X-API-Key"])
 
 	values, ef := router.ResolveValueOverride("paymentCharge")
 	assert.Equal(t, "4000000000000002", values["cardNumber"])
 	require.NotNil(t, ef)
-	assert.Equal(t, []int{402}, ef.Status)
+	assert.Equal(t, []int{402}, ef.Status.Codes())
 }
 
 func TestExecutorRouter_InheritedEnvOverride_ChildWins(t *testing.T) {
@@ -66,11 +66,11 @@ environments:
 
 	router := NewExecutorRouter(adapter.NewHTTPExecutor(env.APIBaseURL), &adapter.EnvironmentConfig{BaseURL: env.APIBaseURL})
 	for _, ov := range resolved {
-		router.AddResolvedOverride(ov)
+		require.NoError(t, router.AddResolvedOverride(ov))
 	}
 
 	exec, _, _ := router.Resolve("paymentCharge")
-	assert.Equal(t, "https://child.example.com", exec.BaseURL)
+	assert.Equal(t, "https://child.example.com", exec.Target())
 }
 
 func TestExecutorRouter_DefaultRoute(t *testing.T) {
@@ -385,15 +385,117 @@ func TestExecutorRouter_LastRegisteredOverrideWins(t *testing.T) {
 
 func TestExecutorRouter_ValueOverrideLastExpectFailureWins(t *testing.T) {
 	router := NewExecutorRouter(adapter.NewHTTPExecutor("https://default.example.com"), &adapter.EnvironmentConfig{})
-	router.AddValueOverride("payment*", map[string]any{"cardNumber": "1"}, &plan.ExpectFailure{Status: []int{402}})
-	router.AddValueOverride("payment*", map[string]any{"cardNumber": "2"}, &plan.ExpectFailure{Status: []int{409}})
+	router.AddValueOverride("payment*", map[string]any{"cardNumber": "1"}, &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{402})})
+	router.AddValueOverride("payment*", map[string]any{"cardNumber": "2"}, &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{409})})
 
 	values, ef := router.ResolveValueOverride("paymentCharge")
 	assert.Equal(t, "2", values["cardNumber"])
 	require.NotNil(t, ef)
-	assert.Equal(t, []int{409}, ef.Status, "later glob wins")
+	assert.Equal(t, []int{409}, ef.Status.Codes(), "later glob wins")
 
-	router.AddValueOverride("paymentCharge", nil, &plan.ExpectFailure{Status: []int{422}})
+	router.AddValueOverride("paymentCharge", nil, &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{422})})
 	_, ef = router.ResolveValueOverride("paymentCharge")
-	assert.Equal(t, []int{422}, ef.Status, "exact beats glob")
+	assert.Equal(t, []int{422}, ef.Status.Codes(), "exact beats glob")
+}
+
+// A URL override moves a node and changes nothing else: it keeps the headers,
+// the protected credential, and the rewrite of the route the node already had.
+func TestExecutorRouter_AddURLOverride_KeepsTheRouteTheNodeHad(t *testing.T) {
+	def := &adapter.EnvironmentConfig{BaseURL: "https://shop.example.com", Headers: map[string]string{"Authorization": "Bearer shop"}}
+	payments := &adapter.EnvironmentConfig{
+		BaseURL:   "https://payments.example.com",
+		Headers:   map[string]string{"X-Tenant": "acme"},
+		Protected: map[string]string{"X-API-Key": "pay-key"},
+	}
+	rewrite := &adapter.PathRewrite{Strip: "/v2", Prefix: "/v1"}
+
+	router := NewExecutorRouter(adapter.NewHTTPExecutor(def.BaseURL), def)
+	router.AddOverride("payment*", adapter.NewHTTPExecutor(payments.BaseURL), payments, rewrite)
+	require.NoError(t, router.AddURLOverride("paymentCharge", "http://localhost:9000"))
+	require.NoError(t, router.AddURLOverride("createCart", "http://localhost:9001"))
+
+	exec, cfg, gotRewrite := router.Resolve("paymentCharge")
+	assert.Equal(t, "http://localhost:9000", exec.Target())
+	assert.Equal(t, "http://localhost:9000", cfg.BaseURL)
+	assert.Equal(t, payments.Headers, cfg.Headers)
+	assert.Equal(t, payments.Protected, cfg.Protected, "the matching override's credential, not the default route's")
+	assert.Equal(t, rewrite, gotRewrite)
+
+	_, cfg, gotRewrite = router.Resolve("createCart")
+	assert.Equal(t, def.Headers, cfg.Headers, "a node no override matches keeps the default route's headers")
+	assert.Nil(t, gotRewrite)
+
+	_, cfg, _ = router.Resolve("paymentRefund")
+	assert.Equal(t, "https://payments.example.com", cfg.BaseURL, "other nodes of the glob are untouched")
+	assert.Equal(t, "https://payments.example.com", payments.BaseURL, "the inherited config is copied, not edited")
+}
+
+// A glob flag inherits from an entry registered under the same pattern, and
+// otherwise from the default route.
+func TestExecutorRouter_AddURLOverride_GlobPattern(t *testing.T) {
+	def := &adapter.EnvironmentConfig{Headers: map[string]string{"Authorization": "Bearer shop"}}
+	payments := &adapter.EnvironmentConfig{Protected: map[string]string{"X-API-Key": "pay-key"}}
+
+	router := NewExecutorRouter(adapter.NewHTTPExecutor("https://shop.example.com"), def)
+	router.AddOverride("payment*", adapter.NewHTTPExecutor("https://payments.example.com"), payments, nil)
+	require.NoError(t, router.AddURLOverride("payment*", "http://localhost:9000"))
+	require.NoError(t, router.AddURLOverride("ship*", "http://localhost:9001"))
+
+	_, cfg, _ := router.Resolve("paymentCharge")
+	assert.Equal(t, "http://localhost:9000", cfg.BaseURL)
+	assert.Equal(t, payments.Protected, cfg.Protected)
+
+	_, cfg, _ = router.Resolve("shipOrder")
+	assert.Equal(t, def.Headers, cfg.Headers)
+}
+
+// countingExecutor records how often Close was called, so the router's
+// deduplication and idempotence are observable.
+type countingExecutor struct {
+	target string
+	closes int
+	err    error
+}
+
+func (e *countingExecutor) Execute(context.Context, *adapter.Request) (*adapter.Response, error) {
+	return &adapter.Response{StatusCode: 200}, nil
+}
+func (e *countingExecutor) Protocol() string { return adapter.ProtocolHTTP }
+func (e *countingExecutor) Target() string   { return e.target }
+func (e *countingExecutor) Close() error     { e.closes++; return e.err }
+
+func TestExecutorRouter_CloseClosesEveryExecutorOnce(t *testing.T) {
+	def := &countingExecutor{target: "https://default.example.com"}
+	payments := &countingExecutor{target: "https://payments.example.com"}
+
+	router := NewExecutorRouter(def, &adapter.EnvironmentConfig{})
+	// The same executor under two patterns must still be closed once.
+	router.AddOverride("payment*", payments, &adapter.EnvironmentConfig{}, nil)
+	router.AddOverride("paymentCharge", payments, &adapter.EnvironmentConfig{}, nil)
+
+	require.NoError(t, router.Close())
+	assert.Equal(t, 1, def.closes, "the default executor is closed once")
+	assert.Equal(t, 1, payments.closes, "an executor registered twice is closed once")
+}
+
+func TestExecutorRouter_CloseReportsExecutorErrors(t *testing.T) {
+	failing := &countingExecutor{target: "https://broken.example.com", err: assert.AnError}
+	router := NewExecutorRouter(failing, &adapter.EnvironmentConfig{})
+
+	err := router.Close()
+	require.Error(t, err)
+	assert.ErrorIs(t, err, assert.AnError)
+}
+
+func TestExecutorRouter_CloseWithoutExecutors(t *testing.T) {
+	// A router built with no default, as the engine's zero-executor tests do.
+	assert.NoError(t, NewExecutorRouter(nil, nil).Close())
+}
+
+func TestHTTPExecutor_SatisfiesExecutor(t *testing.T) {
+	var exec adapter.Executor = adapter.NewHTTPExecutor("https://api.example.com")
+	assert.Equal(t, adapter.ProtocolHTTP, exec.Protocol())
+	assert.Equal(t, "https://api.example.com", exec.Target())
+	assert.NoError(t, exec.Close())
+	assert.NoError(t, exec.Close(), "Close is idempotent")
 }

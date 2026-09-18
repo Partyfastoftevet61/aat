@@ -65,7 +65,7 @@ AAT also has its own MCP server (`aat mcp serve`) that exposes graph introspecti
 
 ### Reference Projects
 
-Three complete projects against public APIs are the reference for idioms: [aat-duffel](https://github.com/gburgyan/aat-duffel) (66 operations, no official spec), [aat-stripe](https://github.com/gburgyan/aat-stripe) (82 operations, strict validation against a vendored spec), and [aat-shippo](https://github.com/gburgyan/aat-shippo) (46 operations, layer matrices). Before inventing a pattern — cleanup chains, guards, polling with `repeat`, form bodies, layers — read the matching row of a project's "AAT features on display" table, which names the file that uses it. [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/) compares the three.
+Four complete projects against public APIs are the reference for idioms: [aat-duffel](https://github.com/gburgyan/aat-duffel) (66 operations, no official spec), [aat-stripe](https://github.com/gburgyan/aat-stripe) (82 operations, strict validation against a vendored spec), [aat-shippo](https://github.com/gburgyan/aat-shippo) (46 operations, layer matrices), and [aat-qdrant](https://github.com/gburgyan/aat-qdrant) (gRPC: all 52 of Qdrant's unary methods, against a local container). Before inventing a pattern — cleanup chains, guards, polling with `repeat`, form bodies, layers — read the matching row of a project's "AAT features on display" table, which names the file that uses it. For a gRPC API, read aat-qdrant first: its "Reading it as a gRPC example" table maps each gRPC concern — descriptor sets, oneofs, maps, 64-bit integers, errors by status name, auth as metadata, retry hints in trailers, message cursors — to the file that handles it. [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/) compares the four.
 
 ### Starting from an OpenAPI Spec
 
@@ -166,6 +166,7 @@ default:
 | `type` | yes | Data type |
 | `optional` | no | If true, the template need not extract it. A path the response lacks leaves the step without the output, and a null value is extracted as null; a `predicate` assertion that names either fails (see Predicate syntax under Assertion Types) |
 | `display` | no | Label that prints the value under the step in run output |
+| `fromInput` | no | Names one of the node's inputs: the output is that input as sent, not extracted. For a create whose reply doesn't repeat the client-chosen name, so later steps and the cleanup can read it |
 | `elementFields` | no | For array outputs — describes fields on each element |
 
 ### Array Outputs
@@ -237,6 +238,43 @@ response:
         itemId: id
         title: name
 ```
+
+### gRPC Templates
+
+A template with `protocol: grpc` calls a gRPC method. Everything above still
+applies — placeholders, conditional and iteration blocks, `response.extract` —
+because a protobuf message reaches the rest of AAT as JSON.
+
+```yaml
+adapter: paymentCharge
+protocol: grpc
+
+request:
+  rpc: shop.v1.Payments/Charge   # replaces method + path
+  metadata:                      # replaces headers
+    x-tenant: "{{tenant}}"
+  message: |                     # replaces body; JSON, same placeholders
+    {"orderId": "{{orderId}}", "amount": "{{amount}}"}
+
+response:
+  extract:
+    paymentId: paymentId
+```
+
+- The node names the method too: `proto: shop.v1.Payments/Charge`, in place of `oas:`. The graph or the manifest names the descriptor set with `proto: payments.protoset` — a `FileDescriptorSet` from `protoc --descriptor_set_out` or `buf build -o`, never `.proto` source
+- Mixing protocols' fields is an error: an HTTP template may not carry `rpc`/`metadata`/`message`, and a gRPC one may not carry `method`/`path`/`headers`/`body`/`form`
+- The node and its template must agree: a node with `proto:` needs a template with `protocol: grpc`, and the two must name the same method. `aat validate` and `aat run` both reject a mismatch — a run before its first step — because nothing at run time reads `proto:`, so a mismatch means validation checked a contract the run never uses
+- **Extract paths use lowerCamelCase JSON names**, so a `.proto` field `order_id` is `orderId`. Requests accept either spelling; only extraction is affected, and `aat validate` reports a path written the wrong way
+- `aat validate` checks each input where `message:` places it, however deep (`"vectorsConfig": {"params": {"size": "{{vectorSize}}"}}` checks `vectorsConfig.params.size`), and each output along its extract path, map keys included (`payload.city.stringValue`)
+- **A 64-bit integer (`int64`, `uint64`, `fixed64`) is a JSON string**: `"4200"`, not `4200`. Write `fieldEquals` values quoted, and predicate equality too (`total == "4200"`); ordering compares by value, so `total > 100` works
+- Other encodings: `bytes` is base64; an enum is its name; `Timestamp` is RFC 3339; `Duration` is `"3s"`; `Any` is `{"@type": …}` and needs its type in the descriptor set (`--include_imports`); map keys are always strings; `NaN`/`Infinity` are strings
+- Zero values are present in the JSON, so an extract rule for a `0` or `""` field does not fail. An unset `optional` field, message field, or map entry stays absent, which is what `fieldAbsent` tests
+- **Statuses are named**: `expect: OK`, `status: [NOT_FOUND]` in `expectFailure` (a step's, or an override's or overlay's), `expectStatus: [INVALID_ARGUMENT]` in a mutation. Prefer the name to a number: `INVALID_ARGUMENT`, `FAILED_PRECONDITION`, and `OUT_OF_RANGE` all map to HTTP 400, so a number cannot tell them apart. A number still matches, so a plan can read against either protocol
+- A failed call still has a JSON body: `{"code": "NOT_FOUND", "message": "...", "details": [...]}`, which assertions and `errorDetection` read normally
+- **Unary methods only.** A streaming method is rejected by `aat validate` and by the executor
+- The target is `grpc://host:port` (plaintext) or `grpcs://host:port` (TLS), set as `apiBaseUrl` or in an `overrides:` entry so one project can span both protocols. Auth needs nothing new: a credential travels as metadata
+
+Cross-ref: [gRPC](https://gburgyan.github.io/aat/grpc/). A complete gRPC project to copy idioms from: [aat-qdrant](https://github.com/gburgyan/aat-qdrant)
 
 ### Form Bodies and Query Strings
 
@@ -522,7 +560,7 @@ assertions:
 
 `retry: {max: 3, on: [transient], failOn: [auth]}` retries a failed step.
 
-- **Rules** in `on` and `failOn` are failure categories or HTTP status codes (`on: [503]`):
+- **Rules** in `on` and `failOn` are failure categories, HTTP status codes (`on: [503]`), or gRPC status names (`on: [UNAVAILABLE]`), which match that status alone:
   - `transient`: 429, 502, 503, 504, or a refused or reset connection
   - `server`: other 5xx
   - `client`: other 4xx
@@ -777,7 +815,9 @@ Semantics:
   plan-supplied values. Precedence: overlay values > plan step values > graph
   defaults.
 - `expectFailure:` is applied to any step whose node matches `match`, but only
-  when the step's plan doesn't already declare its own `expectFailure`.
+  when the step's plan doesn't already declare its own `expectFailure`. Its
+  `status` takes what a step's takes: codes `>= 400`, or gRPC status names
+  (`status: [INVALID_ARGUMENT]`).
 - Match resolution: exact matches win over glob matches on conflicting keys.
 
 ### Patterns You'll Use

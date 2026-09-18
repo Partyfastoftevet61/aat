@@ -1,0 +1,25 @@
+# A gRPC template. It names an rpc instead of a method and a path, sends
+# metadata instead of headers, and its message is the request message as JSON.
+adapter: paymentCharge
+protocol: grpc
+
+request:
+  rpc: shop.v1.Payments/Charge
+  # The amount is an int64, which proto3 JSON writes as a string. Quoting it
+  # here is not a style choice: an unquoted number is also accepted, but the
+  # response reads back as a string, which is why the assertions below quote it.
+  message: |
+    {
+      "orderId": "{{orderId}}",
+      "amount": "{{amount}}",
+      "currency": "{{currency}}",
+      "method": "{{method}}",
+      "cardNumber": "{{cardNumber}}"
+    }
+
+response:
+  extract:
+    paymentId: paymentId
+    paymentStatus: status
+    orderStatus: orderStatus
+    amountDisplay: amountDisplay

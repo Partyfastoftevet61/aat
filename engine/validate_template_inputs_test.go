@@ -479,3 +479,34 @@ func TestValidateTemplateInputsForPlan(t *testing.T) {
 		})
 	}
 }
+
+// A gRPC message is read like a body: an optional input with no default that
+// the message always uses would fail every request with an unresolved
+// placeholder, so validation says so before the run.
+func TestValidateTemplateInputs_GRPCMessageAndMetadata(t *testing.T) {
+	g := &graph.Graph{Nodes: map[string]*graph.Node{
+		"scroll": {
+			Name: "scroll", Adapter: "scroll",
+			Inputs: []graph.Input{
+				{Name: "collectionName", Type: "string", Optional: true},
+				{Name: "tenant", Type: "string", Optional: true},
+				{Name: "offsetNum", Type: "string", Optional: true},
+			},
+		},
+	}}
+	registry := adapter.NewRegistry()
+	require.NoError(t, registry.Register("scroll", adapter.NewTemplateAdapter(adapter.Template{
+		Adapter: "scroll", Protocol: adapter.ProtocolGRPC,
+		Request: adapter.TemplateRequest{
+			RPC:      "qdrant.Points/Scroll",
+			Metadata: map[string]string{"x-tenant": "{{tenant}}"},
+			Message:  `{"collectionName": "{{collectionName}}"{{?offsetNum}}, "offset": {"num": "{{offsetNum}}"}{{/offsetNum}}}`,
+		},
+	})))
+
+	err := ValidateTemplateInputs(g, registry)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `node "scroll": template requires placeholder "collectionName" but graph input is optional with no default`)
+	assert.Contains(t, err.Error(), `node "scroll": template requires placeholder "tenant" but graph input is optional with no default`)
+	assert.NotContains(t, err.Error(), "offsetNum", "a placeholder inside a conditional block is conditional")
+}

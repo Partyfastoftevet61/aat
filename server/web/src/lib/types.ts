@@ -130,6 +130,7 @@ export interface StepDetail {
 export interface IterationSummary {
   index: number;
   status?: number;
+  grpcCode?: string; // the gRPC status name, shown in place of status where set
   durationMs: number;
   durationDisplay: string;
   untilMet?: boolean;
@@ -194,6 +195,9 @@ export interface RequestDetail {
   headers?: HeaderEntry[];
   body?: unknown;
   formFields?: FormField[]; // a form-encoded body's fields, in the order they were sent
+  protocol?: string; // "grpc" for a gRPC call; empty or "http" otherwise
+  rpc?: string; // a gRPC method as the wire names it: "shop.v1.Carts/CreateCart"
+  target?: string; // the gRPC service the call went to: "grpc://host:port"
 }
 
 export interface ResponseDetail {
@@ -201,6 +205,10 @@ export interface ResponseDetail {
   headers?: HeaderEntry[];
   body?: unknown;
   formFields?: FormField[];
+  trailers?: HeaderEntry[]; // a gRPC call's trailing metadata
+  grpcCode?: string; // the gRPC status name, shown in place of the HTTP status it maps to
+  grpcMessage?: string;
+  grpcDetails?: unknown[];
 }
 
 // One field of a form-encoded body, decoded.
@@ -282,8 +290,8 @@ export interface ErrorClassDetail {
 }
 
 export interface ExpectFailureDetail {
-  expected: number[];
-  actual: number;
+  expected: string[];
+  actual: string;
   passed: boolean;
 }
 

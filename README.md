@@ -19,7 +19,7 @@ With `aat` and `aat-sandbox` [installed](#install) and on your `PATH`, the offli
 
 ```bash
 aat-sandbox init shop && cd shop   # extract the example project
-aat-sandbox serve &                # shop API on :8765, payments API on :8766
+aat-sandbox serve &                # shop API on :8765, payments on :8766, payments over gRPC on :8767
 aat run plan full-lifecycle        # one order through every state, verified and cleaned up
 aat run plan smoke --env eu        # the same purchase with EU prices and VAT
 aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --parallel 4
@@ -74,7 +74,7 @@ So the knowledge moved into the repository. AAT keeps three things apart. **API 
 
 Describing the API that precisely turned out to be worth more than the tests it was written for. The question stopped being *what else should this run?* and became *what else can read this?* The same graph is what `aat mcp serve` hands an AI coding tool, so it calls the API correctly instead of guessing at it — and it is what makes a run archive worth sending: every request, response, resolved value, retry, and assertion in one file the other team opens in the same viewer, rather than a screenshot of one pane. Neither was a roadmap; both fell out of having the graph.
 
-The point is not that the files are tidy. It is that they run: every claim in this repository and in the three projects below is something `aat` executed and recorded. [Why AAT exists](https://gburgyan.github.io/aat/why/) tells the longer version.
+The point is not that the files are tidy. It is that they run: every claim in this repository and in the four projects below is something `aat` executed and recorded. [Why AAT exists](https://gburgyan.github.io/aat/why/) tells the longer version.
 
 ## Pick your demo
 
@@ -82,16 +82,18 @@ The point is not that the files are tidy. It is that they run: every claim in th
 |---------|---------------|-------|
 | [Shop](examples/shop/README.md) | Everything: an 18-operation graph, workflows with slots and addons, layers and matrices, two regions, a separately hosted payments API, negative tests, retries, checkpoints, an integration kit, MCP | Nothing: it runs offline against `aat-sandbox` |
 | [Petstore](examples/petstore/README.md) | The smallest working project: four operations, two workflows, cleanup pairing | Network access to the public Petstore |
+| [gRPC payments](examples/grpc-payments/README.md) | One plan across two protocols: a cart opened and checked out over HTTP, then charged and refunded over gRPC, and a negative test that names a gRPC status | Nothing: it runs offline against `aat-sandbox`. `aat-sandbox init --example grpc-payments <dir>` extracts it |
 
-Three complete projects against real, public APIs live in their own repositories. Each was built against the API's live test mode, and every claim in its README is something a run recorded:
+Four complete projects against real, public APIs live in their own repositories. Three were built against an API's live test mode and the fourth against the database itself, in a local container; every claim in each README is something a run recorded:
 
 | Project | Scale | What it shows |
 |---------|-------|---------------|
 | [aat-duffel](https://github.com/gburgyan/aat-duffel) | 66 operations, 47 plans, 14 layers; 47/47 in ~3½ min | **Flight search and booking**, against an API with **no official OpenAPI spec**; everything in the README came from runs |
 | [aat-stripe](https://github.com/gburgyan/aat-stripe) | 82 operations, 53 plans, 14 layers; 53/53 in ~5 min | **Card and bank payments, saved cards, refunds**: ~6,300 lines of graph and templates against Stripe's **205,000-line** vendored spec, with every exchange checked against it |
 | [aat-shippo](https://github.com/gburgyan/aat-shippo) | 46 of 70 operations, 28 plans, 9 layers; 28/28 in ~2½ min | **Rating, buying, refunding, and tracking shipments**: layers as the headline, with a lane × parcel matrix, six deterministic tracking fixtures, and real shipping labels rendered in the web UI |
+| [aat-qdrant](https://github.com/gburgyan/aat-qdrant) | all 52 public unary gRPC methods, 77 operations, 38 plans, 6 layers; 38/38 in ~70 s | **A vector database over gRPC**: the protobuf a real API sends (oneofs, maps, 64-bit ids, a cursor that is a message), errors asserted by status name, credentials as metadata, and a few REST reads of the same data checked against Qdrant's OpenAPI spec. It is what AAT's gRPC support was stress-tested against |
 
-Each is a complete AAT project in its own repository: clone it, export a free test-mode key, and it runs against your account. [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/) says what each covers and leaves out.
+Each is a complete AAT project in its own repository: clone it, export a free test-mode key, and it runs against your account. aat-qdrant needs no account: it runs against a pinned Qdrant in Docker, and needs an `aat` with gRPC support, which is not in a release yet (build from source). [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/) says what each covers and leaves out.
 
 ## What it does
 
@@ -101,6 +103,7 @@ Each is a complete AAT project in its own repository: clone it, export a free te
 | **Layers → matrix.** `--layer-group` runs every plan across every layer permutation and skips permutations that would send identical requests. | **Multi-environment.** Named environments share a base through `extends` and `vars`, and single operations can route to another host with other credentials. |
 | **Archives with a decision trail.** Every request, response, resolved value, retry, and assertion is recorded, with secrets redacted, and browsable in the web UI. | **CI-native.** Exit codes 0/1/2/130, `--json`, JUnit XML via `tools/aat-to-junit.py`, and a Docker image. |
 | **Checkpoints.** `--stop-after` keeps resources alive and `--dump-state` hands their IDs to another tool, with the session's credentials on request. | **Depth testing.** `expectFailure`, `mutations`, `rawBody`, and overlay files (per-run input values and expected failures) turn happy paths into negative tests. |
+| **HTTP and gRPC.** A node names a REST operation or a gRPC method, and one plan can span both: an order checked out over HTTP is charged over gRPC, its id passed straight across. Statuses are asserted by name (`NOT_FOUND`), and `aat validate` checks gRPC nodes against a descriptor set offline. Unary methods. See the [gRPC guide](https://gburgyan.github.io/aat/grpc/), and [aat-qdrant](https://github.com/gburgyan/aat-qdrant) for a real API driven this way. | **An offline API to try it on.** `aat-sandbox` serves a shop, a separately hosted payments API, and the same payments over gRPC, with regions, two kinds of auth, a declined card, and chaos hooks, so every example runs with no network and no account. |
 | **From OpenAPI and back.** `aat generate` scaffolds from a spec; `aat validate --strict` holds the graph to it, and `--oas-validate strict` the request and response bodies of every exchange; `aat docs generate` writes Markdown. | **AI where it helps.** The MCP server teaches AI coding tools your API, and `aat prompt` can draft a plan; see [AI tools and MCP](#ai-tools-and-mcp). |
 
 <img src="https://raw.githubusercontent.com/gburgyan/aat/main/docs/user/assets/demo-batch.gif" alt="aat run batch with two layer groups and --parallel 4: the dedup list, four progress bars updating in place, and Batch: 27/63 PASSED, 36 SKIPPED" width="820">
@@ -137,7 +140,7 @@ One graph, run many ways: that is the *adaptive* in the name.
 | File | What it holds |
 |------|---------------|
 | **Graph** (`graph.yaml`) | Operations with typed inputs and outputs, where each input's value comes from, ordering tokens, and cleanup pairings |
-| **Templates** (`templates/`) | One HTTP request and response template per operation: method, path, headers, body, and what to extract |
+| **Templates** (`templates/`) | One request and response template per operation: an HTTP method, path, headers, and body, or a gRPC method, metadata, and message; and what to extract |
 | **Environments** (`env.yaml`) | Base URLs, auth, headers, and per-operation routing for each named environment |
 | **Workflows** (`workflows/`) | Reusable step sequences with slots (pick one option) and addons (splice extra steps in) |
 | **Layers** (`layers/`) | Named sets of input values that multiply plans into a matrix |
@@ -275,8 +278,8 @@ Release binaries are not notarized. If macOS blocks one you downloaded with a br
 | `aat docs generate` | Write Markdown documentation from the graph |
 | `aat docs primer` | Print the primer AI coding assistants read, as Markdown |
 | `aat prompt "<text>"` | Draft a plan from a sentence (needs LLM configuration) |
-| `aat-sandbox serve` | Run the offline shop API and payments API |
-| `aat-sandbox init <dir>` | Extract the shop example project |
+| `aat-sandbox serve` | Run the offline shop API and payments API, and the payments API again over gRPC |
+| `aat-sandbox init <dir>` | Extract the shop example project, or the gRPC one with `--example grpc-payments` |
 
 ## Documentation
 
@@ -287,13 +290,14 @@ The full documentation is at **[gburgyan.github.io/aat](https://gburgyan.github.
 - [Tutorial](https://gburgyan.github.io/aat/tutorial/): build a project by hand against the sandbox
 - [Matrix testing](https://gburgyan.github.io/aat/batch-layers/): layers, layer groups, and dedup
 - [Environments](https://gburgyan.github.io/aat/environments/): auth, `extends`, `vars`, and per-operation routing
+- [gRPC](https://gburgyan.github.io/aat/grpc/): descriptor sets, gRPC templates, status names, and how protobuf reads as JSON
 - [MCP server](https://gburgyan.github.io/aat/mcp-server/): personas, tools, and IDE setup
 - [Share your API with integrators](https://gburgyan.github.io/aat/integration-kit/): package a kit in CI
 - [CI/CD](https://gburgyan.github.io/aat/ci-cd/): exit codes, JSON output, and JUnit
 
 ## Status
 
-Pre-1.0, with one maintainer. AAT was built and proven against a private 74-node airline booking API with 63 workflows, 53 recipes, and 6 environments, and against the three public projects above. The graph and plan formats may still change before 1.0; breaking changes are listed in the [changelog](CHANGELOG.md), and the [roadmap](ROADMAP.md) says what's next.
+Pre-1.0, with one maintainer. AAT was built and proven against a private 74-node airline booking API with 63 workflows, 53 recipes, and 6 environments, and against the four public projects above. The graph and plan formats may still change before 1.0; breaking changes are listed in the [changelog](CHANGELOG.md), and the [roadmap](ROADMAP.md) says what's next.
 
 ## Contributing
 

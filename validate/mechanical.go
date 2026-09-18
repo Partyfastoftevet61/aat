@@ -3,9 +3,11 @@ package validate
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/tidwall/gjson"
 
+	"github.com/gburgyan/aat/internal/grpcstatus"
 	"github.com/gburgyan/aat/internal/httpstatus"
 )
 
@@ -68,14 +70,14 @@ type SchemaCheckFunc func(a MechanicalAssertion) AssertionResult
 // RunMechanical evaluates all mechanical assertions against a response.
 // It returns an aggregate result indicating whether all assertions passed.
 // schemaCheck may be nil; when nil, schema assertions return Skipped.
-func RunMechanical(statusCode int, body []byte, assertions []MechanicalAssertion, predicateEval PredicateEvalFunc, schemaCheck SchemaCheckFunc) *MechanicalResult {
+func RunMechanical(status StatusInfo, body []byte, assertions []MechanicalAssertion, predicateEval PredicateEvalFunc, schemaCheck SchemaCheckFunc) *MechanicalResult {
 	result := &MechanicalResult{Passed: true}
 
 	for _, a := range assertions {
 		var ar AssertionResult
 		switch a.Type {
 		case AssertStatus:
-			ar = checkStatus(statusCode, a)
+			ar = checkStatus(status, a)
 		case AssertSchema:
 			ar = checkSchema(a, schemaCheck)
 		case AssertFieldExists:
@@ -104,9 +106,24 @@ func RunMechanical(statusCode int, body []byte, assertions []MechanicalAssertion
 	return result
 }
 
-// checkStatus compares the response status code against the expected value:
-// an exact code such as 201, or a class such as "2xx".
-func checkStatus(statusCode int, a MechanicalAssertion) AssertionResult {
+// StatusInfo is the status a response came back with, as assertions read it.
+//
+// Code is an HTTP status whatever the protocol: a gRPC response carries the
+// one its code maps to, so a class such as "2xx" and an exact code such as 404
+// mean the same thing for both. GRPCName is set only for a gRPC response, and
+// lets an assertion name the code the server actually sent.
+type StatusInfo struct {
+	Code     int
+	GRPCName string
+}
+
+// HTTPStatusInfo is the status of an HTTP response.
+func HTTPStatusInfo(code int) StatusInfo { return StatusInfo{Code: code} }
+
+// checkStatus compares the response status against the expected value: an
+// exact code such as 201, a class such as "2xx", or — on a gRPC response — a
+// status name such as NOT_FOUND.
+func checkStatus(status StatusInfo, a MechanicalAssertion) AssertionResult {
 	ar := AssertionResult{Type: AssertStatus}
 
 	if a.Expect == nil {
@@ -115,12 +132,34 @@ func checkStatus(statusCode int, a MechanicalAssertion) AssertionResult {
 		return ar
 	}
 
-	if class, ok := httpstatus.Class(a.Expect); ok {
-		ar.Passed = statusCode/100 == class
+	// A gRPC status is named before it is numbered: several codes share one
+	// HTTP status, so comparing names is the only way to tell them apart.
+	if grpcstatus.IsName(a.Expect) {
+		expected, _ := a.Expect.(string)
+		if status.GRPCName == "" {
+			ar.Passed = false
+			ar.Message = fmt.Sprintf("expected gRPC status %s, but the step was not a gRPC call (status %d)", expected, status.Code)
+			return ar
+		}
+		// Compare the codes the two names resolve to, so every accepted
+		// spelling — NOT_FOUND, not_found, NotFound, not-found — matches.
+		expectedCode, _ := grpcstatus.CodeByName(expected)
+		actualCode, known := grpcstatus.CodeByName(status.GRPCName)
+		ar.Passed = known && expectedCode == actualCode
 		if ar.Passed {
-			ar.Message = fmt.Sprintf("status code %d is %dxx", statusCode, class)
+			ar.Message = "status is " + status.GRPCName
 		} else {
-			ar.Message = fmt.Sprintf("expected status %dxx, got %d", class, statusCode)
+			ar.Message = fmt.Sprintf("expected status %s, got %s", strings.ToUpper(expected), status.GRPCName)
+		}
+		return ar
+	}
+
+	if class, ok := httpstatus.Class(a.Expect); ok {
+		ar.Passed = status.Code/100 == class
+		if ar.Passed {
+			ar.Message = fmt.Sprintf("status code %d is %dxx", status.Code, class)
+		} else {
+			ar.Message = fmt.Sprintf("expected status %dxx, got %d", class, status.Code)
 		}
 		return ar
 	}
@@ -128,18 +167,34 @@ func checkStatus(statusCode int, a MechanicalAssertion) AssertionResult {
 	expected, ok := httpstatus.Code(a.Expect)
 	if !ok {
 		ar.Passed = false
-		ar.Message = fmt.Sprintf("cannot coerce expect value %v (%T) to int", a.Expect, a.Expect)
+		ar.Message = fmt.Sprintf("cannot read expect value %v (%T) as a status code, a class such as \"2xx\", or a gRPC status name", a.Expect, a.Expect)
 		return ar
 	}
 
-	if statusCode == expected {
+	if status.Code == expected {
 		ar.Passed = true
-		ar.Message = fmt.Sprintf("status code is %d", statusCode)
+		ar.Message = statusIsMessage(status)
 	} else {
 		ar.Passed = false
-		ar.Message = fmt.Sprintf("expected status %d, got %d", expected, statusCode)
+		ar.Message = fmt.Sprintf("expected status %d, got %s", expected, statusGotMessage(status))
 	}
 	return ar
+}
+
+// statusIsMessage describes a matched status, naming a gRPC code where there
+// is one so the message reads the way the plan's author thinks.
+func statusIsMessage(status StatusInfo) string {
+	if status.GRPCName != "" {
+		return fmt.Sprintf("status is %s (%d)", status.GRPCName, status.Code)
+	}
+	return fmt.Sprintf("status code is %d", status.Code)
+}
+
+func statusGotMessage(status StatusInfo) string {
+	if status.GRPCName != "" {
+		return fmt.Sprintf("%s (%d)", status.GRPCName, status.Code)
+	}
+	return fmt.Sprintf("%d", status.Code)
 }
 
 // checkSchema delegates to the caller-provided SchemaCheckFunc, which typically
@@ -233,7 +288,11 @@ func checkFieldEquals(body []byte, a MechanicalAssertion) AssertionResult {
 		ar.Message = fmt.Sprintf("field %q equals %v", a.Path, a.Value)
 	} else {
 		ar.Passed = false
-		ar.Message = fmt.Sprintf("field %q: expected %v, got %v", a.Path, a.Value, r.Value())
+		got := fmt.Sprintf("%v", r.Value())
+		if r.IsObject() || r.IsArray() {
+			got = r.Raw
+		}
+		ar.Message = fmt.Sprintf("field %q: expected %s, got %s", a.Path, describeExpected(a.Value), got)
 	}
 	return ar
 }
@@ -281,21 +340,133 @@ func checkPredicate(body []byte, a MechanicalAssertion, predicateEval PredicateE
 	return ar
 }
 
-// ValuesEqual compares a gjson.Result with an expected value, handling numeric coercion.
+// ValuesEqual compares a gjson.Result with an expected value from a plan. A
+// number matches a number of the same value whatever its Go type, so a plan's 4
+// matches a response's 4.0. A list or an object matches element by element and
+// key by key under the same rules, so {population: 3645000} matches the JSON
+// {"population":3645000}, and ["4"] never matches [4]: a string is not a number
+// at any depth.
 func ValuesEqual(r gjson.Result, expected any) bool {
-	switch e := expected.(type) {
-	case string:
-		return r.Type == gjson.String && r.Str == e
-	case bool:
-		return r.Type == gjson.True && e || r.Type == gjson.False && !e
-	case float64:
-		return r.Type == gjson.Number && r.Num == e
-	case int:
-		return r.Type == gjson.Number && r.Num == float64(e)
-	case int64:
-		return r.Type == gjson.Number && r.Num == float64(e)
-	default:
-		// Fallback: compare string representations
-		return fmt.Sprintf("%v", r.Value()) == fmt.Sprintf("%v", expected)
+	return jsonValueEqual(r.Value(), expected)
+}
+
+// jsonValueEqual reports whether actual, a value decoded from JSON, equals
+// expected, a value from YAML or an evaluated expression.
+func jsonValueEqual(actual, expected any) bool {
+	if n, ok := asFloat(expected); ok {
+		a, isNum := actual.(float64)
+		return isNum && a == n
 	}
+	switch e := expected.(type) {
+	case nil:
+		return actual == nil
+	case string:
+		a, ok := actual.(string)
+		return ok && a == e
+	case bool:
+		a, ok := actual.(bool)
+		return ok && a == e
+	case []any:
+		a, ok := actual.([]any)
+		if !ok || len(a) != len(e) {
+			return false
+		}
+		for i := range e {
+			if !jsonValueEqual(a[i], e[i]) {
+				return false
+			}
+		}
+		return true
+	case map[string]any:
+		a, ok := actual.(map[string]any)
+		if !ok || len(a) != len(e) {
+			return false
+		}
+		for k, v := range e {
+			av, ok := a[k]
+			if !ok || !jsonValueEqual(av, v) {
+				return false
+			}
+		}
+		return true
+	case map[any]any:
+		keyed := make(map[string]any, len(e))
+		for k, v := range e {
+			keyed[fmt.Sprint(k)] = v
+		}
+		return jsonValueEqual(actual, keyed)
+	}
+	return fmt.Sprintf("%v", actual) == fmt.Sprintf("%v", expected)
+}
+
+// asFloat returns a numeric value of any Go number type as a float64.
+func asFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int8:
+		return float64(n), true
+	case int16:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case uint:
+		return float64(n), true
+	case uint8:
+		return float64(n), true
+	case uint16:
+		return float64(n), true
+	case uint32:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	}
+	return 0, false
+}
+
+// describeExpected renders an expected value for a failure message: a list or
+// an object as JSON, so it reads like the response it is compared with.
+func describeExpected(v any) string {
+	switch v.(type) {
+	case []any, map[string]any, map[any]any:
+		if data, err := json.Marshal(normalizeYAML(v)); err == nil {
+			return string(data)
+		}
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// normalizeYAML turns the map[any]any a YAML decoder can produce into
+// map[string]any, at any depth, so it can be marshaled as JSON.
+func normalizeYAML(v any) any {
+	switch t := v.(type) {
+	case map[any]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			out[fmt.Sprint(k)] = normalizeYAML(val)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			out[k] = normalizeYAML(val)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, val := range t {
+			out[i] = normalizeYAML(val)
+		}
+		return out
+	}
+	return v
 }

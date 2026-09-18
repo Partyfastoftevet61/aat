@@ -170,7 +170,7 @@ func TestCleanupSkip_FailedOrExpectedFailureDoesNotRelease(t *testing.T) {
 		wantOutcome Outcome
 	}{
 		{name: "failed cancel", status: http.StatusUnprocessableEntity, wantOutcome: OutcomeFailed},
-		{name: "cancel expected to fail", status: http.StatusConflict, expect: &plan.ExpectFailure{Status: []int{http.StatusConflict}}, wantOutcome: OutcomePassed},
+		{name: "cancel expected to fail", status: http.StatusConflict, expect: &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{http.StatusConflict})}, wantOutcome: OutcomePassed},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

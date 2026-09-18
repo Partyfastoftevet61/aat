@@ -102,7 +102,7 @@ Clicking a step opens the step detail. Tabs appear only when the step has that d
 
 | Tab | Contents |
 |-----|----------|
-| Request | HTTP method, URL, headers, request body (formatted JSON, or a form-encoded body's decoded fields), and a **Copy as cURL** button |
+| Request | HTTP method, URL, headers, request body (formatted JSON, or a form-encoded body's decoded fields), and a **Copy as cURL** button. A [gRPC](grpc.md) step shows its method and the service it went to instead, labels its headers **Metadata**, and offers **Copy as grpcurl** |
 | Response | Status code, response headers, response body (formatted JSON with expand/collapse) |
 | Requests | A [repeated step](plans.md#repeat)'s requests: each one's status, duration, whether `until` held, and outputs. The Request and Response tabs show the last one; selecting a request loads its own bodies, headers, inputs, outputs, and OpenAPI validation |
 | Extractions | Each output's value and the later steps that consumed it |
@@ -115,6 +115,8 @@ Clicking a step opens the step detail. Tabs appear only when the step has that d
 | Plan, Instantiated | The step as written in the plan, and after graph defaults and layers were merged in |
 
 **Copy as cURL** builds a `curl -X <method> '<url>' -H ... --data '...'` command from the request exactly as the archive recorded it and copies it to the clipboard, so a failing call can be replayed from a terminal or pasted into a bug report. Because archives redact auth headers and known secrets, an `Authorization` header or an API key comes through as `[REDACTED]`; substitute a live value before running it. Data the API returned, such as personal data, is copied as recorded, so check the command before pasting it anywhere public (see [Archives: What Is Redacted, and What Is Not](archives.md#what-is-redacted-and-what-is-not)). If the step was routed by an override, the URL is the one actually called, marked **OVERRIDE**, with the original shown beneath it.
+
+On a [gRPC](grpc.md) step the button becomes **Copy as grpcurl** and builds a `grpcurl` command instead — the target without its scheme, `-plaintext` when the target said so, and metadata as `-H`. Its first line is a comment saying to add `-protoset <your descriptor set>` when the server has no reflection service, which grpcurl otherwise relies on; `aat-sandbox` has none. A `grpcs://` target verified with a private CA or `insecureSkipVerify` needs grpcurl's `-cacert` or `-insecure` added by hand. The status pill shows the code the server sent, `NOT_FOUND` rather than the 404 it maps to, coloured by that mapping; the message beside it is the server's own. Response metadata and trailers get a panel each, because a gRPC server chooses which to send a value in.
 
 ![The shop's checkout step in the web UI: node, status, and display outputs, the Request tab with the method and URL, the Copy as cURL button, the headers with Authorization redacted, and the JSON body](assets/ui-step-request-curl.png)
 

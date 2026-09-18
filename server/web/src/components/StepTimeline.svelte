@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { StepSummary } from '../lib/types';
   import { navigate, encPath } from '../lib/router';
-  import { formatDuration, httpStatusCategory, retryLabel } from '../lib/format';
+  import { formatDuration, httpStatusCategory, retryLabel, statusLabel } from '../lib/format';
 
   interface Props {
     steps: StepSummary[];
@@ -68,7 +68,7 @@
 
         <div class="step-meta">
           {#if step.status !== undefined}
-            <span class="step-status step-status-{httpStatusCategory(step.status)}">{step.status}</span>
+            <span class="step-status step-status-{httpStatusCategory(step.status)}">{statusLabel(step.status, step.grpcCode)}</span>
           {/if}
           <span class="step-duration">{formatDuration(step.durationMs)}</span>
           {#if step.assertionCount}

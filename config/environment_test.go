@@ -1445,7 +1445,7 @@ func TestBuildOverrideConfigs_RoutesOnlyWhenRoutingFieldsSet(t *testing.T) {
 		Auth:       AuthConfig{Type: "none"},
 		Overrides: []HostOverride{
 			{Match: "valuesOnly", Values: map[string]any{"quantity": 0}},
-			{Match: "expectOnly", ExpectFailure: &OverrideExpectFailure{Status: []int{402}}},
+			{Match: "expectOnly", ExpectFailure: &OverrideExpectFailure{Status: HTTPStatuses([]int{402})}},
 			{Match: "baseUrl", BaseURL: "http://localhost:9000"},
 			{Match: "auth", Auth: &AuthConfig{Type: "none"}},
 			{Match: "headers", Headers: map[string]string{"X-Debug": "1"}},

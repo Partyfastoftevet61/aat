@@ -9,7 +9,7 @@ LDFLAGS   := -X github.com/gburgyan/aat/internal/version.Version=$(VERSION) \
              -X github.com/gburgyan/aat/internal/version.GitCommit=$(COMMIT) \
              -X github.com/gburgyan/aat/internal/version.BuildDate=$(DATE)
 
-.PHONY: build cli sandbox example-shop demos test test-race lint fmt check clean frontend docs docs-serve
+.PHONY: build cli sandbox example-shop example-grpc demos test test-race lint fmt check clean frontend proto docs docs-serve
 
 build: frontend sandbox
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD)
@@ -28,12 +28,27 @@ sandbox:
 example-shop: cli sandbox
 	scripts/example-shop.sh
 
+# examples/grpc-payments against a local sandbox — mirrors the CI example-grpc job.
+example-grpc: cli sandbox
+	scripts/example-grpc.sh
+
 # Regenerates the recordings and screenshots in docs/user/assets (and the MP4 and
 # social preview in demos/out) against a fresh sandbox. Needs ttyd, ffmpeg,
 # gifsicle, jq, nc, and the JetBrains Mono font, plus free ports 8765, 8766, and
 # 9129; demos/run.sh installs the pinned VHS and Playwright itself.
 demos: build
 	demos/run.sh
+
+# Regenerates examples/grpc-payments/payments.protoset from its .proto. The
+# descriptor set is checked in, so this is only needed after editing the proto;
+# it is what `protoc --descriptor_set_out` writes, and what AAT reads. `buf
+# build -o` produces the same artifact if you have buf instead.
+proto:
+	@command -v protoc >/dev/null || { echo "protoc not found: brew install protobuf (or use 'buf build -o')"; exit 1; }
+	protoc --descriptor_set_out=examples/grpc-payments/payments.protoset \
+	       --proto_path=examples/grpc-payments \
+	       examples/grpc-payments/payments.proto
+	@echo "wrote examples/grpc-payments/payments.protoset"
 
 frontend:
 	cd server/web && npm install && npm run build

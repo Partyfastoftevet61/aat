@@ -1,0 +1,21 @@
+adapter: checkoutCart
+protocol: http
+
+request:
+  method: POST
+  path: /carts/{{cartId}}/checkout
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "shippingTier": "{{shippingTier}}",
+      "postalCode": "{{postalCode}}"
+    }
+
+response:
+  extract:
+    orderId: orderId
+    status: status
+    currency: currency
+    total: total
+    totalDisplay: totalDisplay

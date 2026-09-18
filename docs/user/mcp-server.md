@@ -46,6 +46,8 @@ aat mcp serve --persona test    # test lifecycle tools (26)
 
 The seven OpenAPI tools register only when an OAS spec is loaded (from the manifest's `oas` field or the graph's `oas` references), which is why the `api` and all-tools counts vary.
 
+A [gRPC](grpc.md) node needs no tools of its own: the template, node, and flow tools describe it by its service and method, its metadata, and its message, where they show an HTTP node's method, path, headers, and body; the archive tools report the gRPC status the server sent; and `get_oas_operation`, asked about one, says it is a gRPC method and names the tool to use instead. There is no descriptor-set counterpart to the OpenAPI tools, so an assistant writing new gRPC nodes reads the `.proto` source.
+
 | Persona | Target User | Focus |
 |---------|------------|-------|
 | `api` | Integration developer | Understanding endpoints, data shapes, schemas, domain rules |
@@ -205,7 +207,7 @@ The API persona registers 24 tools focused on understanding and integrating with
 
 | Tool | Description |
 |------|-------------|
-| `inspect_request_template` | Show the HTTP request template for an API operation: method, path, headers, body, response extraction rules, and Lua transforms |
+| `inspect_request_template` | Show the request template for an API operation: an HTTP method, path, headers, and body, or a gRPC service and method, metadata, and message; plus response extraction rules and Lua transforms |
 
 ### Domain Knowledge (4 tools)
 
@@ -240,7 +242,7 @@ The API persona registers 24 tools focused on understanding and integrating with
 | Tool | Description |
 |------|-------------|
 | `list_integration_flows` | List all integration flows with decision points (slots) and optional extensions (addons) |
-| `get_integration_flow` | Show an enriched step-by-step recipe for an integration flow: HTTP methods, data flow, selections, outputs, and operation name mapping |
+| `get_integration_flow` | Show an enriched step-by-step recipe for an integration flow: each call's HTTP method and path or gRPC method, data flow, selections, outputs, and operation name mapping |
 
 ### Sample Responses (1 tool)
 
@@ -268,7 +270,7 @@ The test persona registers 26 tools focused on test plan lifecycle, execution, a
 | Tool | Description |
 |------|-------------|
 | `list_adapters` | List all registered adapter names |
-| `inspect_template` | Show the HTTP template for an adapter: method, path, headers, body, and response extraction rules |
+| `inspect_template` | Show the request template for an adapter: an HTTP method, path, headers, and body, or a gRPC service and method, metadata, and message; plus response extraction rules |
 
 ### Domain Knowledge (3 tools)
 
@@ -291,7 +293,7 @@ The test persona registers 26 tools focused on test plan lifecycle, execution, a
 | Tool | Description |
 |------|-------------|
 | `list_workflows` | List all named workflows in the graph, including addons and composed workflows |
-| `get_workflow_detail` | Show an enriched step-by-step recipe for a workflow: HTTP methods, data flow, selections, outputs |
+| `get_workflow_detail` | Show an enriched step-by-step recipe for a workflow: each call's HTTP method and path or gRPC method, data flow, selections, outputs |
 | `instantiate_workflow` | Load and compose a workflow template with optional slot choices and addons |
 
 ### Plans (5 tools)
@@ -330,7 +332,7 @@ Each persona registers a compact overview resource instead of a full graph dump,
 
 | URI | Name | Description |
 |-----|------|-------------|
-| `aat://api/overview` | API Overview | Compact one-liner-per-operation summary with HTTP method and path |
+| `aat://api/overview` | API Overview | Compact one-liner-per-operation summary with the HTTP method and path, or the gRPC method |
 | `aat://domain` | Domain Knowledge | Domain concepts, types, and value pools |
 | `aat://metadata` | Project Metadata | Project manifest and graph statistics |
 | `aat://readme` | README | Project README.md from the graph directory (when present) |
@@ -340,7 +342,7 @@ Each persona registers a compact overview resource instead of a full graph dump,
 | URI Template | Name | Description |
 |--------------|------|-------------|
 | `aat://operation/{name}` | Operation Detail | Detailed view of a specific API operation |
-| `aat://template/{adapter}` | Request Template | HTTP request template for a specific adapter |
+| `aat://template/{adapter}` | Request Template | Request template for a specific adapter, HTTP or gRPC |
 | `aat://flow/{name}` | Integration Flow | Enriched step-by-step recipe for an integration flow |
 
 ### Test Persona Resources
@@ -359,7 +361,7 @@ Each persona registers a compact overview resource instead of a full graph dump,
 | URI Template | Name | Description |
 |--------------|------|-------------|
 | `aat://node/{name}` | Node Detail | Detailed view of a specific graph node |
-| `aat://template/{adapter}` | Template Detail | HTTP template detail for a specific adapter |
+| `aat://template/{adapter}` | Template Detail | Request template detail for a specific adapter, HTTP or gRPC |
 | `aat://workflow/{name}` | Workflow Detail | Enriched step-by-step recipe for a workflow |
 
 ### Resources with no persona
@@ -369,7 +371,7 @@ When no persona is specified, the server registers these resources, including th
 | URI | Name | Description |
 |-----|------|-------------|
 | `aat://graph` | API Graph | Full graph showing all nodes, their ordering tokens, and conditions |
-| `aat://templates` | Templates | HTTP templates for all registered adapters |
+| `aat://templates` | Templates | Request templates, HTTP and gRPC, for all registered adapters |
 | `aat://domain` | Domain Knowledge | Domain concepts, types, and value pools |
 | `aat://metadata` | Project Metadata | Project manifest and graph statistics |
 | `aat://readme` | README | Project README.md from the graph directory (when present) |

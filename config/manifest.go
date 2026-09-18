@@ -51,6 +51,7 @@ type ProjectManifest struct {
 	LayersDir          string       `yaml:"layers,omitempty"`
 	PlanDirs           StringOrList `yaml:"plans,omitempty"`
 	OASPaths           StringOrList `yaml:"oas,omitempty"`
+	ProtoPaths         StringOrList `yaml:"proto,omitempty"`
 	ArchiveDir         string       `yaml:"archives,omitempty"`
 	TracesDir          string       `yaml:"traces,omitempty"`
 	VisualizersDir     string       `yaml:"visualizers,omitempty"`
@@ -100,6 +101,9 @@ func LoadManifest(path string) (*ProjectManifest, error) {
 	}
 	for i, p := range m.OASPaths {
 		m.OASPaths[i] = resolvePath(baseDir, p)
+	}
+	for i, p := range m.ProtoPaths {
+		m.ProtoPaths[i] = resolvePath(baseDir, p)
 	}
 	if m.ArchiveDir != "" {
 		m.ArchiveDir = resolvePath(baseDir, m.ArchiveDir)

@@ -238,6 +238,7 @@ workflows: workflows/              # optional — workflow templates directory
 layers: layers/                    # optional — graph layers directory
 plans: plans/                      # optional — plan directory (string or list)
 oas: openapi.yaml                  # optional — extra OpenAPI spec(s) for MCP tools (string or list)
+proto: payments.protoset           # optional — protobuf descriptor set(s) for gRPC nodes (string or list)
 archives: runs/                    # optional — run archive output directory
 traces: traces/                    # optional — planning trace output directory
 visualizers: visualizers/          # optional — visualizer plugins directory

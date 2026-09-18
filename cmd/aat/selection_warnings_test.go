@@ -63,6 +63,6 @@ func TestWriteStepResult_SelectionWarning(t *testing.T) {
 	writeStepResult(&b, "  ", 0, 1, engine.StepResult{
 		StepID: "addItem", Node: "addItem", StatusCode: 200, Response: &adapter.Response{StatusCode: 200},
 		Selections: []engine.SelectionDecision{tiedDecision()},
-	}, TerminalInfo{Width: 100})
+	}, TerminalInfo{Width: 100}, 0)
 	assert.Contains(t, b.String(), "warning: "+tieWarning)
 }

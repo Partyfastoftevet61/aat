@@ -1,0 +1,88 @@
+// The payments service of the AAT shop sandbox, over gRPC.
+//
+// It is the same payments API the sandbox serves over HTTP on :8766, offered
+// again on :8767 as a gRPC service, against the same orders. A plan can open a
+// cart over HTTP and charge it over gRPC, which is the point: one graph, one
+// run, two protocols.
+//
+// Regenerate the descriptor set after editing this file:
+//
+//	make proto
+syntax = "proto3";
+
+package shop.v1;
+
+// Payments charges and refunds orders created through the shop API.
+//
+// Every message mirrors the JSON the HTTP payments API sends and takes, field
+// for field, because the gRPC service is that API reached another way. A field
+// the HTTP API gains and this file lacks fails the call rather than vanishing.
+service Payments {
+  // Charge captures payment for an order. The amount must match the order
+  // total exactly, and the currency must be the order's own.
+  rpc Charge(ChargeRequest) returns (Payment);
+
+  // Refund returns money for an order. Omitting the amount refunds whatever
+  // is left.
+  rpc Refund(RefundRequest) returns (RefundRecord);
+}
+
+message ChargeRequest {
+  // order_id is the order to charge, as checkout returned it.
+  string order_id = 1;
+  // amount is in minor units, and must equal the order total.
+  //
+  // Note for plan authors: proto3 JSON encodes a 64-bit integer as a *string*,
+  // so this field reads as "10340", not 10340. See docs/user/grpc.md.
+  int64 amount = 2;
+  // currency is the order's currency, such as USD or EUR.
+  string currency = 3;
+  // method is one of card, gift_card, or paypal.
+  string method = 4;
+  // card_number is required when method is card.
+  string card_number = 5;
+  // gift_card_code is required when method is gift_card.
+  string gift_card_code = 6;
+  // paypal_email is required when method is paypal.
+  string paypal_email = 7;
+}
+
+message RefundRequest {
+  // order_id is the order to refund.
+  string order_id = 1;
+  // amount is in minor units; omit it to refund the remaining balance. It is
+  // optional so that an amount of 0 is sent and refused, rather than read as
+  // omitted and refunded in full.
+  optional int64 amount = 2;
+}
+
+message Payment {
+  string payment_id = 1;
+  string order_id = 2;
+  // order_status is the order's status after the payment, such as paid.
+  string order_status = 3;
+  // status is captured, refunded, or partially_refunded.
+  string status = 4;
+  string method = 5;
+  int64 amount = 6;
+  // amount_display is the amount formatted for the region, such as "$103.40".
+  string amount_display = 7;
+  string currency = 8;
+  string created_at = 9;
+}
+
+// RefundRecord is one refund. It is not named Refund because, inside the
+// service, that name is the method's.
+message RefundRecord {
+  string refund_id = 1;
+  // payment_id is the payment the money came back from.
+  string payment_id = 2;
+  string order_id = 3;
+  // status is refunded.
+  string status = 4;
+  // amount is what this refund returned, in minor units.
+  int64 amount = 5;
+  string amount_display = 6;
+  string currency = 7;
+  string created_at = 8;
+}

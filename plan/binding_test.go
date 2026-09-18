@@ -36,7 +36,7 @@ func refundGraph() *graph.Graph {
 // run's failure: a verification of getCharge read its charge from the first
 // createRefund step, a refund expected to fail, which returned no charge.
 func TestInstantiate_VerificationReadsTheLastStepNotExpectedToFail(t *testing.T) {
-	failing := &ExpectFailure{Status: []int{400}}
+	failing := &ExpectFailure{Status: HTTPStatuses([]int{400})}
 	p := &Plan{Execution: Execution{
 		Steps: []Step{
 			{ID: "authorize", Node: "createPaymentIntent"},
@@ -65,7 +65,7 @@ func TestInstantiate_VerificationReadsTheLastStepNotExpectedToFail(t *testing.T)
 // default reads the nearest earlier step on its node that isn't expected to
 // fail, and depends on that step.
 func TestInstantiate_MainStepReadsTheNearestEarlierStep(t *testing.T) {
-	failing := &ExpectFailure{Status: []int{400}}
+	failing := &ExpectFailure{Status: HTTPStatuses([]int{400})}
 	p := &Plan{Execution: Execution{Steps: []Step{
 		{ID: "authorize", Node: "createPaymentIntent"},
 		{ID: "refund", Node: "createRefund"},
@@ -129,7 +129,7 @@ func TestInstantiate_VerificationSkipsMutationClones(t *testing.T) {
 			{ID: "refund", Node: "createRefund"},
 			{
 				ID: "readCharge", Node: "getCharge", MutationScope: "isolated",
-				Mutations: []Mutation{{Name: "bad", Set: map[string]any{"expand": "nonsense"}, ExpectStatus: []int{400}}},
+				Mutations: []Mutation{{Name: "bad", Set: map[string]any{"expand": "nonsense"}, ExpectStatus: HTTPStatuses([]int{400})}},
 			},
 		},
 		Verification: []VerificationStep{{Node: "getCharge"}},
@@ -204,7 +204,7 @@ func TestInstantiate_CloneCollisionAfterImpliedDependency(t *testing.T) {
 			ID: "refund", Node: "createRefund",
 			Values:        map[string]StepValue{"intent": {From: "authorize.intent"}},
 			MutationScope: "isolated",
-			Mutations:     []Mutation{{Name: "bad", Set: map[string]any{"intent": "pi_missing"}, ExpectStatus: []int{404}}},
+			Mutations:     []Mutation{{Name: "bad", Set: map[string]any{"intent": "pi_missing"}, ExpectStatus: HTTPStatuses([]int{404})}},
 		},
 	}}}
 	_, err := InstantiateAndValidate(p, refundGraph())

@@ -1,6 +1,9 @@
 package engine
 
 import (
+	"errors"
+	"fmt"
+	"maps"
 	"path/filepath"
 
 	"github.com/gburgyan/aat/adapter"
@@ -11,8 +14,9 @@ import (
 // ExecutorRouter routes API calls to different executors based on node name.
 // It supports exact-match and glob-pattern overrides, falling back to a default executor.
 type ExecutorRouter struct {
-	defaultExec    *adapter.HTTPExecutor
+	defaultExec    adapter.Executor
 	defaultConfig  *adapter.EnvironmentConfig
+	factory        *adapter.ExecutorFactory
 	overrides      []routeEntry
 	valueOverrides []valueOverrideEntry
 }
@@ -20,7 +24,7 @@ type ExecutorRouter struct {
 type routeEntry struct {
 	pattern     string
 	isGlob      bool
-	executor    *adapter.HTTPExecutor
+	executor    adapter.Executor
 	config      *adapter.EnvironmentConfig
 	pathRewrite *adapter.PathRewrite
 }
@@ -36,18 +40,38 @@ type valueOverrideEntry struct {
 }
 
 // NewExecutorRouter creates a router with the given default executor and config.
-func NewExecutorRouter(exec *adapter.HTTPExecutor, cfg *adapter.EnvironmentConfig) *ExecutorRouter {
+func NewExecutorRouter(exec adapter.Executor, cfg *adapter.EnvironmentConfig) *ExecutorRouter {
 	return &ExecutorRouter{
 		defaultExec:   exec,
 		defaultConfig: cfg,
 	}
 }
 
+// WithFactory sets what an override's target is turned into. Without one an
+// override is always routed over HTTP, which is what a project with no gRPC
+// nodes needs.
+func (r *ExecutorRouter) WithFactory(f *adapter.ExecutorFactory) *ExecutorRouter {
+	r.factory = f
+	return r
+}
+
+// executorFor builds the executor for a target, through the factory when there
+// is one.
+func (r *ExecutorRouter) executorFor(target string) (adapter.Executor, error) {
+	if r.factory != nil {
+		return r.factory.For(target)
+	}
+	if adapter.IsGRPCTarget(target) {
+		return nil, fmt.Errorf("target %s is a gRPC service but this run loads no descriptors", target)
+	}
+	return adapter.NewHTTPExecutor(target), nil
+}
+
 // AddOverride registers a named or glob-pattern override. Exact matches are
 // checked before glob patterns; within each kind the last registered match
 // wins, so later sources (.aat-overrides.yaml, --overlay, --override) take
 // precedence over earlier ones (env.yaml overrides).
-func (r *ExecutorRouter) AddOverride(pattern string, exec *adapter.HTTPExecutor, cfg *adapter.EnvironmentConfig, rewrite *adapter.PathRewrite) {
+func (r *ExecutorRouter) AddOverride(pattern string, exec adapter.Executor, cfg *adapter.EnvironmentConfig, rewrite *adapter.PathRewrite) {
 	r.overrides = append(r.overrides, routeEntry{
 		pattern:     pattern,
 		isGlob:      isGlobPattern(pattern),
@@ -60,7 +84,7 @@ func (r *ExecutorRouter) AddOverride(pattern string, exec *adapter.HTTPExecutor,
 // Resolve returns the executor, config, and optional path rewrite for the given node name.
 // Resolution order: exact matches first, then glob matches, then the default.
 // Within each pass the last registered match wins.
-func (r *ExecutorRouter) Resolve(nodeName string) (*adapter.HTTPExecutor, *adapter.EnvironmentConfig, *adapter.PathRewrite) {
+func (r *ExecutorRouter) Resolve(nodeName string) (adapter.Executor, *adapter.EnvironmentConfig, *adapter.PathRewrite) {
 	// Pass 1: exact matches (last registered wins)
 	for i := len(r.overrides) - 1; i >= 0; i-- {
 		entry := r.overrides[i]
@@ -86,9 +110,12 @@ func (r *ExecutorRouter) Resolve(nodeName string) (*adapter.HTTPExecutor, *adapt
 // when the override sets baseUrl, auth, headers, or pathRewrite, and its
 // values and expectFailure in every case. A value-only override therefore
 // leaves the node on whatever route a broader match (or the default) gives it.
-func (r *ExecutorRouter) AddResolvedOverride(ov config.ResolvedOverride) {
+func (r *ExecutorRouter) AddResolvedOverride(ov config.ResolvedOverride) error {
 	if ov.Routes {
-		exec := adapter.NewHTTPExecutor(ov.APIConfig.BaseURL)
+		exec, err := r.executorFor(ov.APIConfig.BaseURL)
+		if err != nil {
+			return fmt.Errorf("override %q: %w", ov.Pattern, err)
+		}
 		cfg := &adapter.EnvironmentConfig{
 			BaseURL:   ov.APIConfig.BaseURL,
 			Headers:   ov.APIConfig.Headers,
@@ -112,6 +139,52 @@ func (r *ExecutorRouter) AddResolvedOverride(ov config.ResolvedOverride) {
 		}
 	}
 	r.AddValueOverride(ov.Pattern, ov.Values, ef)
+	return nil
+}
+
+// AddURLOverride routes pattern to target and changes nothing else: the
+// request keeps the headers, the credential, and the path rewrite the node
+// would otherwise have had, which are those of the override that already
+// matches it, or the default route's. It is what --override NODE=URL means:
+// the flag says where a call goes, not how it is authenticated. Register it
+// after every file source, so that what the node would have had is known.
+//
+// A glob pattern inherits from an entry registered under the same pattern, and
+// from the default route otherwise, since no one entry speaks for every node a
+// glob matches.
+func (r *ExecutorRouter) AddURLOverride(pattern, target string) error {
+	exec, err := r.executorFor(target)
+	if err != nil {
+		return fmt.Errorf("override %q: %w", pattern, err)
+	}
+	base, rewrite := r.inheritedRoute(pattern)
+	cfg := &adapter.EnvironmentConfig{BaseURL: target}
+	if base != nil {
+		cfg.Headers = maps.Clone(base.Headers)
+		cfg.Protected = maps.Clone(base.Protected)
+	}
+	// A gRPC path is a method name, so a rewrite written for an HTTP route
+	// means nothing once the node is sent to a gRPC target.
+	if adapter.IsGRPCTarget(target) {
+		rewrite = nil
+	}
+	r.AddOverride(pattern, exec, cfg, rewrite)
+	return nil
+}
+
+// inheritedRoute returns the configuration and rewrite a URL override of
+// pattern starts from.
+func (r *ExecutorRouter) inheritedRoute(pattern string) (*adapter.EnvironmentConfig, *adapter.PathRewrite) {
+	if isGlobPattern(pattern) {
+		for i := len(r.overrides) - 1; i >= 0; i-- {
+			if entry := r.overrides[i]; entry.pattern == pattern {
+				return entry.config, entry.pathRewrite
+			}
+		}
+		return r.defaultConfig, nil
+	}
+	_, cfg, rewrite := r.Resolve(pattern)
+	return cfg, rewrite
 }
 
 // AddValueOverride registers per-node input-value and expected-failure
@@ -178,6 +251,38 @@ func (r *ExecutorRouter) ResolveValueOverride(nodeName string) (map[string]any, 
 		ef = globEF
 	}
 	return values, ef
+}
+
+// Close releases every executor the router holds, the default and the
+// overrides. An executor registered under several patterns is closed once. It
+// is idempotent, and returns the errors of the executors that failed to close.
+func (r *ExecutorRouter) Close() error {
+	seen := make(map[adapter.Executor]struct{}, len(r.overrides)+1)
+	var errs []error
+	closeOnce := func(exec adapter.Executor) {
+		if exec == nil {
+			return
+		}
+		if _, done := seen[exec]; done {
+			return
+		}
+		seen[exec] = struct{}{}
+		if err := exec.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	closeOnce(r.defaultExec)
+	for _, entry := range r.overrides {
+		closeOnce(entry.executor)
+	}
+	// gRPC executors share the factory's connections, so closing them is a
+	// no-op and the pool has to be closed itself.
+	if r.factory != nil {
+		if err := r.factory.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // HasOverrides returns true if any overrides have been configured.

@@ -445,7 +445,7 @@ func TestRetryAfter_Parse(t *testing.T) {
 			if tt.value != "" {
 				h.Set(tt.header, tt.value)
 			}
-			got, ok := retryAfter(h, tt.status, now)
+			got, ok := retryAfter(&adapter.Response{Headers: h}, tt.status, now)
 			assert.Equal(t, tt.ok, ok)
 			assert.Equal(t, tt.want, got)
 		})
@@ -528,4 +528,29 @@ func TestRetryAfterWaitHonorsContext(t *testing.T) {
 	assert.Equal(t, OutcomeAborted, result.Outcome)
 	assert.Less(t, time.Since(start), 5*time.Second, "a cancelled run does not sit out the server's 30 seconds")
 	assert.Equal(t, int32(1), calls.Load())
+}
+
+// gRPC metadata keys are lowercase as the wire sent them, and a trailer is
+// where a server may put a hint it only knows at the end of the call.
+func TestRetryAfter_GRPCMetadata(t *testing.T) {
+	now := time.Date(2026, 9, 12, 19, 19, 30, 0, time.UTC)
+
+	t.Run("lowercase header key", func(t *testing.T) {
+		resp := &adapter.Response{Headers: http.Header{"retry-after": []string{"7"}}}
+		got, ok := retryAfter(resp, 503, now)
+		require.True(t, ok, "a wire-spelled key must still be found")
+		assert.Equal(t, 7*time.Second, got)
+	})
+
+	t.Run("trailer carries the hint", func(t *testing.T) {
+		resp := &adapter.Response{Trailers: http.Header{"retry-after": []string{"5"}}}
+		got, ok := retryAfter(resp, 503, now)
+		require.True(t, ok)
+		assert.Equal(t, 5*time.Second, got)
+	})
+
+	t.Run("nil response", func(t *testing.T) {
+		_, ok := retryAfter(nil, 503, now)
+		assert.False(t, ok)
+	})
 }

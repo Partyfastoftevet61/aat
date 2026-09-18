@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gburgyan/aat/adapter"
+	"github.com/gburgyan/aat/internal/grpcstatus"
 	"github.com/gburgyan/aat/plan"
 )
 
@@ -146,7 +148,7 @@ func classifyStepResult(result *StepResult) *ErrorClassification {
 	if cat, isErr := classifyStatusCode(result.StatusCode); isErr {
 		return &ErrorClassification{
 			Category: cat,
-			Detail:   statusCodeDetail(result.StatusCode),
+			Detail:   statusDetail(result.Response, result.StatusCode),
 		}
 	}
 
@@ -158,6 +160,31 @@ func classifyStepResult(result *StepResult) *ErrorClassification {
 	}
 
 	return nil
+}
+
+// statusDetail describes the status a response failed with. A gRPC response is
+// described by the code it actually carries and the message the server sent,
+// rather than by the HTTP status it maps to, which the caller never wrote and
+// would not recognise.
+func statusDetail(resp *adapter.Response, code int) string {
+	if text, ok := grpcStatusText(resp); ok {
+		return text
+	}
+	return statusCodeDetail(code)
+}
+
+// grpcStatusText describes a gRPC response by the code it carries and the
+// message the server sent, which is where the reason for an unreachable host
+// or a refused call lives. ok is false for an HTTP response, leaving the
+// caller to supply its own wording for a status number.
+func grpcStatusText(resp *adapter.Response) (string, bool) {
+	if resp == nil || resp.GRPC == nil {
+		return "", false
+	}
+	if resp.GRPC.Message != "" {
+		return fmt.Sprintf("gRPC %s: %s", resp.GRPC.Name, resp.GRPC.Message), true
+	}
+	return "gRPC " + resp.GRPC.Name, true
 }
 
 // statusCodeDetail returns a human-readable description for an HTTP status code.
@@ -209,10 +236,11 @@ func defaultRetryable(cat ErrorCategory) bool {
 }
 
 // shouldRetry determines whether a failed step should be retried based on
-// the error category, the HTTP status code, the retry configuration, and the
-// current attempt number. Rules in On/FailOn are either category names
-// (e.g. "transient") or HTTP status codes written as integers (e.g. 503).
-func shouldRetry(cat ErrorCategory, status int, config *plan.RetryConfig, attempt int) bool {
+// the error category, the HTTP status code, the gRPC status name ("" for an
+// HTTP step), the retry configuration, and the current attempt number. Rules
+// in On/FailOn are category names (e.g. "transient"), HTTP status codes
+// written as integers (e.g. 503), or gRPC status names (e.g. "UNAVAILABLE").
+func shouldRetry(cat ErrorCategory, status int, grpcName string, config *plan.RetryConfig, attempt int) bool {
 	if config == nil {
 		return false
 	}
@@ -222,7 +250,7 @@ func shouldRetry(cat ErrorCategory, status int, config *plan.RetryConfig, attemp
 
 	// FailOn overrides everything — if any rule matches, never retry
 	for _, f := range config.FailOn {
-		if retryRuleMatches(f, cat, status) {
+		if retryRuleMatches(f, cat, status, grpcName) {
 			return false
 		}
 	}
@@ -230,7 +258,7 @@ func shouldRetry(cat ErrorCategory, status int, config *plan.RetryConfig, attemp
 	// If On is specified, only retry when a rule matches
 	if len(config.On) > 0 {
 		for _, o := range config.On {
-			if retryRuleMatches(o, cat, status) {
+			if retryRuleMatches(o, cat, status, grpcName) {
 				return true
 			}
 		}
@@ -242,12 +270,47 @@ func shouldRetry(cat ErrorCategory, status int, config *plan.RetryConfig, attemp
 }
 
 // retryRuleMatches reports whether a single retry rule matches a failure.
-// Numeric rules compare against the HTTP status code; other rules compare
-// (case-insensitively) against the error category name.
-func retryRuleMatches(rule string, cat ErrorCategory, status int) bool {
+// Numeric rules compare against the HTTP status code, which a gRPC status maps
+// to; a gRPC status name matches that status alone, since several share one
+// HTTP status; other rules compare (case-insensitively) against the error
+// category name.
+func retryRuleMatches(rule string, cat ErrorCategory, status int, grpcName string) bool {
 	rule = strings.TrimSpace(rule)
 	if code, err := strconv.Atoi(rule); err == nil {
 		return status != 0 && code == status
 	}
+	if code, ok := grpcstatus.CodeByName(rule); ok {
+		got, isGRPC := grpcstatus.CodeByName(grpcName)
+		return grpcName != "" && isGRPC && got == code
+	}
 	return strings.EqualFold(rule, cat.String())
+}
+
+// grpcStatusName returns a gRPC response's status name, and "" for an HTTP one.
+func grpcStatusName(resp *adapter.Response) string {
+	if resp == nil || resp.GRPC == nil {
+		return ""
+	}
+	return resp.GRPC.Name
+}
+
+// ActualStatusText renders the status a step came back with, naming a gRPC
+// code rather than the HTTP status it maps to. Several gRPC statuses share
+// one HTTP status, so the name says what the number cannot.
+func ActualStatusText(resp *adapter.Response, code int) string {
+	if name := grpcStatusName(resp); name != "" {
+		return name
+	}
+	return strconv.Itoa(code)
+}
+
+// failureStatusText describes the status a step failed with, for the message
+// that ends a run. A gRPC step names its code and the server's message, which
+// is where the reason for an unreachable host or a refused call lives; an HTTP
+// step reads as it always has.
+func failureStatusText(resp *adapter.Response, code int) string {
+	if text, ok := grpcStatusText(resp); ok {
+		return text
+	}
+	return fmt.Sprintf("status %d", code)
 }

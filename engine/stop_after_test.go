@@ -139,7 +139,7 @@ func TestEngine_Run_StopAfter_ExpectFailureStep(t *testing.T) {
 				Execution: plan.Execution{
 					Steps: []plan.Step{
 						{Node: "create"},
-						{Node: "reject", DependsOn: []string{"create"}, ExpectFailure: &plan.ExpectFailure{Status: []int{409}}},
+						{Node: "reject", DependsOn: []string{"create"}, ExpectFailure: &plan.ExpectFailure{Status: plan.HTTPStatuses([]int{409})}},
 						{Node: "use", DependsOn: []string{"create", "reject"}, Values: map[string]plan.StepValue{
 							"resourceId": {From: "create.resourceId"},
 						}},

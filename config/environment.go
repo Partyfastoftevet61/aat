@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // SecretRef holds a reference to a secret value, resolved either from an
@@ -63,6 +64,31 @@ type RuntimeSettings struct {
 	MinRequestInterval string `yaml:"minRequestInterval,omitempty"`
 }
 
+// GRPCConfig holds the settings a gRPC connection needs beyond its target.
+// It applies to every grpcs:// route in the environment.
+type GRPCConfig struct {
+	TLS *GRPCTLSConfig `yaml:"tls,omitempty"`
+}
+
+// GRPCTLSConfig secures a grpcs:// connection. With none of it set, the server
+// is verified against the system roots, which is what a public API needs.
+type GRPCTLSConfig struct {
+	// CAFile is a PEM bundle to verify the server against, in place of the
+	// system roots, for a service with a private certificate authority.
+	CAFile string `yaml:"caFile,omitempty"`
+	// CertFile and KeyFile are a client certificate, for a service that asks
+	// for one. Both are needed, or neither.
+	CertFile string `yaml:"certFile,omitempty"`
+	KeyFile  string `yaml:"keyFile,omitempty"`
+	// ServerName overrides the name checked against the server's certificate,
+	// for a host reached by an address the certificate does not name.
+	ServerName string `yaml:"serverName,omitempty"`
+	// InsecureSkipVerify turns off certificate verification. It is for a
+	// sandbox with a self-signed certificate, never for anything else, and it
+	// is named so that a file carrying it says so.
+	InsecureSkipVerify bool `yaml:"insecureSkipVerify,omitempty"`
+}
+
 // PathRewrite controls URL path rewriting for overrides.
 type PathRewrite struct {
 	Strip  string `yaml:"strip,omitempty"`  // prefix to remove from the template path
@@ -83,8 +109,9 @@ type HostOverride struct {
 // OverrideExpectFailure declares expected failure statuses for matched nodes
 // without editing the plan. Translated to plan.ExpectFailure at engine time.
 type OverrideExpectFailure struct {
-	Status      []int  `yaml:"status"`
-	Description string `yaml:"description,omitempty"`
+	// Status takes HTTP codes and gRPC status names, as a plan step's does.
+	Status      ExpectedStatuses `yaml:"status"`
+	Description string           `yaml:"description,omitempty"`
 }
 
 // ResolvedOverride is a HostOverride after authentication and header merging.
@@ -108,6 +135,7 @@ type Environment struct {
 	Headers    map[string]string `yaml:"headers,omitempty"` // static headers added to every request
 	LLM        LLMConfig         `yaml:"llm"`
 	Settings   RuntimeSettings   `yaml:"settings"`
+	GRPC       *GRPCConfig       `yaml:"grpc,omitempty"` // settings for grpc:// and grpcs:// routes
 	Notes      string            `yaml:"notes,omitempty"`
 	Overrides  []HostOverride    `yaml:"overrides,omitempty"` // per-node routing overrides
 	Values     map[string]string `yaml:"values,omitempty"`    // project-level values available via {{env.KEY}}
@@ -317,6 +345,7 @@ type EnvironmentPartial struct {
 	Headers    map[string]string `yaml:"headers,omitempty"`
 	LLM        *LLMConfig        `yaml:"llm,omitempty"`
 	Settings   *RuntimeSettings  `yaml:"settings,omitempty"`
+	GRPC       *GRPCConfig       `yaml:"grpc,omitempty"`
 	Notes      string            `yaml:"notes,omitempty"`
 	Overrides  []HostOverride    `yaml:"overrides,omitempty"`
 	Values     map[string]string `yaml:"values,omitempty"`
@@ -386,4 +415,12 @@ func (env *Environment) BuildAPIConfigFromToken(token *OAuthToken, auth AuthConf
 	}
 
 	return cfg
+}
+
+// isGRPCBaseURL reports whether a route's base URL names a gRPC target.
+// config is a leaf package and does not import adapter, which owns the
+// authoritative parser; the scheme test is the whole of what is needed here,
+// and adapter.IsGRPCTarget does the same.
+func isGRPCBaseURL(baseURL string) bool {
+	return strings.HasPrefix(baseURL, "grpc://") || strings.HasPrefix(baseURL, "grpcs://")
 }

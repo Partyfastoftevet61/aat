@@ -111,6 +111,9 @@ func Validate(g *Graph) error {
 					}
 				}
 			}
+			if out.FromInput != "" && !inputNames[out.FromInput] {
+				errs = append(errs, fmt.Sprintf("node %q: output %q: fromInput %q is not an input of the node", name, out.Name, out.FromInput))
+			}
 			if outputNames[out.Name] {
 				errs = append(errs, fmt.Sprintf("node %q: duplicate output name %q", name, out.Name))
 			}

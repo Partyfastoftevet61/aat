@@ -228,7 +228,7 @@ The `--no-auto-overrides` flag is available on `aat run plan`, `aat run batch`, 
 
 `.aat-overrides.yaml` is the recommended approach for ongoing local development. For other scenarios:
 
-- **`--override NODE=URL`** — one-off overrides on the command line, good for quick experiments; each is equivalent to a `match: NODE` entry with that `baseUrl`, so it keeps the environment headers and auth
+- **`--override NODE=URL`** — one-off overrides on the command line, good for quick experiments; each changes the node's URL and nothing else, so the node keeps the headers and auth it would otherwise have had: its matching `overrides:` entry's, or the environment's
 - **`--overlay FILE`** — explicit overlay file, useful when you want to version-control an alternate routing config
 - **`env.yaml` `overrides:` section** — permanent multi-host routing shared across all developers
 

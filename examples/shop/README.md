@@ -10,7 +10,7 @@ tests, a response visualizer, and MCP configuration for AI coding tools.
 
 ```bash
 aat-sandbox init shop && cd shop   # extract this project (in a source checkout: cd examples/shop)
-aat-sandbox serve &                # shop API on :8765, payments API on :8766
+aat-sandbox serve &                # shop API on :8765, payments on :8766, payments over gRPC on :8767
 aat run plan full-lifecycle
 aat run plan smoke --env eu
 aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --parallel 4
@@ -236,6 +236,7 @@ describes the layout for your own API.
 |---|---|
 | Shop API | `http://localhost:8765/{us,eu}/v1`, OAuth2 password grant `demo`/`demo`, client `aat-shop`/`aat-shop-secret` |
 | Payments API | `http://localhost:8766/{us,eu}/v1`, header `X-API-Key: pay-demo-key` |
+| Payments over gRPC | `grpc://localhost:8767`, service `shop.v1.Payments`, metadata `x-api-key: pay-demo-key`. The same payments, against the same orders — see the [gRPC guide](https://gburgyan.github.io/aat/grpc/) |
 | Regions | `us`: USD, 8.25% sales tax added. `eu`: EUR, 20% VAT included, no overnight tier |
 | Test values | card `4000000000000002` is declined; gift cards `GC-10-DEMO` ($10), `GC-100-DEMO`, `GC-500-DEMO`; coupons `SAVE10`, `FREESHIP`, `EU-ONLY`; `SKU-1005` is out of stock |
 | Chaos | first `GET /inventory/SKU-1004` per token is a stale `status: ERROR`; `GET /shipments/{id}` answers 503 twice per shipment |

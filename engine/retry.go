@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/plan"
 )
@@ -89,7 +90,7 @@ func (e *Engine) executeStepWithRetry(ctx context.Context, step plan.Step, node 
 		default:
 		}
 
-		if !shouldRetry(cls.Category, result.StatusCode, step.Retry, attempt) {
+		if !shouldRetry(cls.Category, result.StatusCode, grpcStatusName(result.Response), step.Retry, attempt) {
 			cls.Action = "failed_fast"
 			cls.RetryAttempt = attempt - 1
 			result.ErrorClass = cls
@@ -100,7 +101,7 @@ func (e *Engine) executeStepWithRetry(ctx context.Context, step plan.Step, node 
 		// Wait out the backoff, or as long as the server asked if that is longer.
 		wait := retryBackoff(attempt)
 		if result.Response != nil {
-			if after, ok := retryAfter(result.Response.Headers, result.StatusCode, time.Now()); ok {
+			if after, ok := retryAfter(result.Response, result.StatusCode, time.Now()); ok {
 				if after > maxRetryAfter {
 					cls.Action = "failed_fast"
 					cls.Detail += fmt.Sprintf("; the server asked to wait %s before retrying, longer than the %s limit",
@@ -175,10 +176,23 @@ func retryBackoff(attempt int) time.Duration {
 // RateLimit-Reset header. Either may be a number of seconds or an HTTP date
 // (RFC 9110); a date already past means no wait. ok is false when the response
 // names no usable delay.
-func retryAfter(h http.Header, status int, now time.Time) (wait time.Duration, ok bool) {
-	value := strings.TrimSpace(h.Get("Retry-After"))
+func retryAfter(resp *adapter.Response, status int, now time.Time) (wait time.Duration, ok bool) {
+	if resp == nil {
+		return 0, false
+	}
+	// Read through HeaderValues rather than http.Header.Get: gRPC metadata
+	// keys are lowercase as the wire sent them, and Get canonicalizes the key
+	// it looks for. It also spans trailers, which is where a gRPC server may
+	// put a retry hint it only knows at the end of the call.
+	first := func(name string) string {
+		if values := resp.HeaderValues(name); len(values) > 0 {
+			return values[0]
+		}
+		return ""
+	}
+	value := strings.TrimSpace(first("Retry-After"))
 	if value == "" && status == http.StatusTooManyRequests {
-		value = strings.TrimSpace(h.Get("RateLimit-Reset"))
+		value = strings.TrimSpace(first("RateLimit-Reset"))
 	}
 	if value == "" {
 		return 0, false

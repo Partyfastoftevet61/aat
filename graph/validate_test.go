@@ -43,6 +43,30 @@ func TestValidate_DuplicateInput(t *testing.T) {
 	assertValidationContains(t, err, "duplicate input name")
 }
 
+func TestValidate_OutputFromInput(t *testing.T) {
+	graphWith := func(fromInput string) []byte {
+		return []byte(`version: "1.0.0"
+nodes:
+  createCollection:
+    adapter: createCollection
+    inputs:
+      - name: collectionName
+        type: string
+    outputs:
+      - name: collectionName
+        type: string
+        fromInput: ` + fromInput + "\n")
+	}
+
+	g, err := Parse(graphWith("collectionName"))
+	require.NoError(t, err)
+	assert.Equal(t, "collectionName", g.Nodes["createCollection"].Outputs[0].FromInput)
+
+	_, err = Parse(graphWith("collection"))
+	require.Error(t, err)
+	assertValidationContains(t, err, `node "createCollection": output "collectionName": fromInput "collection" is not an input of the node`)
+}
+
 func TestValidate_BadType(t *testing.T) {
 	_, err := ParseFile("testdata/invalid/bad_type.yaml")
 	require.Error(t, err)

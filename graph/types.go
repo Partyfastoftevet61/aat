@@ -2,8 +2,10 @@ package graph
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/gburgyan/aat/internal/protoreg"
 	"github.com/gburgyan/aat/internal/yamlx"
 	"gopkg.in/yaml.v3"
 )
@@ -19,6 +21,7 @@ type Graph struct {
 	Examples       []WorkflowExample    `yaml:"examples,omitempty"`
 	Notes          string               `yaml:"notes,omitempty"`
 	OAS            string               `yaml:"oas,omitempty"`
+	Proto          string               `yaml:"proto,omitempty"`
 	ErrorDetection []ErrorDetectionRule `yaml:"errorDetection,omitempty"`
 	Nodes          map[string]*Node     `yaml:"nodes"`
 	Conditions     []Condition          `yaml:"conditions,omitempty"`
@@ -145,6 +148,7 @@ type Node struct {
 	Cleanup        CleanupPairing       `yaml:"cleanup,omitempty"`
 	CycleBreaker   bool                 `yaml:"cycleBreaker,omitempty"`
 	OAS            *OASRef              `yaml:"oas,omitempty"`
+	Proto          *ProtoRef            `yaml:"proto,omitempty"`
 	Requires       []string             `yaml:"requires,omitempty"`
 	Satisfies      []string             `yaml:"satisfies,omitempty"`
 	Preferred      bool                 `yaml:"preferred,omitempty"`
@@ -155,6 +159,84 @@ type Node struct {
 type OASRef struct {
 	OperationID string `yaml:"operationId"`
 	Spec        string `yaml:"spec,omitempty"`
+}
+
+// ProtoRef links a graph node to a gRPC method. It is written either as a
+// scalar naming the method the way the wire does,
+//
+//	proto: shop.v1.Carts/CreateCart
+//
+// or as a mapping, which a node needs only to name its own descriptor set:
+//
+//	proto:
+//	  service: shop.v1.Carts
+//	  method: CreateCart
+//	  descriptor: carts.protoset
+type ProtoRef struct {
+	Service string `yaml:"service"`
+	Method  string `yaml:"method"`
+	// Descriptor names the descriptor set holding the service, for a node
+	// whose service is not in the graph's own. It mirrors OASRef.Spec.
+	Descriptor string `yaml:"descriptor,omitempty"`
+}
+
+// FullMethod returns the method as gRPC names it on the wire.
+func (r ProtoRef) FullMethod() string {
+	return "/" + r.Service + "/" + r.Method
+}
+
+// String returns the method as a graph writes it in the scalar form.
+func (r ProtoRef) String() string {
+	return r.Service + "/" + r.Method
+}
+
+// rawProtoRef drops the custom unmarshaler so the mapping form decodes
+// strictly; see internal/yamlx.
+type rawProtoRef ProtoRef
+
+// UnmarshalYAML accepts the scalar and mapping forms. It uses the callback
+// form so strict decoding reaches the mapping (see internal/yamlx).
+func (r *ProtoRef) UnmarshalYAML(unmarshal func(any) error) error {
+	n, err := yamlx.Node(unmarshal)
+	if err != nil {
+		return err
+	}
+	switch n.Kind {
+	case yaml.ScalarNode:
+		var ref string
+		if err := unmarshal(&ref); err != nil {
+			return err
+		}
+		service, method, ok := protoreg.SplitFullMethod(ref)
+		if !ok {
+			return &yaml.TypeError{Errors: []string{fmt.Sprintf(
+				"line %d: proto %q must name a service and a method, as in \"shop.v1.Carts/CreateCart\"", n.Line, ref)}}
+		}
+		r.Service, r.Method = service, method
+		return nil
+	case yaml.MappingNode:
+		var raw rawProtoRef
+		if err := unmarshal(&raw); err != nil {
+			return err
+		}
+		if raw.Service == "" || raw.Method == "" {
+			return &yaml.TypeError{Errors: []string{fmt.Sprintf(
+				"line %d: proto needs both a service and a method", n.Line)}}
+		}
+		*r = ProtoRef(raw)
+		return nil
+	default:
+		return yamlx.KindError(n, "proto", "a service/method reference or a mapping")
+	}
+}
+
+// MarshalYAML writes the scalar form unless the ref names its own descriptor
+// set, so a generated graph reads the way one is written by hand.
+func (r ProtoRef) MarshalYAML() (any, error) {
+	if r.Descriptor == "" {
+		return r.String(), nil
+	}
+	return rawProtoRef(r), nil
 }
 
 // Input describes a single input parameter for a node.
@@ -286,12 +368,19 @@ type Constraint struct {
 }
 
 // Output describes a single output value produced by a node.
+//
+// An output is extracted from the response by the node's template, unless
+// FromInput names one of the node's inputs: then the output is that input as
+// the step sent it. That serves an API where the client names what it creates
+// and the reply doesn't say it back, so a later step, or the node's cleanup,
+// can read the name as an output like any other.
 type Output struct {
 	Name          string  `yaml:"name"`
 	Type          string  `yaml:"type"`
 	Description   string  `yaml:"description,omitempty"`
 	Optional      bool    `yaml:"optional,omitempty"`
 	Display       string  `yaml:"display,omitempty"`
+	FromInput     string  `yaml:"fromInput,omitempty"`
 	ElementFields []Field `yaml:"elementFields,omitempty"`
 }
 
@@ -335,12 +424,18 @@ type ErrorDetailMapping struct {
 }
 
 // BuildSatisfierIndex populates the computed satisfier index for fast lookup.
+// Each token's satisfiers are sorted by name, so everything that walks them,
+// generated docs and backward chaining alike, comes out the same every time
+// rather than in map order.
 func (g *Graph) BuildSatisfierIndex() {
 	g.SatisfiersByToken = map[string][]string{}
 	for name, node := range g.Nodes {
 		for _, token := range node.Satisfies {
 			g.SatisfiersByToken[token] = append(g.SatisfiersByToken[token], name)
 		}
+	}
+	for _, satisfiers := range g.SatisfiersByToken {
+		sort.Strings(satisfiers)
 	}
 }
 

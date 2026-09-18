@@ -241,7 +241,7 @@ func TestLoadOverlayFile_WithValuesAndExpectFailure(t *testing.T) {
 	assert.Equal(t, "", ov.Values["lastName"])
 	assert.EqualValues(t, -1, ov.Values["age"])
 	require.NotNil(t, ov.ExpectFailure)
-	assert.Equal(t, []int{400, 422}, ov.ExpectFailure.Status)
+	assert.Equal(t, []int{400, 422}, ov.ExpectFailure.Status.Codes())
 	assert.Equal(t, "invalid payload", ov.ExpectFailure.Description)
 }
 
@@ -260,6 +260,54 @@ func TestLoadOverlayFile_RejectsExpectFailureBelow400(t *testing.T) {
 	assert.Contains(t, err.Error(), ">= 400")
 }
 
+// An override names a gRPC status the way a plan step does, and keeps the name:
+// INVALID_ARGUMENT and FAILED_PRECONDITION are both HTTP 400, and only the
+// name tells them apart.
+func TestLoadOverlayFile_ExpectFailureNamesAGRPCStatus(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "overlay.yaml")
+	body := "" +
+		"overrides:\n" +
+		"  - match: paymentCharge\n" +
+		"    expectFailure:\n" +
+		"      status: [INVALID_ARGUMENT, 404]\n"
+	require.NoError(t, os.WriteFile(path, []byte(body), 0644))
+
+	overlay, err := LoadOverlayFile(path)
+	require.NoError(t, err)
+	status := overlay.Overrides[0].ExpectFailure.Status
+	assert.Equal(t, []string{"INVALID_ARGUMENT", "404"}, status.Strings())
+	assert.True(t, status.Matches(400, "INVALID_ARGUMENT"))
+	assert.False(t, status.Matches(400, "FAILED_PRECONDITION"), "a name matches that status alone")
+}
+
+func TestLoadOverlayFile_RejectsExpectFailureOK(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "overlay.yaml")
+	body := "" +
+		"overrides:\n" +
+		"  - match: paymentCharge\n" +
+		"    expectFailure:\n" +
+		"      status: [OK]\n"
+	require.NoError(t, os.WriteFile(path, []byte(body), 0644))
+
+	_, err := LoadOverlayFile(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "status OK must be a failure")
+}
+
+func TestLoadOverlayFile_RejectsAnUnknownStatusName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "overlay.yaml")
+	body := "" +
+		"overrides:\n" +
+		"  - match: paymentCharge\n" +
+		"    expectFailure:\n" +
+		"      status: [INVALID_ARGUMNT]\n"
+	require.NoError(t, os.WriteFile(path, []byte(body), 0644))
+
+	_, err := LoadOverlayFile(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown status")
+}
+
 func TestLoadOverlayFile_RejectsEmptyExpectFailureStatus(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "overlay.yaml")
@@ -273,4 +321,38 @@ func TestLoadOverlayFile_RejectsEmptyExpectFailureStatus(t *testing.T) {
 	_, err := LoadOverlayFile(path)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at least one status")
+}
+
+func TestValidateOverrides_PathRewriteOnGRPCTarget(t *testing.T) {
+	errs := validateOverrides([]HostOverride{{
+		Match:       "payment*",
+		BaseURL:     "grpc://localhost:8767",
+		PathRewrite: &PathRewrite{Strip: "/v1"},
+	}})
+	require.Len(t, errs, 1)
+	assert.Contains(t, errs[0], "pathRewrite has no meaning for the gRPC target")
+	assert.Contains(t, errs[0], "grpc://localhost:8767")
+}
+
+func TestValidateOverrides_PathRewriteOnGRPCSTarget(t *testing.T) {
+	errs := validateOverrides([]HostOverride{{
+		Match:       "payment*",
+		BaseURL:     "grpcs://api.example.com:443",
+		PathRewrite: &PathRewrite{Prefix: "/v2"},
+	}})
+	require.Len(t, errs, 1)
+}
+
+func TestValidateOverrides_PathRewriteOnHTTPTargetIsFine(t *testing.T) {
+	errs := validateOverrides([]HostOverride{{
+		Match:       "payment*",
+		BaseURL:     "http://localhost:8766",
+		PathRewrite: &PathRewrite{Strip: "/v1"},
+	}})
+	assert.Empty(t, errs)
+}
+
+func TestValidateOverrides_GRPCTargetWithoutPathRewriteIsFine(t *testing.T) {
+	errs := validateOverrides([]HostOverride{{Match: "payment*", BaseURL: "grpc://localhost:8767"}})
+	assert.Empty(t, errs)
 }

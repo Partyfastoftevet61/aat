@@ -20,6 +20,8 @@ make frontend      # cd server/web && npm install && npm run build
 make test          # go test ./...
 make check         # fmt + test-race + lint — mirrors the CI test and lint jobs
 make example-shop  # examples/shop against a local sandbox — mirrors the CI example-shop job
+make example-grpc  # examples/grpc-payments (HTTP + gRPC) against a local sandbox — mirrors the CI example-grpc job
+make proto         # regenerate examples/grpc-payments/payments.protoset (needs protoc; the .protoset is checked in)
 make demos         # regenerate docs/user/assets (VHS GIFs, Playwright screenshots) against a fresh sandbox
 make docs          # mkdocs build --strict in .venv-docs — mirrors the Docs workflow
 make docs-serve    # live-reloading docs site on :8000
@@ -35,9 +37,10 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 | Package | Responsibility |
 |---------|---------------|
 | `cmd/aat/` | CLI binary — thin wrapper, wires packages together |
-| `cmd/aat-sandbox/` | Demo API binary: `serve` runs the offline shop sandbox, `init` extracts `examples/shop` |
+| `cmd/aat-sandbox/` | Demo API binary: `serve` runs the offline shop sandbox, `init` extracts `examples/shop`, or `examples/grpc-payments` with `--example` |
 | `graph/` | API graph model, YAML parsing, traversal, backward chaining, diffing |
-| `adapter/` | Adapter interface, HTTP executor, Tier 1/3 loaders |
+| `graph/proto/` | Validates gRPC nodes against protobuf descriptors (implements `graph.SpecValidator`) |
+| `adapter/` | Adapter and Executor interfaces, HTTP and gRPC executors, Tier 1/3 loaders |
 | `domain/` | Domain knowledge: concepts, types, value pools |
 | `plan/` | Plan model, expression evaluator, validation, persistence |
 | `intent/` | LLM-powered prompt → plan transformation |
@@ -49,24 +52,30 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 | `server/` | Local web API server (chi), embedded Svelte SPA frontend, archive viewer |
 | `mcp/` | MCP server: API lifecycle platform for IDE-based AI tools (stdio transport) |
 | `internal/sandbox/shop/` | Offline e-commerce sandbox API (regions, OAuth2/API key, order state machine, chaos hooks); stdlib only |
+| `internal/sandbox/shopgrpc/` | The sandbox's payments API over gRPC: a façade that forwards to the HTTP handler, served dynamically from the checked-in descriptor set. grpc-go and protobuf allowed here, unlike `shop` |
 | `internal/httpstatus/` | Expected-status values shared by plan validation and assertions: exact codes, `2xx` classes, contradictions with `expectFailure` |
 | `internal/yamlx/` | Strict YAML decoding for project files: unknown keys are errors with line, key, and suggestion |
 | `internal/predicate/` | Predicate expressions (`status == "open" && total > 100`): parsing, evaluation, and the fields they name, for selection filters, constraints, assertions, and cleanup `when` |
+| `internal/protoreg/` | Protobuf descriptor sets and the protobuf-to-JSON codec; shared by `adapter` and `graph/proto` |
+| `internal/gjsonpath/` | Splits a GJSON path into the segments gjson reads (escaped keys, `#`, queries, modifiers), so static checks walk a schema the way extraction walks a response |
+| `internal/grpcstatus/` | gRPC status codes: their names, and the HTTP statuses they map to so one engine serves both protocols |
 | `internal/primer/` | The AI assistant primer (`llms.md`): embedded for `aat docs primer`, included by `docs/user/llms.md`, and published as `llms-full.txt` |
 | `internal/testutil/` | Shared test helpers and fixtures |
 | `internal/version/` | Build version info |
-| root `embed.go` | `package aat`: embeds `examples/shop` for `aat-sandbox init` |
+| root `embed.go` | `package aat`: embeds `examples/shop` and `examples/grpc-payments` for `aat-sandbox init`; the sandbox serves gRPC from the second's descriptor set |
 
 ## Dependency Rules
 
 Dependencies flow in one direction. No cycles. No lateral imports within a tier.
 
-**Foundation packages** (stdlib and third-party imports only; importable from any tier): `internal/httpstatus`, `internal/yamlx`, `internal/predicate`, `internal/version`, `internal/primer`
-**Leaf packages** (no aat imports other than foundation packages): `config`, `graph`, `domain`, `adapter`, `validate`, `internal/sandbox/shop`
-**Mid-tier**: `graph/oas` → graph; `llm` → config; `plan` → graph, config; `archive` → plan
+**Foundation packages** (stdlib and third-party imports only; importable from any tier): `internal/httpstatus`, `internal/yamlx`, `internal/predicate`, `internal/version`, `internal/primer`, `internal/protoreg`, `internal/grpcstatus`, `internal/gjsonpath`
+**Leaf packages** (no aat imports other than foundation packages): `config`, `graph`, `domain`, `adapter`, `validate`, `internal/sandbox/shop`, `internal/sandbox/shopgrpc`
+**Mid-tier**: `graph/oas` → graph; `graph/proto` → graph; `llm` → config; `plan` → graph, config; `archive` → plan
 **Orchestrators**: `engine` → graph, graph/oas, adapter, plan, domain, validate, archive, config
-**Entry points**: `intent` → graph, domain, plan, llm; `mcp` → all packages; `server` → intent, archive, plan, config
-**Binaries**: `cmd/aat` → every package outside `internal/` (its tests also import `internal/sandbox/shop` and the root embed for the shop end-to-end test); `cmd/aat-sandbox` → internal/sandbox/shop, root embed
+**Entry points**: `intent` → graph, domain, plan, llm; `mcp` → all packages; `server` → intent, archive, plan, config, adapter (for the protocol a step used)
+**Binaries**: `cmd/aat` → every package outside `internal/` (its tests also import `internal/sandbox/shop` and the root embed for the shop end-to-end test); `cmd/aat-sandbox` → internal/sandbox/shop, internal/sandbox/shopgrpc, root embed
+
+`internal/sandbox/shop` is stdlib only, and stays that way. `internal/sandbox/shopgrpc` is the one exception in the sandbox tree: it needs grpc-go and protobuf to serve a gRPC listener, and it holds no logic of its own — every call becomes the HTTP request `shop` already answers, so the two surfaces cannot drift.
 
 Data flows down, decisions flow up. No business logic in `cmd/`.
 
@@ -113,7 +122,7 @@ environment: env.yaml
 defaultEnvironment: us
 ```
 
-Key type: `config.ProjectManifest`. Fields: `Name` (required), `GraphPath` (required), `TemplatesPath` (required), `DomainPath`, `DocsDir`, `WorkflowsDir`, `LayersDir`, `PlanDirs`, `OASPaths`, `ArchiveDir`, `TracesDir`, `VisualizersDir`, `EnvPath`, `DefaultEnvironment`. The highest-priority manifest found (`--manifest`, CWD walk-up, `AAT_PROJECT`, user config `default_project`) describes the whole project; lower levels never fill in fields it leaves out.
+Key type: `config.ProjectManifest`. Fields: `Name` (required), `GraphPath` (required), `TemplatesPath` (required), `DomainPath`, `DocsDir`, `WorkflowsDir`, `LayersDir`, `PlanDirs`, `OASPaths`, `ProtoPaths`, `ArchiveDir`, `TracesDir`, `VisualizersDir`, `EnvPath`, `DefaultEnvironment`. The highest-priority manifest found (`--manifest`, CWD walk-up, `AAT_PROJECT`, user config `default_project`) describes the whole project; lower levels never fill in fields it leaves out.
 
 Used by: `aat validate`, `aat web`, `aat mcp serve`, `aat plan list`, `aat env list`, and as defaults for `aat run`/`aat prompt` when explicit flags are omitted.
 
@@ -192,6 +201,14 @@ sh package-kit.sh                                                     # package 
 # What CI runs against the shop (starts its own sandbox; needs curl, jq, free ports 8765/8766)
 make example-shop
 
+# The gRPC example: a cart over HTTP, then charge and refund over gRPC, against
+# the same sandbox (shop :8765, payments :8766, gRPC payments :8767)
+cd examples/grpc-payments/
+../../aat validate --strict                # checks gRPC nodes against payments.protoset, offline
+../../aat run plan charge-and-refund       # three HTTP steps, then two gRPC ones
+../../aat run plan declined-card           # expectFailure naming a gRPC status
+make example-grpc                          # what CI runs
+
 # Petstore example (public API, no credentials), from the repository root
 cd examples/petstore/
 ../../aat run plan plans/create-and-verify.yaml
@@ -215,7 +232,7 @@ cd examples/petstore/
 #   --env-config FILE  environment file (overrides the manifest)
 #   --json             machine-readable JSON summary to stdout
 #   --quiet            suppress progress, show final line only
-#   --override NODE=URL  route a node to a different URL (repeatable; keeps env headers and auth)
+#   --override NODE=URL  route a node to a different URL (repeatable; keeps the node's own headers and auth)
 #   --var KEY=VALUE    set a var of a multi-environment file (repeatable; wins over the file)
 #   --overlay FILE       path to overlay YAML with additional overrides
 #   --no-auto-overrides  disable auto-discovery of .aat-overrides.yaml

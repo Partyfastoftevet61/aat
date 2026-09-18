@@ -109,8 +109,48 @@ request:
 		},
 		{
 			name:    "unsupported protocol",
-			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  method: GET\n  path: /test\n",
+			yaml:    "adapter: test\nprotocol: graphql\nrequest:\n  method: GET\n  path: /test\n",
 			wantErr: "unsupported protocol",
+		},
+		{
+			name:    "a gRPC template with an HTTP method",
+			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  rpc: shop.v1.Carts/CreateCart\n  method: GET\n",
+			wantErr: "request.method belongs to an HTTP template",
+		},
+		{
+			name:    "a gRPC template with a path",
+			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  rpc: shop.v1.Carts/CreateCart\n  path: /carts\n",
+			wantErr: "request.path belongs to an HTTP template",
+		},
+		{
+			name:    "a gRPC template with headers",
+			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  rpc: shop.v1.Carts/CreateCart\n  headers:\n    X-Tenant: acme\n",
+			wantErr: "a gRPC request sends request.metadata",
+		},
+		{
+			name:    "a gRPC template with a body",
+			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  rpc: shop.v1.Carts/CreateCart\n  body: \"{}\"\n",
+			wantErr: "request.body belongs to an HTTP template",
+		},
+		{
+			name:    "a gRPC template without an rpc",
+			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  message: \"{}\"\n",
+			wantErr: "template missing required field: request.rpc",
+		},
+		{
+			name:    "a gRPC template whose rpc names no method",
+			yaml:    "adapter: test\nprotocol: grpc\nrequest:\n  rpc: Carts\n",
+			wantErr: "must name a service and a method",
+		},
+		{
+			name:    "an HTTP template with an rpc",
+			yaml:    "adapter: test\nrequest:\n  method: GET\n  path: /test\n  rpc: shop.v1.Carts/CreateCart\n",
+			wantErr: "request.rpc belongs to a gRPC template",
+		},
+		{
+			name:    "an HTTP template with metadata",
+			yaml:    "adapter: test\nrequest:\n  method: GET\n  path: /test\n  metadata:\n    x-tenant: acme\n",
+			wantErr: "an HTTP template sends request.headers",
 		},
 	}
 
@@ -1106,6 +1146,25 @@ func TestClassifyInputs(t *testing.T) {
 			wantIterable:    []string{"productIds"},
 		},
 		{
+			name: "a gRPC template's message and metadata",
+			tmpl: &Template{
+				Protocol: ProtocolGRPC,
+				Request: TemplateRequest{
+					RPC:      "qdrant.Points/Scroll",
+					Metadata: map[string]string{"x-tenant": "{{tenant}}"},
+					Message: `{
+  "collectionName": "{{collectionName}}",
+  "limit": {{limit}}{{?offsetNum}},
+  "offset": {"num": "{{offsetNum}}"}{{/offsetNum}},
+  "ids": [{{#ids}}{"num": "{{.}}"}{{/ids}}]
+}`,
+				},
+			},
+			wantRequired:    []string{"collectionName", "limit", "tenant"},
+			wantConditional: []string{"offsetNum"},
+			wantIterable:    []string{"ids"},
+		},
+		{
 			name: "bracketed conditional key is not required",
 			tmpl: &Template{
 				Request: TemplateRequest{
@@ -1288,4 +1347,89 @@ func TestTemplate_SuppliedFields(t *testing.T) {
 		"name": true, "status": true, "photoUrls": true, "category": true, "note": true, "items": true,
 	}
 	assert.Equal(t, want, got, "conditional fields (page, X-Trace, tags) and nested keys (id, sku) are not supplied unconditionally")
+}
+
+func TestParseTemplate_GRPC(t *testing.T) {
+	tmpl, err := ParseTemplate([]byte(`adapter: createCart
+protocol: grpc
+
+request:
+  rpc: shop.v1.Carts/CreateCart
+  metadata:
+    x-tenant: "{{tenant}}"
+  message: |
+    {"customerId": "{{customerId}}"}
+
+response:
+  extract:
+    cartId: cartId
+    subtotal: $.subtotal
+`))
+	require.NoError(t, err)
+	assert.Equal(t, ProtocolGRPC, tmpl.Protocol)
+	assert.Equal(t, "shop.v1.Carts/CreateCart", tmpl.Request.RPC)
+	assert.Equal(t, "shop.v1.Carts", tmpl.Request.Service())
+	assert.Equal(t, "CreateCart", tmpl.Request.MethodName())
+	assert.Equal(t, "{{tenant}}", tmpl.Request.Metadata["x-tenant"])
+	assert.Contains(t, tmpl.Request.Message, "{{customerId}}")
+
+	// Extraction is unchanged: a gRPC response is read as JSON like any other.
+	assert.Equal(t, "cartId", tmpl.Response.Extract["cartId"].GJSONPath())
+	assert.Equal(t, "subtotal", tmpl.Response.Extract["subtotal"].GJSONPath())
+}
+
+func TestTemplateAdapter_BuildGRPCRequest(t *testing.T) {
+	tmpl, err := ParseTemplate([]byte(`adapter: createCart
+protocol: grpc
+request:
+  rpc: shop.v1.Carts/CreateCart
+  metadata:
+    x-tenant: "{{tenant}}"
+  message: |
+    {"customerId": "{{customerId}}"}
+`))
+	require.NoError(t, err)
+
+	req, err := NewTemplateAdapter(*tmpl).BuildRequest(
+		map[string]any{"tenant": "acme", "customerId": "c-1"},
+		&EnvironmentConfig{
+			Headers:   map[string]string{"Accept": "application/json", "X-Trace": "on"},
+			Protected: map[string]string{"Authorization": "Bearer tok"},
+		})
+	require.NoError(t, err)
+
+	assert.Equal(t, ProtocolGRPC, req.Protocol)
+	assert.True(t, req.IsGRPC())
+	assert.Equal(t, "shop.v1.Carts/CreateCart", req.Path)
+	assert.Empty(t, req.Method, "a gRPC request has no verb")
+	assert.JSONEq(t, `{"customerId":"c-1"}`, string(req.Body))
+
+	// The credential reaches a gRPC call as metadata, and a template cannot
+	// replace it.
+	assert.Equal(t, "Bearer tok", req.Headers["Authorization"])
+	assert.Equal(t, "acme", req.Headers["x-tenant"])
+	assert.Equal(t, "on", req.Headers["X-Trace"], "environment headers still travel")
+	assert.NotContains(t, req.Headers, "Accept", "Accept has no meaning when descriptors decide the encoding")
+}
+
+func TestTemplateAdapter_GRPCMessageEscapesValues(t *testing.T) {
+	// The message is JSON, so a value carrying a quote must not break it.
+	tmpl, err := ParseTemplate([]byte("adapter: t\nprotocol: grpc\nrequest:\n  rpc: s.S/M\n  message: '{\"note\": \"{{note}}\"}'\n"))
+	require.NoError(t, err)
+
+	req, err := NewTemplateAdapter(*tmpl).BuildRequest(map[string]any{"note": `he said "hi"`}, &EnvironmentConfig{})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"note":"he said \"hi\""}`, string(req.Body))
+}
+
+func TestTemplateAdapter_GRPCProtectedMetadataWinsOverTheTemplate(t *testing.T) {
+	tmpl, err := ParseTemplate([]byte("adapter: t\nprotocol: grpc\nrequest:\n  rpc: s.S/M\n  metadata:\n    authorization: Bearer template\n  message: \"{}\"\n"))
+	require.NoError(t, err)
+
+	req, err := NewTemplateAdapter(*tmpl).BuildRequest(nil, &EnvironmentConfig{
+		Protected: map[string]string{"Authorization": "Bearer real"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "Bearer real", req.Headers["Authorization"])
+	assert.NotContains(t, req.Headers, "authorization", "the protected entry replaces the template's, whatever its case")
 }

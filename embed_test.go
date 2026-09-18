@@ -12,12 +12,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestShopExampleFS_MatchesDisk guards the explicit //go:embed patterns in
-// embed.go: every file under examples/shop must be embedded, so that
-// `aat-sandbox init` extracts the complete project. Local artifacts that the
-// example's own .gitignore excludes are skipped.
-func TestShopExampleFS_MatchesDisk(t *testing.T) {
-	root := filepath.Join("examples", "shop")
+// TestEmbeddedExamples_MatchDisk guards the explicit //go:embed patterns in
+// embed.go: every file under an embedded example must be embedded, so that
+// `aat-sandbox init` extracts a complete project and the sandbox finds the
+// descriptor set it serves from. Local artifacts that an example's own
+// .gitignore excludes are skipped.
+func TestEmbeddedExamples_MatchDisk(t *testing.T) {
+	examples := map[string]func() (fs.FS, error){
+		"shop":          ShopExampleFS,
+		"grpc-payments": GRPCPaymentsExampleFS,
+	}
+	for name, open := range examples {
+		t.Run(name, func(t *testing.T) {
+			assertExampleEmbedded(t, name, open)
+		})
+	}
+}
+
+func assertExampleEmbedded(t *testing.T, name string, open func() (fs.FS, error)) {
+	t.Helper()
+	root := filepath.Join("examples", name)
 	ignored := exampleIgnoreRules(t, filepath.Join(root, ".gitignore"))
 
 	var onDisk []string
@@ -43,7 +57,7 @@ func TestShopExampleFS_MatchesDisk(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	embedded, err := ShopExampleFS()
+	embedded, err := open()
 	require.NoError(t, err)
 	var inEmbed []string
 	err = fs.WalkDir(embedded, ".", func(path string, d fs.DirEntry, err error) error {
@@ -59,7 +73,7 @@ func TestShopExampleFS_MatchesDisk(t *testing.T) {
 
 	sort.Strings(onDisk)
 	sort.Strings(inEmbed)
-	assert.Equal(t, onDisk, inEmbed, "embed.go must list every file under examples/shop")
+	assert.Equal(t, onDisk, inEmbed, "embed.go must list every file under examples/"+name)
 }
 
 // exampleIgnoreRules reads a .gitignore made of simple name patterns (a
@@ -99,4 +113,18 @@ func exampleIgnoreRules(t *testing.T, path string) func(name string, isDir bool)
 		}
 		return false
 	}
+}
+
+// TestPaymentsDescriptorSet checks the sandbox can read the descriptor set it
+// serves shop.v1.Payments from — the same file examples/grpc-payments names in
+// its manifest, so the service and the project that calls it cannot describe
+// different APIs.
+func TestPaymentsDescriptorSet(t *testing.T) {
+	data, err := PaymentsDescriptorSet()
+	require.NoError(t, err)
+	assert.NotEmpty(t, data)
+
+	onDisk, err := os.ReadFile(filepath.Join("examples", "grpc-payments", "payments.protoset"))
+	require.NoError(t, err)
+	assert.Equal(t, onDisk, data, "the embedded descriptor set is the project's own file")
 }

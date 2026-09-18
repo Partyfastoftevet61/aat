@@ -17,6 +17,7 @@ import (
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/graph/oas"
 	"github.com/gburgyan/aat/intent"
+	"github.com/gburgyan/aat/internal/protoreg"
 	"github.com/gburgyan/aat/internal/version"
 	"github.com/gburgyan/aat/plan"
 	"github.com/gburgyan/aat/validate"
@@ -36,6 +37,7 @@ type runArgs struct {
 	EnvName           string // environment name for multi-env files
 	GraphPath         string
 	TemplatesPath     string
+	ProtoPaths        []string // descriptor sets from aat-project.yaml
 	OutputDir         string
 	DomainPath        string
 	JSON              bool
@@ -271,7 +273,8 @@ func toStepSummary(step engine.StepResult) StepSummary {
 	} else if step.ExpectFailure != nil {
 		ss.Passed = step.ExpectFailure.Passed
 		if !ss.Passed {
-			ss.Error = fmt.Sprintf("expected status %v, got %d", step.ExpectFailure.ExpectedStatuses, step.ExpectFailure.ActualStatus)
+			ss.Error = fmt.Sprintf("expected status %v, got %s", step.ExpectFailure.ExpectedStatuses,
+				engine.ActualStatusText(step.Response, step.ExpectFailure.ActualStatus))
 		}
 	} else if step.StatusCode >= 400 {
 		ss.Passed = false
@@ -361,21 +364,6 @@ func plannedStepCount(p *plan.Plan, g *graph.Graph, layeredDefaults map[string]*
 	return len(inst.Execution.Steps) + len(plan.VerificationSteps(inst, g, layeredDefaults))
 }
 
-// overrideFlagsToHostOverrides turns --override NODE=URL flags into override
-// entries equivalent to `- match: NODE` with `baseUrl: URL`, so they inherit
-// headers and auth exactly like an env.yaml entry.
-func overrideFlagsToHostOverrides(flags []string) ([]config.HostOverride, error) {
-	overrides := make([]config.HostOverride, 0, len(flags))
-	for _, flag := range flags {
-		name, url, err := parseOverrideFlag(flag)
-		if err != nil {
-			return nil, fmt.Errorf("parsing --override: %w", err)
-		}
-		overrides = append(overrides, config.HostOverride{Match: name, BaseURL: url})
-	}
-	return overrides, nil
-}
-
 // overlayOverrides returns an overlay file's override entries, or nil when no
 // overlay was loaded.
 func overlayOverrides(overlay *config.OverlayFile) []config.HostOverride {
@@ -399,7 +387,9 @@ func addHostOverrides(ctx context.Context, router *engine.ExecutorRouter, apiBas
 		return err
 	}
 	for _, ov := range resolved {
-		router.AddResolvedOverride(ov)
+		if err := router.AddResolvedOverride(ov); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -682,6 +672,13 @@ type runContext struct {
 	OASCache        *oas.SpecCache // loaded specs for runtime validation (nil if none)
 	OASValidateMode string         // effective mode: "auto", "strict", "off"
 
+	// ProtoRegistry holds the descriptors a graph's gRPC nodes are built and
+	// read with (nil when the graph has none).
+	ProtoRegistry *protoreg.Registry
+	// GRPCTLS secures grpcs:// routes; the zero value verifies against the
+	// system roots.
+	GRPCTLS adapter.TLSConfig
+
 	// Pacer spaces requests across every run of this invocation, including the
 	// runs of a parallel batch (nil = no pacing).
 	Pacer *engine.Pacer
@@ -795,7 +792,17 @@ func loadRunContext(ctx context.Context, args *runArgs, logf func(string, ...any
 		logf("aat: pacing requests at least %s apart\n", interval)
 	}
 
-	// Load OAS specs for runtime validation (unless disabled)
+	// Descriptor sets for the project's gRPC nodes, from the manifest or the graph.
+	protoRegistry, err := loadProtoRegistry(g, args.GraphPath, args.ProtoPaths)
+	if err != nil {
+		return nil, err
+	}
+	rctx.ProtoRegistry = protoRegistry
+	rctx.GRPCTLS = engine.GRPCTLS(rctx.Env, filepath.Dir(args.EnvPath))
+	if protoRegistry != nil {
+		logf("aat: loaded descriptors for %d gRPC service(s)\n", len(protoRegistry.Services()))
+	}
+
 	oasCache, err := loadOASCache(g, args.GraphPath, oasMode, os.Stderr)
 	if err != nil {
 		return nil, err
@@ -876,6 +883,12 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 		return &runResult{setupErr: true, err: fmt.Errorf("plan validation: %w", err)}
 	}
 
+	// The progress observer is fed a step at a time and never sees the plan,
+	// so the status column is measured here, where the plan is in hand.
+	if sizer, ok := observer.(statusSizer); ok {
+		sizer.setStatusWidth(planStatusWidth(p, rctx.Graph, rctx.Registry))
+	}
+
 	// 3. Pre-load overlay files to discover transaction-level auth before authenticating.
 	// Priority: env auth < auto-overrides auth < env-overlay auth < plan auth.
 	var autoOverlay *config.OverlayFile
@@ -936,24 +949,28 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 		apiConfig.AddOverlayHeaders(envOverlayFile.Headers)
 	}
 
-	// 6. Create executor, environment config, and router
-	executor := adapter.NewHTTPExecutor(apiConfig.BaseURL)
+	// 6. Create executor, environment config, and router. The factory decides
+	// by target scheme whether a route goes over HTTP or gRPC, so one run can
+	// span both.
+	factory := adapter.NewExecutorFactory(rctx.ProtoRegistry).WithTLS(rctx.GRPCTLS)
+	executor, err := factory.For(apiConfig.BaseURL)
+	if err != nil {
+		return &runResult{setupErr: true, err: fmt.Errorf("creating executor: %w", err)}
+	}
 	envConfig := &adapter.EnvironmentConfig{
 		BaseURL:   apiConfig.BaseURL,
 		Headers:   apiConfig.Headers,
 		Protected: apiConfig.Protected,
 	}
-	router := engine.NewExecutorRouter(executor, envConfig)
+	router := engine.NewExecutorRouter(executor, envConfig).WithFactory(factory)
+	// The run owns its executors; closing the router releases what they hold open.
+	defer func() { _ = router.Close() }()
 
 	// 6a–6d. Register per-node overrides from every source, lowest precedence
 	// first: env.yaml, .aat-overrides.yaml, the --overlay file, then --override
 	// flags. The router lets the last registered match of each kind win, and
-	// every source resolves the same way, inheriting headers and the effective
-	// credential unless an entry declares its own auth.
-	flagOverrides, err := overrideFlagsToHostOverrides(rctx.Overrides)
-	if err != nil {
-		return &runResult{setupErr: true, err: err}
-	}
+	// every file source resolves the same way, inheriting headers and the
+	// effective credential unless an entry declares its own auth.
 	sources := []struct {
 		label     string
 		overrides []config.HostOverride
@@ -961,11 +978,22 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 		{"overrides", rctx.Env.Overrides},
 		{"auto-overrides", overlayOverrides(autoOverlay)},
 		{"overlay overrides", overlayOverrides(envOverlayFile)},
-		{"--override flags", flagOverrides},
 	}
 	for _, src := range sources {
 		if err := addHostOverrides(ctx, router, rctx.Env.APIBaseURL, src.overrides, apiConfig, effectiveProvider); err != nil {
 			return &runResult{setupErr: true, err: fmt.Errorf("building %s: %w", src.label, err)}
+		}
+	}
+	// A flag changes where a node goes and nothing else, so it comes last and
+	// takes the route the files gave the node: a payments node keeps its API
+	// key rather than being handed the environment's bearer token.
+	for _, flag := range rctx.Overrides {
+		name, url, err := parseOverrideFlag(flag)
+		if err != nil {
+			return &runResult{setupErr: true, err: fmt.Errorf("parsing --override: %w", err)}
+		}
+		if err := router.AddURLOverride(name, url); err != nil {
+			return &runResult{setupErr: true, err: fmt.Errorf("building --override flags: %w", err)}
 		}
 	}
 

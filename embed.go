@@ -23,6 +23,30 @@ import (
 //go:embed examples/shop/.aat-overrides.yaml.example
 var shopExample embed.FS
 
+// grpcPaymentsExample embeds the tracked files of examples/grpc-payments, the
+// project that drives the sandbox's gRPC payments service. The descriptor set
+// is embedded because the sandbox serves from it too: one artifact, so the
+// service and the project that calls it cannot describe different APIs.
+//
+//go:embed examples/grpc-payments/README.md examples/grpc-payments/aat-project.yaml
+//go:embed examples/grpc-payments/graph.yaml examples/grpc-payments/env.yaml
+//go:embed examples/grpc-payments/payments.proto examples/grpc-payments/payments.protoset
+//go:embed examples/grpc-payments/templates examples/grpc-payments/plans
+//go:embed examples/grpc-payments/.gitignore
+var grpcPaymentsExample embed.FS
+
+// PaymentsDescriptorSet returns the FileDescriptorSet the sandbox's gRPC
+// payments service is served from, and that examples/grpc-payments reads.
+func PaymentsDescriptorSet() ([]byte, error) {
+	return grpcPaymentsExample.ReadFile("examples/grpc-payments/payments.protoset")
+}
+
+// GRPCPaymentsExampleFS returns the embedded examples/grpc-payments project
+// rooted at the project directory.
+func GRPCPaymentsExampleFS() (fs.FS, error) {
+	return fs.Sub(grpcPaymentsExample, "examples/grpc-payments")
+}
+
 // ShopExampleFS returns the embedded examples/shop project rooted at the
 // project directory (aat-project.yaml at the top level).
 func ShopExampleFS() (fs.FS, error) {

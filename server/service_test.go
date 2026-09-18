@@ -965,7 +965,7 @@ func TestGetStep_ExpectFailure(t *testing.T) {
 
 	step := makeStep("node", 404, 100)
 	step.ExpectFailure = &archive.ExpectFailureRecord{
-		Expected: []int{404, 410},
+		Expected: plan.HTTPStatuses([]int{404, 410}),
 		Actual:   404,
 		Passed:   true,
 	}
@@ -978,9 +978,35 @@ func TestGetStep_ExpectFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, detail.ExpectFailure)
-	assert.Equal(t, []int{404, 410}, detail.ExpectFailure.Expected)
-	assert.Equal(t, 404, detail.ExpectFailure.Actual)
+	assert.Equal(t, []string{"404", "410"}, detail.ExpectFailure.Expected)
+	assert.Equal(t, "404", detail.ExpectFailure.Actual)
 	assert.True(t, detail.ExpectFailure.Passed)
+}
+
+// A gRPC step's expectFailure reads as the names the plan wrote, not the HTTP
+// statuses they map to: INVALID_ARGUMENT, FAILED_PRECONDITION and OUT_OF_RANGE
+// all map to 400, so a number cannot say which one it was.
+func TestGetStep_ExpectFailure_GRPCNamesTheCode(t *testing.T) {
+	dir := t.TempDir()
+
+	step := makeStep("charge", 400, 100)
+	step.ExpectFailure = &archive.ExpectFailureRecord{
+		Expected:   plan.ExpectedStatuses{{Code: 400, Name: "INVALID_ARGUMENT"}},
+		Actual:     400,
+		ActualName: "INVALID_ARGUMENT",
+		Passed:     true,
+	}
+
+	a := makeArchive("run-20260101-100000-aaaa0002", "passed", step)
+	writeArchive(t, dir, a)
+
+	svc := NewArchiveService(dir)
+	detail, err := svc.GetStep("run-20260101-100000-aaaa0002", "charge")
+	require.NoError(t, err)
+
+	require.NotNil(t, detail.ExpectFailure)
+	assert.Equal(t, []string{"INVALID_ARGUMENT"}, detail.ExpectFailure.Expected)
+	assert.Equal(t, "INVALID_ARGUMENT", detail.ExpectFailure.Actual)
 }
 
 func TestGetStep_ResponseBodyError(t *testing.T) {

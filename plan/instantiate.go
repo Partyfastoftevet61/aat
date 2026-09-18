@@ -405,7 +405,7 @@ func expandMutations(p *Plan) {
 			}
 			child.RawBody = m.RawBody
 			child.ExpectFailure = &ExpectFailure{
-				Status:      append([]int(nil), m.ExpectStatus...),
+				Status:      append(ExpectedStatuses(nil), m.ExpectStatus...),
 				Description: m.Description,
 			}
 			if isolated && len(idMap) > 0 {
@@ -658,9 +658,12 @@ func validateMutationsSyntax(p *Plan) []string {
 			if len(m.ExpectStatus) == 0 {
 				errs = append(errs, fmt.Sprintf("step %d (%s): mutation %q must declare at least one expectStatus", i, sid, m.Name))
 			}
-			for _, code := range m.ExpectStatus {
-				if code < 400 {
-					errs = append(errs, fmt.Sprintf("step %d (%s): mutation %q expectStatus %d must be >= 400", i, sid, m.Name, code))
+			for _, status := range m.ExpectStatus {
+				// A mutation expects a failure. Because OK is the only gRPC
+				// code that maps below 400, this reads the same for both
+				// protocols.
+				if !status.IsFailure() {
+					errs = append(errs, fmt.Sprintf("step %d (%s): mutation %q expectStatus %s must be a failure status", i, sid, m.Name, status))
 				}
 			}
 		}
@@ -768,7 +771,7 @@ func deepCopyStep(s Step) Step {
 				}
 			}
 			if len(m.ExpectStatus) > 0 {
-				cm.ExpectStatus = append([]int(nil), m.ExpectStatus...)
+				cm.ExpectStatus = append(ExpectedStatuses(nil), m.ExpectStatus...)
 			}
 			cp.Mutations[i] = cm
 		}

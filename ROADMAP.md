@@ -30,11 +30,22 @@ Roughly in priority order. None of these have dates.
 - **More example integrations.** Duffel, Stripe, and Shippo have shipped as sister repositories. Still
   wanted: an API with no sandbox, where cleanup matters and rate limits bite, and nightly CI for the
   projects that exist, so their published numbers are reproducible from the repository.
+- **More of gRPC.** Unary gRPC is done: every surface reads it, it is tested over TLS and mutual TLS,
+  an offline demo exercises it in CI, and [aat-qdrant](https://github.com/gburgyan/aat-qdrant) drives a
+  real API's 52 methods with it on every push. What is left is more of it: `aat generate` does not
+  scaffold a graph from a descriptor set, `repeat.next` follows a string or integer cursor but not one
+  that is a message, the MCP server cannot browse a descriptor set as it can an OpenAPI spec, and
+  server-streaming, as a bounded collect, would come after those.
 - **Docs site on Zensical.** The site is built with Material for MkDocs, which gets critical fixes
   only until 2026-11-05; its successor, Zensical, aims to build existing Material projects.
 
 ## Not planned
 
+- **Bidirectional streaming gRPC.** A step is a declarative function of its resolved inputs, and in a
+  bidirectional stream the next message depends on the previous reply — that is a program, not a
+  step. Supporting it would mean a second execution model rather than a longer version of this one.
+  The validator rejects it by name. For a flow that genuinely needs one, `--stop-after` with
+  `--dump-state` hands a live run to a tool that can.
 - **An in-tool plan generator beyond `aat prompt`.** AAT exposes primitives — graph nodes,
   templates, plan steps, assertions, overrides, checkpoints, and MCP tools — and leaves plan
   authoring to external tools such as Claude Code or another MCP client. `aat prompt` stays as the

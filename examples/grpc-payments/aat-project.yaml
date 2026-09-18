@@ -1,0 +1,9 @@
+name: grpc-payments
+description: The shop sandbox's payments API over gRPC, charged from an HTTP checkout
+tags: [demo, grpc, e-commerce]
+graph: graph.yaml
+templates: templates/
+proto: payments.protoset
+plans: plans/
+environment: env.yaml
+archives: _output/runs

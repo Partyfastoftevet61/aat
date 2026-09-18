@@ -6,7 +6,178 @@ the graph and plan formats may still change before 1.0.
 
 ## [Unreleased]
 
+### Added
+- **Outputs echoed from inputs.** A node output can declare `fromInput: <input>` to be that input as
+  the step sent it instead of something the template extracts. It is for an API where the client
+  names what it creates and the reply doesn't say it back — Qdrant's create-collection answers
+  `{"result": true}` — so a later step and the node's cleanup can read the name like any other
+  output. `aat validate` checks that the input exists and that the template doesn't also extract
+  the output.
+- **gRPC, for unary methods.** A graph node names a gRPC method with `proto:`, a
+  template declares `protocol: grpc` and describes the call with `rpc:`, `metadata:`, and `message:`,
+  and an environment routes to it with a `grpc://` or `grpcs://` target. Descriptors come from a
+  descriptor set — what `protoc --descriptor_set_out` and `buf build -o` write — named by `proto:` in
+  `aat-project.yaml` or the graph.
+
+  Messages cross into the rest of AAT as JSON, so extract rules, predicates, assertions, error
+  detection, archives, and `aat run show` work exactly as they do for HTTP; `metadata:` carries what
+  headers carry, credentials included, so `oauth2`, `apikey`, and `bearer` need no new configuration.
+  `expectFailure` (a step's, or an override's or overlay's), `expectStatus`, a `status` assertion, and
+  `retry.on`/`retry.failOn` accept gRPC status names —
+  `expect: OK`, `status: [NOT_FOUND]` — which match more precisely than a code can, because several
+  gRPC statuses share one HTTP status. Numbers still work, so a plan can read against either
+  protocol. `aat validate` checks gRPC nodes against the
+  descriptors offline, catching an unknown or misspelled method, a streaming method, and an extract
+  path written with a field's proto name when the response encodes it under its JSON name. An input
+  is checked where the template's `message:` places it, however deep — `vectorsConfig.params.size`,
+  a oneof member, a map value — rather than required to name a top-level field. It reads
+  an extract path the way extraction does — an escaped dot stays in its key, a `#(...)` query is one
+  step, a map field's next step is any key, a well-known type is walked by its JSON form (a
+  `Timestamp` is a string, a `Struct` any JSON), and a modifier or a pipe ends what it checks — and
+  a path that reads nothing says where it went wrong: a list read without an index, or a scalar
+  read into. A field spelled by its proto name is caught at any depth, with the path to read
+  instead.
+
+  Streaming methods are rejected: a step is one request and one response. Server-streaming may come
+  later; bidirectional will not.
+
+  Every surface reads a gRPC run in its own terms. The web UI shows the method and the service it
+  went to in place of a verb and a URL, names the status code the server sent rather than the HTTP
+  status AAT maps it to, labels request and response metadata as metadata, gives trailers a pane of
+  their own, and offers **Copy as grpcurl** in place of Copy as cURL. `aat run show`, the run
+  progress lines, and the MCP archive tools do the same, and the MCP template and node tools describe
+  a gRPC operation by its service, method, metadata, message, and the inputs the message and
+  metadata need; `aat docs generate` names each node's method. `aat validate` reports an optional input with no default that a message or
+  metadata always sends, as it does for a body, rather than leaving it to fail at run time. `aat generate` does not understand
+  gRPC yet.
+
+  This adds `google.golang.org/grpc` and `google.golang.org/protobuf`, which take a `go install`
+  build from about 28 MB to about 44 MB.
+
+- **A gRPC demo, offline.** `aat-sandbox serve` now serves `shop.v1.Payments` on `:8767` beside the
+  HTTP shop (`:8765`) and HTTP payments (`:8766`), against the same orders. The new
+  `examples/grpc-payments` project runs one plan across both protocols: a cart opened and checked
+  out over HTTP, then charged and refunded over gRPC, with the order id crossing the boundary
+  untouched. `make example-grpc` runs it, and CI does too, so nothing about gRPC is unexercised.
+
+  The service is a façade over the payments HTTP handler rather than a second implementation, so
+  the order state machine, the declined card, and the region's currency rules behave identically
+  whichever protocol reached them. It is served dynamically from the same descriptor set the
+  project reads, so the two cannot describe different APIs. `make proto` regenerates it.
+
+  `aat-sandbox init --example grpc-payments <dir>` extracts the project from the sandbox binary, so an
+  installed `aat-sandbox` runs the gRPC demo with no checkout of the repository; `init` with no flag
+  still extracts the shop.
+
+- **A fourth public project, [aat-qdrant](https://github.com/gburgyan/aat-qdrant)**, is listed in the README, on the
+  Examples, Real APIs, and Why pages, and in the AI assistant primer as the reference for gRPC idioms: all 52
+  of Qdrant's public unary gRPC methods, against a pinned local container. It is what the gRPC support was
+  stress-tested against.
+
+- **`docs/user/grpc.md`**, a guide covering descriptor sets, the template and graph shape, routing
+  and auth, status names, and the proto3 JSON encoding rules most likely to surprise a plan author
+  — starting with 64-bit integers, which encode as strings. The AI assistant primer gained the same
+  ground so agents author gRPC plans correctly.
+
 ### Fixed
+- **A predicate orders a number sent as a string against a number.** `size > 0` failed with
+  "cannot compare string with float64" when `size` was `"147456"` — which is how protobuf's 64-bit
+  integers, and many APIs' amounts, arrive — although the gRPC guide promised it worked. `<`, `>`,
+  `<=`, and `>=` now compare a decimal string with a number by value. `==` and `!=` stay strict,
+  and the error says to quote the number.
+- **`aat docs generate` writes the same file every time.** Where several nodes satisfied one
+  requirement, the diagram listed their arrows in map order, so regenerating an unchanged graph
+  could reorder lines and fail a "docs are current" check. A requirement's satisfiers are now in
+  name order, for the diagram and for backward chaining alike.
+- **A list or an object default reads as JSON.** The MCP node tools and `aat docs generate` printed
+  an input's default with Go's `%v`, so a list of objects came out as `[map[id:map[num:1]]]`,
+  unreadable, and with the quotes gone that made `"1"` a string, which an assistant copying it would
+  get wrong. They now print JSON; generated docs shorten a long list to its first element and a
+  count.
+- **`fieldEquals` compares a list or an object by its structure.** Anything but a scalar used to be
+  compared by its printed form, so `{population: 3645000}` failed against the JSON
+  `{"population": 3645000}` (a float prints as `3.645e+06`), and `["4"]` passed against `[4]`. Lists
+  and objects now match element by element and key by key, numbers by value and strings only as
+  strings, at any depth; a failure shows both sides as JSON. `errorDetection` rules compare the same
+  way.
+- **gRPC rough edges, found by reviewing the feature against its own docs.** A descriptor set named
+  by `proto:` in `aat-project.yaml` — the form the guide teaches first — was parsed and read by
+  nothing, so every gRPC node went unvalidated and the run then failed telling the user to do what
+  they had already done. It works now, for `aat validate`, `aat run`, `aat prompt` and the MCP
+  server alike, and a project that names a descriptor set its nodes do not use, or uses descriptor
+  sets it does not name, is told so rather than passed over in silence.
+
+  A node's `proto:` is now checked against its template. Pointing a gRPC node at an HTTP template,
+  the natural mistake of forgetting `protocol: grpc`, used to pass `aat validate --strict` and fail
+  three steps into a run, after a cart and an order already existed; it fails validation, and fails
+  a run before its first step. A node whose `proto:` and template `rpc:` name different methods is
+  caught too — validation was checking one method while the wire called another.
+
+  A gRPC call had no deadline at all, so a server that accepted and never replied held the step for
+  as long as the run lasted; it now gives up after the same 30 seconds an HTTP request does, and
+  says so in the same words. `pathRewrite` beside a `grpc://` `baseUrl` is rejected, as the
+  documentation always said it was. A status assertion written as a gRPC status name can no longer
+  contradict `expectFailure` unnoticed.
+
+  A gRPC target with a path after its port — `grpc://localhost:8767/shop.v1.Payments`, the natural thing
+  to write — passed every check and then failed the step as `UNAVAILABLE`; only a target with no port was
+  checked for a path. And `grpc://localhost`, with no port, dialled 443 in plaintext. Both are now
+  errors that say what is wrong, from `aat validate` as well as from a run; `grpcs://host` means 443.
+
+  A gRPC step interrupted with Ctrl-C, or cut off by the time an aborted run allows its cleanup, was
+  recorded as a `CANCELLED` or `DEADLINE_EXCEEDED` response: a client error with a body, which the
+  step's assertions then ran against. It is an error on the step, as it is over HTTP. The details a
+  server attaches to a failure — `google.rpc.BadRequest` and its field violations, `ErrorInfo`,
+  `RetryInfo` — were archived as a bare type URL unless the project's descriptor set happened to include
+  `error_details.proto`; they are now always read. And a reply over 4 MiB, gRPC's default limit, failed
+  as `RESOURCE_EXHAUSTED` and was retried as transient; a reply is now read whatever its size.
+
+  The MCP server's tool and resource descriptions — the text an assistant chooses a tool by — still
+  called every template an HTTP template with a method and a path, though the tools themselves had
+  learned gRPC. They now say what the tools return for either protocol. `aat://api/overview` listed a
+  gRPC node with no method at all, and `get_oas_operation` told an assistant that a gRPC node was
+  missing its OAS reference; the overview names the method, and the tool says what the node is.
+
+  **Copy as grpcurl** produced a command that failed against any server without reflection, the
+  sandbox included, with nothing to say why; it now opens with a comment naming the `-protoset` flag
+  to add.
+
+  No call had ever been made over TLS: `grpcs://`, a private CA, mutual TLS, `serverName`, and
+  `insecureSkipVerify` were tested only as far as building their settings. Each is now tested against
+  a server that needs it, from `env.yaml` to the handshake, and a run against a public `grpcs://`
+  endpoint verified the system roots. Doing it found that a failed handshake came back as
+  `UNAVAILABLE`, which is transient and so retried, though an untrusted certificate fails the same way
+  every time; it is now an error on the step that says what TLS objected to and names the `grpc.tls`
+  settings. Binary metadata, a key ending in `-bin`, was encoded twice on the way out and written into
+  archives as bytes JSON cannot hold; a template now writes it as base64, as `grpcurl -H` takes it, and
+  an archive records it the same way.
+
+  The demo's gRPC replies carried an empty payment id. The HTTP payments API calls it `paymentId` and
+  `payments.proto` called it `id`, and the sandbox's gRPC service discarded the field it could not
+  place, so `examples/grpc-payments` extracted `""` and nothing asserted otherwise; a refund came back
+  as a half-empty `Payment`, and an `amount` of `0` refunded the whole order. The proto now mirrors the
+  HTTP API field for field — a refund is a `RefundRecord` with its own id and the payment's — a field
+  the two disagree on fails the call instead of vanishing, and the example and `make example-grpc`
+  assert the id.
+
+  The web UI shows the gRPC status a plan wrote rather than the HTTP status it maps to — several
+  gRPC statuses share one, so the number could not say which — and so do the CLI's failure summary
+  and the MCP archive tools. **Copy as grpcurl** always emits `-d`, without which grpcurl reads the
+  message from stdin and the pasted command appears to hang. The progress lines keep their columns
+  aligned when a step reports a status name instead of three digits. gRPC metadata is archived with
+  the lowercase keys the wire uses, so a key grepped for in an archive is the key the server sent.
+
+- **Ctrl-C ends `aat web` at once, and without an error.** A browser keeps spare connections open to a
+  server it is showing, and Go will not close a connection that has sent nothing until it is five
+  seconds old; `aat web` allowed its shutdown five seconds. So stopping it with a browser tab open
+  could wait out the whole of that and then exit with `context deadline exceeded`. A connection that
+  never sent a request is now closed when the shutdown starts. It also made one of AAT's own tests
+  fail intermittently, which is how it was found.
+- **`--override NODE=URL` keeps the node's own credential.** The flag took the environment's top-level
+  auth even when an `overrides:` entry gave the node another, so `--override paymentCharge=URL` sent the
+  shop's bearer token to the payments host in place of its API key, and the call failed as
+  unauthenticated. A flag now changes the URL and nothing else: the node keeps the headers, the
+  credential, and the `pathRewrite` of the entry that matches it, or the environment's when none does.
 - The Homebrew cask clears the macOS quarantine attribute with a declarative `postflight_steps` stanza, so `brew` no
   longer warns that `postflight` is deprecated and asks users to report it to the tap. The published cask in
   `gburgyan/homebrew-tap` was updated in place, so the warning is gone without waiting for the next release.

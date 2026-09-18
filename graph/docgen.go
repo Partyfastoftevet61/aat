@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -213,6 +214,9 @@ func writeNodeSection(b *strings.Builder, name string, node *Node, g *Graph, opt
 	if node.Adapter != "" {
 		fmt.Fprintf(b, "**Adapter:** `%s`\n\n", node.Adapter)
 	}
+	if node.Proto != nil {
+		fmt.Fprintf(b, "**gRPC:** `%s`\n\n", node.Proto.String())
+	}
 
 	// User-provided docs
 	if opts.NodeDocs != nil {
@@ -288,7 +292,11 @@ func writeNodeSection(b *strings.Builder, name string, node *Node, g *Graph, opt
 		b.WriteString("| Name | Type | Description |\n")
 		b.WriteString("|------|------|-------------|\n")
 		for _, out := range node.Outputs {
-			fmt.Fprintf(b, "| %s | %s | %s |\n", out.Name, out.Type, out.Description)
+			desc := out.Description
+			if out.FromInput != "" {
+				desc = strings.TrimSpace(desc + " (echoes input `" + out.FromInput + "`)")
+			}
+			fmt.Fprintf(b, "| %s | %s | %s |\n", out.Name, out.Type, desc)
 			for _, ef := range out.ElementFields {
 				path := ""
 				if ef.Path != "" && ef.Path != ef.Name {
@@ -409,18 +417,22 @@ func writeCleanupTable(b *strings.Builder, g *Graph) {
 	b.WriteString("\n")
 }
 
+// docDefaultWidth is how much of a list or object default a docs table cell
+// shows before it gives the first element and a count instead.
+const docDefaultWidth = 160
+
 // formatDocDefault renders an InputDefault as a compact display string for docs.
 func formatDocDefault(d *InputDefault) string {
 	if d == nil {
 		return ""
 	}
 	if d.Value != nil {
-		return fmt.Sprintf("%v", d.Value)
+		return FormatDefaultValue(d.Value, docDefaultWidth)
 	}
 	if len(d.Pool) > 0 {
 		var items []string
 		for _, v := range d.Pool {
-			items = append(items, fmt.Sprintf("%v", v))
+			items = append(items, FormatDefaultValue(v, docDefaultWidth))
 		}
 		if len(items) > 3 {
 			items = append(items[:3], "...")
@@ -585,4 +597,59 @@ func collectRequiredNodes(nodeName string, g *Graph) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+// FormatDefaultValue renders a default value for people and assistants to read:
+// a scalar as it is, and a list or an object as JSON, so a string stays a
+// string ("1" rather than 1) as it will on the wire. With max above zero, a
+// list whose JSON is longer than max shows its first element and a count, and
+// an object is cut short.
+func FormatDefaultValue(v any, max int) string {
+	switch v.(type) {
+	case []any, map[string]any, map[any]any:
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+	data, err := json.Marshal(jsonSafe(v))
+	if err != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	out := string(data)
+	if max <= 0 || len(out) <= max {
+		return out
+	}
+	if list, ok := v.([]any); ok && len(list) > 0 {
+		first, err := json.Marshal(jsonSafe(list[0]))
+		if err == nil && len(first) <= max {
+			return fmt.Sprintf("[%s, … %d items]", first, len(list))
+		}
+		return fmt.Sprintf("[… %d items]", len(list))
+	}
+	return out[:max] + "…"
+}
+
+// jsonSafe turns the map[any]any a YAML decoder can produce into
+// map[string]any, at any depth, so it can be marshaled as JSON.
+func jsonSafe(v any) any {
+	switch t := v.(type) {
+	case map[any]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			out[fmt.Sprint(k)] = jsonSafe(val)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			out[k] = jsonSafe(val)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, val := range t {
+			out[i] = jsonSafe(val)
+		}
+		return out
+	}
+	return v
 }

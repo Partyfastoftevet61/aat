@@ -108,6 +108,7 @@ var promptCmd = &cobra.Command{
 			EnvName:           envName,
 			GraphPath:         resolved.GraphPath,
 			TemplatesPath:     resolved.TemplatesPath,
+			ProtoPaths:        resolved.ProtoPaths,
 			DomainPath:        resolved.DomainPath,
 			OutputDir:         outputDir,
 			SavePlan:          savePlan,
@@ -152,6 +153,7 @@ type promptArgs struct {
 	EnvName           string // environment name for multi-env files
 	GraphPath         string
 	TemplatesPath     string
+	ProtoPaths        []string // descriptor sets from aat-project.yaml
 	DomainPath        string
 	OutputDir         string
 	SavePlan          string
@@ -382,13 +384,23 @@ func executePlan(ctx context.Context, p *plan.Plan, g *graph.Graph, args *prompt
 	fmt.Printf("aat: loaded %d templates\n", count)
 
 	// Create executor and environment config
-	executor := adapter.NewHTTPExecutor(apiConfig.BaseURL)
+	protoRegistry, err := loadProtoRegistry(g, args.GraphPath, args.ProtoPaths)
+	if err != nil {
+		return err
+	}
+	factory := adapter.NewExecutorFactory(protoRegistry).
+		WithTLS(engine.GRPCTLS(env, filepath.Dir(args.EnvPath)))
+	executor, err := factory.For(apiConfig.BaseURL)
+	if err != nil {
+		return fmt.Errorf("creating executor: %w", err)
+	}
 	envConfig := &adapter.EnvironmentConfig{
 		BaseURL:   apiConfig.BaseURL,
 		Headers:   apiConfig.Headers,
 		Protected: apiConfig.Protected,
 	}
-	router := engine.NewExecutorRouter(executor, envConfig)
+	router := engine.NewExecutorRouter(executor, envConfig).WithFactory(factory)
+	defer func() { _ = router.Close() }()
 
 	// Apply env-file overrides, then auto-discovered .aat-overrides.yaml entries
 	// (later registrations win), inheriting the effective auth via the provider.

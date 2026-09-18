@@ -129,11 +129,7 @@ func writeSteps(b *strings.Builder, p *Plan, g *graph.Graph) {
 
 		// Expect failure
 		if step.ExpectFailure != nil {
-			statuses := make([]string, len(step.ExpectFailure.Status))
-			for j, s := range step.ExpectFailure.Status {
-				statuses[j] = fmt.Sprintf("%d", s)
-			}
-			fmt.Fprintf(b, "     Expect failure: status %s\n", strings.Join(statuses, ", "))
+			fmt.Fprintf(b, "     Expect failure: status %s\n", strings.Join(step.ExpectFailure.Status.Strings(), ", "))
 		}
 
 		// Blank line between steps (but not after the last one)

@@ -108,7 +108,7 @@ AAT detects the format automatically: if the YAML has an `environments` key, it'
 The `shared` section provides defaults that merge into every environment. Per-environment fields override shared fields:
 
 - **`headers`**, **`values`**, **`vars`** — map merge (environment keys win, shared keys preserved)
-- **`auth`**, **`llm`** — full replace (if the environment specifies auth, it replaces shared auth entirely)
+- **`auth`**, **`llm`**, **`grpc`** — full replace (if the environment specifies auth, it replaces shared auth entirely)
 - **`settings`** — field-level merge (environment can override individual settings fields)
 
 ### Inheritance with `extends`
@@ -391,6 +391,62 @@ auth:
 
 An empty or missing `type` field is treated as `none`.
 
+## gRPC Targets
+
+A node routed to a gRPC service takes a `grpc://` or `grpcs://` target instead
+of an HTTP base URL. `grpc://` is plaintext; `grpcs://` is TLS against the
+system roots. A target is a host and port, with no path — the template names
+the method. `grpcs://` without a port means 443; `grpc://` must name one.
+
+```yaml
+apiBaseUrl: grpc://localhost:9090
+```
+
+A project that spans both protocols routes per node, with the same `overrides:`
+block a multi-host HTTP project uses:
+
+```yaml
+apiBaseUrl: http://localhost:8765/us/v1
+
+overrides:
+  - match: "payment*"
+    baseUrl: grpc://localhost:8767
+    auth:
+      type: apikey
+      headerName: x-api-key
+      credentials:
+        key: {source: env, var: PAYMENTS_KEY}
+```
+
+Authentication needs nothing new: every auth type resolves to a name and a
+value, and on a gRPC call that travels as metadata rather than as a header.
+An `oauth2` token endpoint stays HTTP, which is how most gRPC services issue
+tokens.
+
+A `grpc:` block configures TLS beyond the system roots. Paths resolve beside
+the environment file.
+
+```yaml
+grpc:
+  tls:
+    caFile: certs/ca.pem           # a private certificate authority
+    certFile: certs/client.pem     # mTLS, when the service asks for a client certificate
+    keyFile: certs/client-key.pem
+    serverName: api.internal       # when the address is not the certificate's name
+    insecureSkipVerify: false      # a sandbox with a self-signed certificate, nothing else
+```
+
+One `grpc:` block serves every `grpcs://` route of the environment, overrides
+included.
+
+An override's or overlay's `expectFailure.status` names a gRPC status the way
+a plan step's does: `status: [INVALID_ARGUMENT]` matches that code alone, where
+`[400]` matches every gRPC status that maps to it (see
+[Negative Testing](plans.md#negative-testing-expectfailure)).
+
+`pathRewrite` has no meaning for a gRPC route — a path there is a method name —
+and naming both is an error rather than a silent no-op. See [gRPC](grpc.md).
+
 ## Custom Headers
 
 Static headers added to every request. These form the base layer — every other header source can override them:
@@ -413,7 +469,7 @@ Header merge order. A later value replaces an earlier one with the same name, wh
 
 A plan or template header therefore cannot replace the credential, and an overlay header replaces everything before it.
 
-A node matched by an override that routes it (one that sets `baseUrl`, `auth`, `headers`, or `pathRewrite`, or a `--override` flag) takes the same environment, plan, and template headers. If the override declares its own `auth`, the inherited credential is dropped. Then come the override's `headers`, the credential of its effective auth, and the overlay headers, in that order. A template header cannot replace the override's headers either.
+A node matched by an override that routes it (one that sets `baseUrl`, `auth`, `headers`, or `pathRewrite`) takes the same environment, plan, and template headers. If the override declares its own `auth`, the inherited credential is dropped. Then come the override's `headers`, the credential of its effective auth, and the overlay headers, in that order. A template header cannot replace the override's headers either. A `--override NODE=URL` flag adds nothing to this: the node keeps whichever of these routes it already had, at a new URL (see [Runtime Overrides](#runtime-overrides)).
 
 ## Values
 
@@ -602,7 +658,7 @@ Two mechanisms let you adjust routing without editing the environment file:
 aat run plan checkout.yaml --override createPayment=https://sandbox.payments.example.com
 ```
 
-This flag is repeatable for multiple overrides. Each one behaves exactly like an entry `- match: NODE` with `baseUrl: URL`: the request keeps the environment headers, the plan headers, overlay headers, and the credential of the effective auth.
+This flag is repeatable for multiple overrides. Each one changes where the node's requests go and nothing else. The request keeps the headers, the credential, and the `pathRewrite` the node would otherwise have had: those of the `overrides:` entry that matches it, in `env.yaml` or an overlay file, and the environment's when none does. A `payment*` node that `env.yaml` sends to a payments host with an API key keeps the API key at the flag's URL, and the environment's bearer token doesn't follow it there. A `grpc://` URL drops an inherited `pathRewrite`, which has no meaning for a gRPC route. A glob (`--override 'payment*=URL'`) inherits from an entry written with the same pattern, and from the environment otherwise.
 
 **`--overlay` flag** — merges a sparse overlay file on top of the base environment:
 
@@ -655,7 +711,7 @@ overrides:
 Semantics:
 
 - `values:` merge into the resolved inputs map at step execution time, overwriting plan-supplied values. Precedence: overlay values > plan step values > graph defaults. They are used exactly as written: `{{...}}` expressions such as `{{today}}` are not evaluated, and the input's graph type is not applied. The archive records each one as the input's resolution, with the source `override_value`, so the decision trail shows the value that was sent.
-- `expectFailure:` applies to matched steps only when the plan step doesn't already declare its own `expectFailure`. Status codes must all be `>= 400`.
+- `expectFailure:` applies to matched steps only when the plan step doesn't already declare its own `expectFailure`. Every status must be a failure: a code `>= 400`, or a [gRPC status name](grpc.md#statuses) other than `OK`.
 - Match precedence: exact matches win over glob matches on key conflicts, and later registrations overwrite earlier ones (`env.yaml` → `.aat-overrides.yaml` → `--overlay` → `--override`). For `expectFailure`, the last exact match wins; if no exact match, the last glob match wins.
 
 Both fields can be combined with `baseUrl`, `auth`, `headers`, and `pathRewrite` in a single override entry.
@@ -859,6 +915,14 @@ settings:                                 # optional — runtime defaults
   oasValidation: auto                     #   auto, strict, or off (default: auto)
   minRequestInterval: 250ms               #   least time between request starts (default: none)
 
+grpc:                                     # optional — TLS for grpcs:// routes (see gRPC Targets)
+  tls:
+    caFile: certs/ca.pem                  #   a private certificate authority
+    certFile: certs/client.pem            #   client certificate, for mTLS
+    keyFile: certs/client-key.pem
+    serverName: api.internal              #   when the address is not the certificate's name
+    insecureSkipVerify: false             #   self-signed sandboxes only
+
 notes: "Staging environment for QA"       # optional — freeform notes
 
 overrides:                                # optional — per-node routing overrides
@@ -880,7 +944,7 @@ overrides:                                # optional — per-node routing overri
       amount: 0                           #     each key is an input name on the matched node
       currency: "XYZ"
     expectFailure:                        #   optional — flip matched steps to negative-test mode
-      status: [400, 422]                  #     all entries must be >= 400
+      status: [400, 422]                  #     codes >= 400, or gRPC names such as NOT_FOUND
       description: "invalid payment"
 
 values:                                   # optional — key-value pairs for {{env.KEY}}

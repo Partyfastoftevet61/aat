@@ -23,7 +23,7 @@ AAT keeps three things apart. **API knowledge** is a [graph](graphs.md) of opera
 - **[Quickstart from an OpenAPI spec](quickstart.md)** — go from the Petstore spec to a passing, self-cleaning test in five minutes
 - **[MCP Server](mcp-server.md)** — give Claude Code or another MCP client your graph and the tools to write and run tests
 - **[Share your API with integrators](integration-kit.md)** — package part of the project your tests use, so your integrators' AI tools learn the API from it
-- **[Real APIs](examples/real-apis.md)** — Duffel, Stripe, and Shippo, each a project you can run against your own test account
+- **[Real APIs](examples/real-apis.md)** — Duffel, Stripe, and Shippo, each a project you can run against your own test account, and Qdrant over gRPC, against a local container
 
 Install with Homebrew, a release archive, Docker, or `go install`, or build from source: see [Install](install.md).
 
@@ -48,7 +48,8 @@ Progressive reading order — each builds on the previous.
 |----------|-------------------|
 | [Project Setup](project-setup.md) | The `aat-project.yaml` manifest, directory layout, and auto-discovery rules |
 | [API Graphs](graphs.md) | Nodes, inputs, outputs, ordering, and the operation model your tests build on |
-| [Templates](templates.md) | HTTP request/response YAML files, placeholders, extraction, and conditional blocks |
+| [Templates](templates.md) | Request and response YAML files, placeholders, extraction, and conditional blocks |
+| [gRPC](grpc.md) | Descriptor sets, gRPC nodes and templates, `grpc://` routing, status names, and how protobuf messages read as JSON |
 | [Lua Transforms](lua-transforms.md) | Post-processing responses with inline Lua scripts |
 | [Environments](environments.md) | Base URLs, auth, secrets, headers, multiple environments, and per-host overrides |
 | [Plans and Recipes](plans.md) | Recipes (compact format), full plans, steps, values, assertions, and layers |
@@ -88,12 +89,12 @@ Progressive reading order — each builds on the previous.
 | [Examples](examples/index.md) | The example projects and what each one shows |
 | [Shop example](examples/shop.md) | The offline quick start: slots and addons, a layer matrix with dedup, `us`/`eu` environments, negative tests, checkpoints, and MCP configuration |
 | [Petstore Walkthrough](petstore-walkthrough.md) | A line-by-line tour of a working example: graph, templates, workflows, recipes, and how they compose |
-| [Real APIs](examples/real-apis.md) | Three projects against Duffel, Stripe, and Shippo: what each covers, proves, and leaves out |
+| [Real APIs](examples/real-apis.md) | Four projects against Duffel, Stripe, Shippo, and Qdrant: what each covers, proves, and leaves out |
 | [Airline case study](examples/airline-case-study.md) | The private 74-node airline booking API AAT was built for, and the features that scale relies on |
 
 ## Status
 
-Pre-1.0, with one maintainer. AAT was built and proven against a private 74-node airline booking API with 63 workflows, 53 recipes, and 6 environments, and against the [three public projects](examples/real-apis.md). The graph and plan formats may still change before 1.0; breaking changes are listed in the [changelog](changelog.md).
+Pre-1.0, with one maintainer. AAT was built and proven against a private 74-node airline booking API with 63 workflows, 53 recipes, and 6 environments, and against the [four public projects](examples/real-apis.md). The graph and plan formats may still change before 1.0; breaking changes are listed in the [changelog](changelog.md).
 
 ## Concepts Glossary
 
@@ -163,7 +164,7 @@ A choice point in a base workflow where one of several named workflow fragments 
 One operation in a plan, mapped to a graph node, with resolved input values and optional assertions. [-> plans.md](plans.md)
 
 ### Template
-A YAML file defining the HTTP request shape and response extraction rules for a single graph node. [-> templates.md](templates.md)
+A YAML file defining the HTTP request shape, or the [gRPC](grpc.md) call, and response extraction rules for a single graph node. [-> templates.md](templates.md)
 
 ### Value Pool
 A curated list of valid values for a domain type in the domain file, used by `aat prompt`, `aat docs generate`, and the MCP tools; runs never read it (a `pool` default on an input is what varies run data). [-> domain.md](domain.md)

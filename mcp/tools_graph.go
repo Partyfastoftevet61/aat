@@ -20,7 +20,7 @@ func (s *Server) registerGraphTools() {
 
 	s.mcp.AddTool(
 		mcp.NewTool("describe_node",
-			mcp.WithDescription("Show full details for a graph node: inputs, outputs, edges, adapter, and OAS reference. For OAS spec details use get_oas_operation with the same node name. For HTTP template details use inspect_template with the adapter name shown here."),
+			mcp.WithDescription("Show full details for a graph node: inputs, outputs, edges, adapter, and its OAS operation or gRPC method. For OAS spec details use get_oas_operation with the same node name. For the request it sends use inspect_template with the adapter name shown here."),
 			mcp.WithString("node",
 				mcp.Description("Node name"),
 				mcp.Required(),
@@ -63,7 +63,7 @@ func (s *Server) registerIntegrationGraphTools() {
 
 	s.mcp.AddTool(
 		mcp.NewTool("describe_operation",
-			mcp.WithDescription("Show full details for an API operation: inputs, outputs, dependencies, and OAS reference. For OAS spec details use get_oas_operation. For HTTP request template use inspect_request_template."),
+			mcp.WithDescription("Show full details for an API operation: inputs, outputs, dependencies, and its OAS operation or gRPC method. For OAS spec details use get_oas_operation. For the request template use inspect_request_template."),
 			mcp.WithString("node",
 				mcp.Description("Operation name"),
 				mcp.Required(),
@@ -154,7 +154,7 @@ func (s *Server) registerTestGraphTools() {
 
 	s.mcp.AddTool(
 		mcp.NewTool("describe_node",
-			mcp.WithDescription("Show full details for a graph node: inputs, outputs, edges, adapter, and OAS reference. For OAS spec details use get_oas_operation with the same node name. For HTTP template details use inspect_template with the adapter name shown here."),
+			mcp.WithDescription("Show full details for a graph node: inputs, outputs, edges, adapter, and its OAS operation or gRPC method. For OAS spec details use get_oas_operation with the same node name. For the request it sends use inspect_template with the adapter name shown here."),
 			mcp.WithString("node",
 				mcp.Description("Node name"),
 				mcp.Required(),
@@ -254,7 +254,7 @@ func (s *Server) formatNextSteps(node *graph.Node, nodeName string) string {
 		if s.persona == PersonaIntegration {
 			templateTool = "inspect_request_template"
 		}
-		hints = append(hints, fmt.Sprintf("- `%s` with **%s** — see the HTTP request template", templateTool, node.Adapter))
+		hints = append(hints, fmt.Sprintf("- `%s` with **%s** — see the request template", templateTool, node.Adapter))
 	}
 
 	if node.OAS != nil {
@@ -561,6 +561,9 @@ func (s *Server) handleGetResponseShape(_ context.Context, req mcp.CallToolReque
 				path = "`" + p + "`"
 			}
 		}
+		if out.FromInput != "" {
+			path = "echoes input `" + out.FromInput + "`"
+		}
 		consumedBy := ""
 		if c, ok := consumers[out.Name]; ok {
 			consumedBy = strings.Join(c, ", ")
@@ -654,6 +657,9 @@ func (s *Server) handleExplainField(_ context.Context, req mcp.CallToolRequest) 
 				fmt.Fprintf(&b, "**Type:** %s\n", out.Type)
 				if out.Description != "" {
 					fmt.Fprintf(&b, "**Description:** %s\n", out.Description)
+				}
+				if out.FromInput != "" {
+					fmt.Fprintf(&b, "**Echoes input:** %s (the value the step sent, not read from the response)\n", out.FromInput)
 				}
 				if len(out.ElementFields) > 0 {
 					b.WriteString("\n**Element Fields:**\n")

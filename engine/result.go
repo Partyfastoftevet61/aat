@@ -182,10 +182,10 @@ type DisplayOutput struct {
 
 // ExpectFailureResult captures the outcome of a negative assertion step.
 type ExpectFailureResult struct {
-	ExpectedStatuses []int  // status codes that were expected
-	ActualStatus     int    // the actual response status
-	Passed           bool   // true if ActualStatus is in ExpectedStatuses
-	Description      string // from plan's expectFailure.description
+	ExpectedStatuses plan.ExpectedStatuses // statuses that were expected, as the plan wrote them
+	ActualStatus     int                   // the actual response status
+	Passed           bool                  // true if ActualStatus is in ExpectedStatuses
+	Description      string                // from plan's expectFailure.description
 }
 
 // SelectionDecision records how a particular array selection was resolved.

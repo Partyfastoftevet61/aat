@@ -100,9 +100,10 @@ func convertStepResult(s StepResult, baseURL string) archive.StepRecord {
 	}
 	if s.ExpectFailure != nil {
 		rec.ExpectFailure = &archive.ExpectFailureRecord{
-			Expected: s.ExpectFailure.ExpectedStatuses,
-			Actual:   s.ExpectFailure.ActualStatus,
-			Passed:   s.ExpectFailure.Passed,
+			Expected:   s.ExpectFailure.ExpectedStatuses,
+			Actual:     s.ExpectFailure.ActualStatus,
+			ActualName: grpcStatusName(s.Response),
+			Passed:     s.ExpectFailure.Passed,
 		}
 	}
 	if len(s.DisplayOutputs) > 0 {
@@ -171,20 +172,32 @@ func convertRequest(req *adapter.Request, actualBaseURL, defaultBaseURL, origina
 	actualURL := joinArchivedURL(effectiveBase, req.Path)
 
 	rec := &archive.RequestRecord{
-		Method:  req.Method,
-		URL:     actualURL,
-		Headers: archive.RedactHeaders(req.Headers),
-		Body:    toRawMessage(req.Body),
+		Method:   req.Method,
+		URL:      actualURL,
+		Headers:  archive.RedactHeaders(req.Headers),
+		Body:     toRawMessage(req.Body),
+		Protocol: req.Protocol,
+	}
+	if req.IsGRPC() {
+		// A gRPC request has no verb, and its path is the method. Naming the
+		// protocol in the method column keeps a mixed run's steps readable.
+		rec.Method = "GRPC"
 	}
 
-	// Compute what the URL would have been without the override/rewrite
-	origPath := req.Path
-	if originalPath != "" {
-		origPath = originalPath
-	}
-	originalURL := joinArchivedURL(defaultBaseURL, origPath)
-	if originalURL != actualURL {
-		rec.OriginalURL = originalURL
+	// Compute what the URL would have been without the override/rewrite. A
+	// gRPC step routed away from an HTTP default has no such URL: joining its
+	// method onto the default base would name something that could not have
+	// been called, and is not even a gRPC target. Better to show no original
+	// than an invented one.
+	if !req.IsGRPC() || adapter.IsGRPCTarget(defaultBaseURL) {
+		origPath := req.Path
+		if originalPath != "" {
+			origPath = originalPath
+		}
+		originalURL := joinArchivedURL(defaultBaseURL, origPath)
+		if originalURL != actualURL {
+			rec.OriginalURL = originalURL
+		}
 	}
 
 	return rec
@@ -200,11 +213,20 @@ func joinArchivedURL(base, path string) string {
 }
 
 func convertResponse(resp *adapter.Response) *archive.ResponseRecord {
-	return &archive.ResponseRecord{
+	rec := &archive.ResponseRecord{
 		Status:  resp.StatusCode,
 		Headers: archive.RedactHeaders(flattenHeaders(resp.Headers)),
 		Body:    toRawMessage(resp.Body),
 	}
+	if len(resp.Trailers) > 0 {
+		rec.Trailers = archive.RedactHeaders(flattenHeaders(resp.Trailers))
+	}
+	if resp.GRPC != nil {
+		rec.GRPCCode = resp.GRPC.Name
+		rec.GRPCMessage = resp.GRPC.Message
+		rec.GRPCDetails = resp.GRPC.Details
+	}
+	return rec
 }
 
 // redactPlan returns p with its auth credentials' literal values and its

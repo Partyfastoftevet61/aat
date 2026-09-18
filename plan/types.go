@@ -101,11 +101,11 @@ type Step struct {
 // applied, and ExpectStatus declared as the expected failure. Mutations give
 // authors a compact way to codify depth/error testing alongside the happy path.
 type Mutation struct {
-	Name         string         `yaml:"name" json:"name"`
-	Description  string         `yaml:"description,omitempty" json:"description,omitempty"`
-	Set          map[string]any `yaml:"set,omitempty" json:"set,omitempty"`
-	RawBody      string         `yaml:"rawBody,omitempty" json:"rawBody,omitempty"`
-	ExpectStatus []int          `yaml:"expectStatus" json:"expectStatus"`
+	Name         string           `yaml:"name" json:"name"`
+	Description  string           `yaml:"description,omitempty" json:"description,omitempty"`
+	Set          map[string]any   `yaml:"set,omitempty" json:"set,omitempty"`
+	RawBody      string           `yaml:"rawBody,omitempty" json:"rawBody,omitempty"`
+	ExpectStatus ExpectedStatuses `yaml:"expectStatus" json:"expectStatus"`
 }
 
 // StepID returns the effective step identifier.
@@ -226,8 +226,8 @@ type MechanicalAssertion struct {
 
 // ExpectFailure indicates that a step is expected to fail with specific status codes.
 type ExpectFailure struct {
-	Status      []int  `yaml:"status" json:"status"`
-	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Status      ExpectedStatuses `yaml:"status" json:"status"`
+	Description string           `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
 // VerificationStep is an additional step run after the main flow for validation.

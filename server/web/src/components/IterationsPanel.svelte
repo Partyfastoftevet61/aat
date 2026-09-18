@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { IterationSummary, IterationDetail } from '../lib/types';
   import { fetchStepIteration } from '../lib/api';
-  import { httpStatusCategory } from '../lib/format';
+  import { httpStatusCategory, statusLabel } from '../lib/format';
   import JsonViewer from './JsonViewer.svelte';
   import HeadersTable from './HeadersTable.svelte';
   import OASValidationPanel from './OASValidationPanel.svelte';
@@ -88,7 +88,7 @@
         <td class="dt-mono">{it.index}</td>
         <td>
           {#if it.status}
-            <span class="step-status step-status-{httpStatusCategory(it.status)}">{it.status}</span>
+            <span class="step-status step-status-{httpStatusCategory(it.status)}">{statusLabel(it.status, it.grpcCode)}</span>
           {/if}
         </td>
         <td class="dt-mono">
@@ -118,8 +118,14 @@
       {/if}
       {#if detail.request}
         <div class="http-method-url">
-          <span class="http-method">{detail.request.method}</span>
-          <span class="http-url">{detail.request.url}</span>
+          {#if detail.request.protocol === 'grpc'}
+            <span class="http-method">gRPC</span>
+            <span class="http-url">{detail.request.rpc}</span>
+            <span class="grpc-target">{detail.request.target}</span>
+          {:else}
+            <span class="http-method">{detail.request.method}</span>
+            <span class="http-url">{detail.request.url}</span>
+          {/if}
         </div>
         {#if detail.request.headers && detail.request.headers.length > 0}
           <details>
@@ -142,7 +148,7 @@
       {#if detail.response}
         <h4 class="section-heading">
           Response
-          <span class="step-status step-status-{httpStatusCategory(detail.response.status)}">{detail.response.status}</span>
+          <span class="step-status step-status-{httpStatusCategory(detail.response.status)}">{statusLabel(detail.response.status, detail.response.grpcCode)}</span>
         </h4>
         {#if detail.response.headers && detail.response.headers.length > 0}
           <details>

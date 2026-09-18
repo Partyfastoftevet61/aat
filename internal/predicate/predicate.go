@@ -732,6 +732,14 @@ func evalBinary(n binaryNode, ctx map[string]any) (any, error) {
 	left = coerceNumeric(left)
 	right = coerceNumeric(right)
 
+	// A decimal string and a number order as numbers, since APIs send many
+	// numbers as strings: protobuf's 64-bit integers always, and amounts
+	// often. Equality stays strict, so "4" == 4 is an error rather than a
+	// guess.
+	if ok, handled, err := compareMixed(left, right, n.op); handled {
+		return ok, err
+	}
+
 	// Comparison operators
 	switch l := left.(type) {
 	case float64:
@@ -765,6 +773,53 @@ func evalBinary(n binaryNode, ctx map[string]any) (any, error) {
 	default:
 		return nil, fmt.Errorf("cannot compare type %T", left)
 	}
+}
+
+// compareMixed compares a string with a number. handled is false when the two
+// aren't a string and a number, leaving the comparison to the usual rules.
+func compareMixed(left, right any, op string) (result, handled bool, err error) {
+	str, num, strLeft := "", 0.0, false
+	switch l := left.(type) {
+	case string:
+		r, ok := right.(float64)
+		if !ok {
+			return false, false, nil
+		}
+		str, num, strLeft = l, r, true
+	case float64:
+		r, ok := right.(string)
+		if !ok {
+			return false, false, nil
+		}
+		str, num = r, l
+	default:
+		return false, false, nil
+	}
+
+	if op == "==" || op == "!=" {
+		return false, true, fmt.Errorf("cannot compare string %q with number %v for equality: quote the number, as in %q, or compare it with <, >, <=, or >=", str, num, strconv.FormatFloat(num, 'f', -1, 64))
+	}
+	numStr := strconv.FormatFloat(num, 'f', -1, 64)
+	a, b := str, numStr
+	if !strLeft {
+		a, b = numStr, str
+	}
+	x, y, ok := decimalPair(a, b)
+	if !ok {
+		return false, true, fmt.Errorf("cannot order string %q against number %v: the string is not a decimal number", str, num)
+	}
+	c := x.Cmp(y)
+	switch op {
+	case "<":
+		return c < 0, true, nil
+	case ">":
+		return c > 0, true, nil
+	case "<=":
+		return c <= 0, true, nil
+	case ">=":
+		return c >= 0, true, nil
+	}
+	return false, true, fmt.Errorf("unknown operator %s", op)
 }
 
 func coerceNumeric(v any) any {

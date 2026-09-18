@@ -69,12 +69,12 @@ func TestValidate_StepValueShape(t *testing.T) {
 		{
 			Node:      "addItem",
 			Values:    map[string]StepValue{"quantity": {Default: 2}, "skus": {Default: []any{"SKU-1"}}},
-			Mutations: []Mutation{{Name: "skus-not-a-list", Set: map[string]any{"skus": "SKU-1"}, ExpectStatus: []int{400}}},
+			Mutations: []Mutation{{Name: "skus-not-a-list", Set: map[string]any{"skus": "SKU-1"}, ExpectStatus: HTTPStatuses([]int{400})}},
 		},
 		{
 			ID: "quantity-as-map", Node: "addItem",
 			Values:        map[string]StepValue{"quantity": {Default: map[string]any{"n": 2}}, "skus": {Default: []any{"SKU-1"}}},
-			ExpectFailure: &ExpectFailure{Status: []int{400}},
+			ExpectFailure: &ExpectFailure{Status: HTTPStatuses([]int{400})},
 		},
 	}}}
 	_, err = InstantiateAndValidate(negative, g)

@@ -289,6 +289,13 @@ func mergePartials(base, overlay EnvironmentPartial) EnvironmentPartial {
 	// settings: field-level merge
 	result.Settings = mergeSettings(base.Settings, overlay.Settings)
 
+	// grpc: the child's block replaces the parent's whole, so an environment
+	// that names a different certificate does not inherit half of another's.
+	result.GRPC = base.GRPC
+	if overlay.GRPC != nil {
+		result.GRPC = overlay.GRPC
+	}
+
 	// notes: overlay wins if non-empty
 	result.Notes = base.Notes
 	if overlay.Notes != "" {
@@ -381,6 +388,7 @@ func toEnvironment(name string, p EnvironmentPartial) *Environment {
 	if p.Settings != nil {
 		env.Settings = *p.Settings
 	}
+	env.GRPC = p.GRPC
 	return env
 }
 

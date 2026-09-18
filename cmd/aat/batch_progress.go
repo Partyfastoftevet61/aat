@@ -15,11 +15,12 @@ import (
 // It prints the same step lines as CLIProgressObserver, indented under a header
 // and footer line for each plan.
 type BatchStreamObserver struct {
-	out       io.Writer
-	planName  string
-	term      TerminalInfo
-	planIndex int // 0-based index into the batch
-	planTotal int // total plans in the batch
+	out         io.Writer
+	planName    string
+	term        TerminalInfo
+	planIndex   int // 0-based index into the batch
+	planTotal   int // total plans in the batch
+	statusWidth int // see CLIProgressObserver.statusWidth
 }
 
 // NewBatchStreamObserver creates a BatchStreamObserver for a single plan in a sequential batch.
@@ -41,7 +42,7 @@ func (o *BatchStreamObserver) OnRunStart(total int) {
 func (o *BatchStreamObserver) OnStepStart(index, total int, step plan.Step) {}
 
 func (o *BatchStreamObserver) OnStepComplete(index, total int, result engine.StepResult) {
-	writeStepResult(o.out, "    ", index, total, result, o.term)
+	writeStepResult(o.out, "    ", index, total, result, o.term, o.statusWidth)
 }
 
 func (o *BatchStreamObserver) OnCleanupStart(total int) {
@@ -49,7 +50,7 @@ func (o *BatchStreamObserver) OnCleanupStart(total int) {
 }
 
 func (o *BatchStreamObserver) OnCleanupStepComplete(index, total int, result engine.StepResult) {
-	writeCleanupResult(o.out, "      ", result, o.term)
+	writeCleanupResult(o.out, "      ", result, o.term, o.statusWidth)
 }
 
 // OnCleanupSkipped implements engine.CleanupSkipObserver.
@@ -402,3 +403,5 @@ func (r *ProgressRenderer) formatPlanLine(snap *PlanProgressState, denomWidth in
 
 	return fmt.Sprintf("  %s  [%s] %s  %s%s", nameStr, bar, countStr, displayStep, retrySuffix)
 }
+
+func (o *BatchStreamObserver) setStatusWidth(width int) { o.statusWidth = width }

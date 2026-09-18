@@ -1,0 +1,15 @@
+adapter: createCart
+protocol: http
+
+request:
+  method: POST
+  path: /carts
+  headers:
+    Content-Type: application/json
+  body: |
+    { {{?customerEmail}}"customerEmail": "{{customerEmail}}"{{/customerEmail}} }
+
+response:
+  extract:
+    cartId: cartId
+    status: status

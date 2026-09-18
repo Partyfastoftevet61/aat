@@ -86,9 +86,9 @@ func TestMutations_EachSiblingProducesOwnResult(t *testing.T) {
 						"age":      {Default: 30},
 					},
 					Mutations: []plan.Mutation{
-						{Name: "empty-lastName", Set: map[string]any{"lastName": ""}, ExpectStatus: []int{400}},
-						{Name: "negative-age", Set: map[string]any{"age": -1}, ExpectStatus: []int{400}},
-						{Name: "malformed-body", RawBody: `{"oops":`, ExpectStatus: []int{400}},
+						{Name: "empty-lastName", Set: map[string]any{"lastName": ""}, ExpectStatus: plan.HTTPStatuses([]int{400})},
+						{Name: "negative-age", Set: map[string]any{"age": -1}, ExpectStatus: plan.HTTPStatuses([]int{400})},
+						{Name: "malformed-body", RawBody: `{"oops":`, ExpectStatus: plan.HTTPStatuses([]int{400})},
 					},
 				},
 			},
@@ -256,8 +256,8 @@ func TestMutations_Isolated_PrereqRunsOncePerMutation(t *testing.T) {
 						"productId": {Default: "P1"},
 					},
 					Mutations: []plan.Mutation{
-						{Name: "empty-productId", Set: map[string]any{"productId": ""}, ExpectStatus: []int{400}},
-						{Name: "another", Set: map[string]any{"productId": ""}, ExpectStatus: []int{400}},
+						{Name: "empty-productId", Set: map[string]any{"productId": ""}, ExpectStatus: plan.HTTPStatuses([]int{400})},
+						{Name: "another", Set: map[string]any{"productId": ""}, ExpectStatus: plan.HTTPStatuses([]int{400})},
 					},
 				},
 			},
@@ -326,7 +326,7 @@ func TestMutations_UnexpectedSuccessFailsRun(t *testing.T) {
 						"lastName": {Default: "Smith"},
 					},
 					Mutations: []plan.Mutation{
-						{Name: "empty-lastName", Set: map[string]any{"lastName": ""}, ExpectStatus: []int{400}},
+						{Name: "empty-lastName", Set: map[string]any{"lastName": ""}, ExpectStatus: plan.HTTPStatuses([]int{400})},
 					},
 				},
 			},

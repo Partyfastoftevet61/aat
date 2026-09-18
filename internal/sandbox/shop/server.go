@@ -175,9 +175,15 @@ func requireRegion(next http.Handler) http.Handler {
 
 // Banner prints the URLs, demo credentials, and chaos rules for humans
 // starting the sandbox from a terminal.
-func (s *Server) Banner(w io.Writer, apiAddr, payAddr string) {
+// extraListeners are lines for listeners this package does not serve itself,
+// printed with the others. The caller writes them, so shop stays ignorant of
+// what else the binary happens to run.
+func (s *Server) Banner(w io.Writer, apiAddr, payAddr string, extraListeners ...string) {
 	_, _ = fmt.Fprintf(w, "aat-sandbox: shop API      http://%s/{us,eu}/v1\n", apiAddr)
 	_, _ = fmt.Fprintf(w, "aat-sandbox: payments API  http://%s/{us,eu}/v1   (header %s: %s)\n", payAddr, APIKeyHeader, DemoAPIKey)
+	for _, line := range extraListeners {
+		_, _ = fmt.Fprintln(w, line)
+	}
 	if s.opts.NoAuth {
 		_, _ = fmt.Fprintf(w, "  auth:     disabled (--no-auth)\n")
 	} else {

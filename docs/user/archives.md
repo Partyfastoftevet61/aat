@@ -73,6 +73,28 @@ Each step record holds:
 | `cleanupFor` | On a cleanup step: the step whose resource it releases, or the cleanup step before it in a [cleanup chain](graphs.md#cleanup). Cleanup step IDs are unique within a run (`deleteCart`, then `deleteCart_2`) |
 | `whenError` | On a cleanup step: why its pairing's `when` condition couldn't be evaluated, such as an output the step didn't return. The cleanup ran anyway |
 
+### A gRPC step
+
+A step that made a gRPC call records what the server sent as well as the HTTP
+status AAT maps it to, so a reader comparing numbers and a reader looking for a
+code both find what they need:
+
+```json
+{
+  "request":  {"method": "GRPC", "protocol": "grpc",
+               "url": "grpc://localhost:8767/shop.v1.Payments/Charge"},
+  "response": {"status": 400,
+               "grpcCode": "INVALID_ARGUMENT",
+               "grpcMessage": "CARD_DECLINED: card ending in 0002 was declined by the issuer",
+               "trailers": {"content-type": "application/grpc"},
+               "body": {"code": "INVALID_ARGUMENT", "message": "..."}}
+}
+```
+
+`trailers` is kept apart from `headers` because a gRPC server chooses which to
+send a value in, and both are redacted the same way. An HTTP step carries none
+of these fields. See [gRPC](grpc.md).
+
 ## What Is Redacted, and What Is Not
 
 Archives redact the credentials AAT knows about, not every piece of sensitive data, so an archive, an exported `.aar`/`.aab`, or a CI artifact is not automatically safe to commit or share. Before you attach one to a ticket, check what it holds.

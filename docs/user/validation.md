@@ -87,7 +87,8 @@ A manifest that exists but fails to load is an error for every command that disc
 | Graph structure | YAML parsing, node uniqueness, input/output types, required fields, cleanup pairings and their `when` conditions, and the shape of literal defaults and slot `inject` values. Warns about a required input whose default takes `from:` an optional output |
 | OAS validation | OpenAPI spec loading, operationId alignment, inputs and required parameters, outputs present in the 2xx response schema at their template extract paths (nested objects and array items included) |
 | Adapter outputs | Template extraction paths match graph output declarations |
-| Template inputs | Required template placeholders vs optional graph inputs |
+| Node protocols | A node's `proto:` agrees with its template's `protocol:` and `rpc:` |
+| Template inputs | Required template placeholders vs optional graph inputs, in a path, headers, a body, form fields, or a gRPC message and metadata |
 | Workflow compatibility | Addon `AUTOWIRE` inputs are produced in every base the addon attaches to; a slot counts when all of its options produce the input, because slots are filled before addons are spliced. A plain `AUTOWIRE` in a base or slot option must be produced by the base or its slots; the warning names any addon that produces the output and suggests `AUTOWIRE?` for an optional input. `AUTOWIRE?` never warns as unfed, but it does warn on a required input with no graph default |
 | Workflows | Workflow directory files, subdirectories included, parse correctly and validate against graph. Warns about a required input that takes `from:` an optional output |
 | Layers | Layer files parse, names are unique, every input key matches a node input in the graph, and values fit the input's shape |
@@ -155,6 +156,54 @@ When `--templates` is provided, AAT validates that template adapter files are co
 - Template extraction rules produce outputs declared in the graph
 - Required template placeholders correspond to graph inputs
 - Placeholder types are compatible with input types
+
+### Protobuf Validation
+
+A project whose `aat-project.yaml` or graph names a descriptor set gets a
+`Protobuf validation` section, which checks its gRPC nodes offline with no
+server running:
+
+```
+Protobuf validation: OK (2 gRPC nodes)
+```
+
+A project that names a descriptor set before writing its first gRPC node
+passes, with a note saying so; a node that names a method with no descriptor
+set anywhere fails, naming both places one can be declared.
+
+It reports an unknown or misspelled service or method, a streaming method
+(AAT runs unary methods only), an input the template places where the request
+message has no such field (checked at its place in `message:`, however deep), an
+extract path that reads nothing, and — the one that would otherwise fail
+silently — an extract path written with
+a field's `.proto` name when the response encodes it under its JSON name:
+
+```
+node "paymentCharge": output "orderId" reads "order_id", but the response encodes that field as "orderId": read "orderId"
+```
+
+See [gRPC](grpc.md).
+
+### Node Protocols
+
+A project with any gRPC node gets a `Node protocols` section, which checks
+each node's `proto:` against its template's `protocol:` and `rpc:`:
+
+```
+Node protocols:      OK (2 gRPC, 6 HTTP)
+```
+
+Nothing at run time reads a node's `proto:` — a gRPC call is built entirely
+from its template's `protocol:` and `rpc:` — so a mismatch does not change
+what goes over the wire. It means the contract validation checked is not the
+call the run makes, which is worse than a wrong call, because it passes.
+
+A node declaring `proto:` whose template is `protocol: http`, the natural
+mistake of forgetting `protocol: grpc`, is an error, as is a node whose
+`proto:` and template `rpc:` name different methods. A gRPC template whose
+node names no method is a warning: nothing breaks, but the node goes
+unchecked against the descriptors. `aat run` makes the same check before its
+first step, so a mismatched project fails before it creates anything.
 
 ## Plan Validation
 
@@ -292,7 +341,7 @@ Workflows:             OK (4 files, 2 templates)
 | `unknown mutationScope "X"` | `mutationScope` is something other than `"shared"` or `"isolated"` | Use one of the two supported values (or omit for the default `"shared"`) |
 | `mutationScope is set but step has no mutations` | `mutationScope` is declared on a step without a `mutations:` block | Remove `mutationScope`, or add mutations |
 | `cloned step id "X" collides with an existing step` | An isolated-mutation clone id matches a pre-existing step id | Rename either the existing step or the mutation so `<origId>__<mutationName>` is unique |
-| `overrides[N]: expectFailure status M must be >= 400` | Overlay override's `expectFailure` has a success status | Overlay `expectFailure` is for negative tests; use 400+ |
+| `overrides[N]: expectFailure status M must be a failure: a code >= 400, or a gRPC status other than OK` | Overlay override's `expectFailure` has a success status | Overlay `expectFailure` is for negative tests; use 400+, or a gRPC status name other than `OK` |
 | `overrides[N]: expectFailure must have at least one status` | Overlay override has empty `expectFailure.status` | Provide a non-empty list of `>= 400` status codes |
 
 ## Validation in CI/CD

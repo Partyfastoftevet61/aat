@@ -804,6 +804,21 @@ p {
   word-break: break-all;
 }
 
+/* The gRPC service a call went to, shown after its method the way a URL's
+   host sits beside an HTTP path. */
+.grpc-target {
+  color: var(--color-text-subtle, var(--color-text-muted));
+  font-size: 0.8rem;
+  opacity: 0.8;
+  word-break: break-all;
+}
+
+/* The message a gRPC server sent with a failing status. */
+.grpc-message {
+  color: var(--color-text-muted);
+  word-break: break-word;
+}
+
 .override-badge {
   font-size: 0.65rem;
   font-weight: 700;

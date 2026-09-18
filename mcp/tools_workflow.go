@@ -41,7 +41,7 @@ func (s *Server) registerWorkflowTools() {
 
 	s.mcp.AddTool(
 		mcp.NewTool("get_workflow_detail",
-			mcp.WithDescription("Show an enriched step-by-step recipe for a workflow: HTTP methods, data flow between steps, value sources, selections, outputs, unfed inputs, and cleanup. Optionally compose with addons."),
+			mcp.WithDescription("Show an enriched step-by-step recipe for a workflow: each call's HTTP method and path or gRPC method, data flow between steps, value sources, selections, outputs, unfed inputs, and cleanup. Optionally compose with addons."),
 			mcp.WithString("workflow",
 				mcp.Description("Workflow name (exact or case-insensitive match)"),
 				mcp.Required(),
@@ -68,7 +68,7 @@ func (s *Server) registerIntegrationWorkflowTools() {
 
 	s.mcp.AddTool(
 		mcp.NewTool("get_integration_flow",
-			mcp.WithDescription("Show an enriched step-by-step recipe for an integration flow: HTTP methods, data flow between operations, value sources, selections, outputs, and required inputs. Optionally compose with addons to see the full extended flow."),
+			mcp.WithDescription("Show an enriched step-by-step recipe for an integration flow: each call's HTTP method and path or gRPC method, data flow between operations, value sources, selections, outputs, and required inputs. Optionally compose with addons to see the full extended flow."),
 			mcp.WithString("workflow",
 				mcp.Description("Integration flow name (exact or case-insensitive match)"),
 				mcp.Required(),
@@ -112,7 +112,7 @@ func (s *Server) registerTestWorkflowTools() {
 
 	s.mcp.AddTool(
 		mcp.NewTool("get_workflow_detail",
-			mcp.WithDescription("Show an enriched step-by-step recipe for a workflow: HTTP methods, data flow between steps, value sources, selections, outputs, unfed inputs, and cleanup. Optionally compose with addons."),
+			mcp.WithDescription("Show an enriched step-by-step recipe for a workflow: each call's HTTP method and path or gRPC method, data flow between steps, value sources, selections, outputs, unfed inputs, and cleanup. Optionally compose with addons."),
 			mcp.WithString("workflow",
 				mcp.Description("Workflow name (exact or case-insensitive match)"),
 				mcp.Required(),
@@ -397,10 +397,14 @@ func formatWorkflowDetail(wf graph.Workflow, p *plan.Plan, g *graph.Graph, reg *
 			fmt.Fprintf(&b, "**Description:** %s\n", node.Description)
 		}
 
-		// HTTP info from template
+		// What the step sends, as its template describes it.
 		if node != nil {
 			if tmpl, ok := reg.GetTemplate(node.Adapter); ok {
-				fmt.Fprintf(&b, "**HTTP:** %s %s\n", tmpl.Request.Method, tmpl.Request.Path)
+				if tmpl.Protocol == adapter.ProtocolGRPC {
+					fmt.Fprintf(&b, "**gRPC:** %s\n", tmpl.Request.RPC)
+				} else {
+					fmt.Fprintf(&b, "**HTTP:** %s %s\n", tmpl.Request.Method, tmpl.Request.Path)
+				}
 			}
 		}
 

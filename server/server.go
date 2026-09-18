@@ -41,6 +41,9 @@ type Server struct {
 	httpServer   *http.Server
 	mu           sync.Mutex
 	addr         string
+	// silent holds the connections that have been accepted and have sent
+	// nothing yet; see trackConn.
+	silent map[net.Conn]struct{}
 }
 
 // NewServer creates a Server with the given options.
@@ -171,6 +174,7 @@ func (s *Server) ListenAndServe() error {
 	srv := &http.Server{
 		Handler:           s.router,
 		ReadHeaderTimeout: 10 * time.Second,
+		ConnState:         s.trackConn,
 	}
 
 	s.mu.Lock()
@@ -188,13 +192,47 @@ func (s *Server) ListenAndServe() error {
 	return srv.Serve(ln)
 }
 
-// Shutdown gracefully shuts down the server.
+// trackConn keeps the set of connections that have sent nothing yet. A browser
+// opens spare connections and leaves them silent, and net/http's Shutdown will
+// not close one until it is five seconds old, in case a request is on its way.
+// Shutdown closes them itself instead of waiting.
+func (s *Server) trackConn(conn net.Conn, state http.ConnState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if state == http.StateNew {
+		if s.silent == nil {
+			s.silent = make(map[net.Conn]struct{})
+		}
+		s.silent[conn] = struct{}{}
+		return
+	}
+	delete(s.silent, conn)
+}
+
+// silentConns counts the connections that have sent nothing yet.
+func (s *Server) silentConns() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.silent)
+}
+
+// Shutdown gracefully shuts down the server: requests in flight finish, within
+// ctx. A connection that never sent a request has nothing to finish and is
+// closed at once; left to net/http it would hold the shutdown for up to five
+// seconds, which is all the time `aat web` allows.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	srv := s.httpServer
+	silent := make([]net.Conn, 0, len(s.silent))
+	for conn := range s.silent {
+		silent = append(silent, conn)
+	}
 	s.mu.Unlock()
 	if srv == nil {
 		return nil
+	}
+	for _, conn := range silent {
+		_ = conn.Close()
 	}
 	return srv.Shutdown(ctx)
 }

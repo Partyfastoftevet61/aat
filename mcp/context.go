@@ -11,7 +11,9 @@ import (
 	"github.com/gburgyan/aat/engine"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/graph/oas"
+	"github.com/gburgyan/aat/graph/proto"
 	"github.com/gburgyan/aat/intent"
+	"github.com/gburgyan/aat/internal/protoreg"
 	"github.com/gburgyan/aat/plan"
 	v3high "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
@@ -23,6 +25,9 @@ type ServerContext struct {
 	Registry *adapter.Registry
 	KB       *domain.KnowledgeBase       // may be nil
 	OASSpecs map[string]*v3high.Document // spec path -> loaded doc; may be empty
+	// ProtoRegistry holds the descriptors the graph's gRPC nodes are built
+	// and read with; nil when the graph has none.
+	ProtoRegistry *protoreg.Registry
 
 	// Docs (60b, may be nil)
 	DocsDir  string
@@ -77,6 +82,16 @@ func BuildServerContextWithVars(manifest *ProjectManifest, vars map[string]strin
 		return nil, fmt.Errorf("loading templates: %w", err)
 	}
 	ctx.Registry = registry
+
+	// Load protobuf descriptors when the project or graph names any (gRPC
+	// nodes only).
+	if protoPaths := collectProtoPaths(g, ctx.GraphDir, manifest); len(protoPaths) > 0 {
+		reg, err := protoreg.LoadDescriptorSets(protoPaths...)
+		if err != nil {
+			return nil, fmt.Errorf("loading descriptors: %w", err)
+		}
+		ctx.ProtoRegistry = reg
+	}
 
 	// Load domain knowledge (optional)
 	if manifest.DomainPath != "" {
@@ -161,45 +176,30 @@ func (ctx *ServerContext) loadOASSpecs() error {
 }
 
 // collectSpecPaths returns the unique set of OAS spec file paths referenced
-// by the manifest and graph. Graph references resolve against graphDir;
-// manifest paths arrive resolved against the manifest's directory.
+// by the manifest and graph.
 func collectSpecPaths(g *graph.Graph, graphDir string, manifest *config.ProjectManifest) []string {
-	seen := make(map[string]bool)
-	var paths []string
-
-	addPath := func(raw, baseDir string) {
-		if raw == "" {
-			return
-		}
-		resolved := raw
-		if !filepath.IsAbs(raw) {
-			resolved = filepath.Join(baseDir, raw)
-		}
-		if !seen[resolved] {
-			seen[resolved] = true
-			paths = append(paths, resolved)
+	var graphRefs []string
+	if g != nil {
+		graphRefs = append(graphRefs, g.OAS)
+		for _, node := range g.Nodes {
+			if node != nil && node.OAS != nil {
+				graphRefs = append(graphRefs, node.OAS.Spec)
+			}
 		}
 	}
-
-	// Manifest-declared OAS paths, already resolved against the manifest's
-	// directory by LoadManifest. Joining them onto graphDir again doubled a
-	// relative prefix (examples/shop/examples/shop/openapi.yaml) when the
-	// manifest was loaded through a relative path.
+	var projectPaths []string
 	if manifest != nil {
-		for _, p := range manifest.OASPaths {
-			addPath(p, "")
-		}
+		projectPaths = manifest.OASPaths
 	}
+	return graph.SpecPathList(graph.ResolveSpecPaths(graphRefs, graphDir, projectPaths))
+}
 
-	// Graph-level default
-	addPath(g.OAS, graphDir)
-
-	// Node-level overrides
-	for _, node := range g.Nodes {
-		if node != nil && node.OAS != nil {
-			addPath(node.OAS.Spec, graphDir)
-		}
+// collectProtoPaths returns the unique set of descriptor set paths referenced
+// by the manifest and graph. See collectSpecPaths for the OpenAPI equivalent.
+func collectProtoPaths(g *graph.Graph, graphDir string, manifest *config.ProjectManifest) []string {
+	var projectPaths []string
+	if manifest != nil {
+		projectPaths = manifest.ProtoPaths
 	}
-
-	return paths
+	return graph.SpecPathList(graph.ResolveSpecPaths(proto.NewValidator().CollectSpecPaths(g), graphDir, projectPaths))
 }

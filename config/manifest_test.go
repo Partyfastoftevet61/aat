@@ -275,6 +275,43 @@ templates: templates/
 	assert.Empty(t, m.OASPaths)
 }
 
+func TestLoadManifest_ProtoPaths(t *testing.T) {
+	dir := t.TempDir()
+	content := `
+graph: graph.yaml
+templates: templates/
+proto:
+  - payments.protoset
+  - /absolute/legacy.protoset
+`
+	path := filepath.Join(dir, "aat-project.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+
+	m, err := LoadManifest(path)
+	require.NoError(t, err)
+
+	require.Len(t, m.ProtoPaths, 2)
+	assert.Equal(t, filepath.Join(dir, "payments.protoset"), m.ProtoPaths[0])
+	assert.Equal(t, "/absolute/legacy.protoset", m.ProtoPaths[1])
+}
+
+func TestLoadManifest_ProtoPathsScalar(t *testing.T) {
+	dir := t.TempDir()
+	content := `
+graph: graph.yaml
+templates: templates/
+proto: payments.protoset
+`
+	path := filepath.Join(dir, "aat-project.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+
+	m, err := LoadManifest(path)
+	require.NoError(t, err)
+
+	require.Len(t, m.ProtoPaths, 1)
+	assert.Equal(t, filepath.Join(dir, "payments.protoset"), m.ProtoPaths[0])
+}
+
 func TestResolvePath(t *testing.T) {
 	tests := []struct {
 		name     string

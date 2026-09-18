@@ -266,7 +266,7 @@ func TestRoundTrip_WithExpectFailure(t *testing.T) {
 				Node:   "authCheck",
 				Inputs: map[string]any{"token": "invalid"},
 				ExpectFailure: &ExpectFailureRecord{
-					Expected: []int{401, 403},
+					Expected: plan.HTTPStatuses([]int{401, 403}),
 					Actual:   401,
 					Passed:   true,
 				},
@@ -283,7 +283,7 @@ func TestRoundTrip_WithExpectFailure(t *testing.T) {
 
 	require.Len(t, loaded.Steps, 1)
 	require.NotNil(t, loaded.Steps[0].ExpectFailure)
-	assert.Equal(t, []int{401, 403}, loaded.Steps[0].ExpectFailure.Expected)
+	assert.Equal(t, []int{401, 403}, plan.ExpectedStatuses(loaded.Steps[0].ExpectFailure.Expected).Codes())
 	assert.Equal(t, 401, loaded.Steps[0].ExpectFailure.Actual)
 	assert.True(t, loaded.Steps[0].ExpectFailure.Passed)
 }

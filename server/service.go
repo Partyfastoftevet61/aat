@@ -8,10 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/archive"
+	"github.com/gburgyan/aat/plan"
 	"gopkg.in/yaml.v3"
 )
 
@@ -922,9 +925,10 @@ func toRunDetail(a *archive.Archive) *RunDetail {
 }
 
 func toStepSummary(s archive.StepRecord, isCleanup bool, runStart time.Time) StepSummary {
-	status := 0
+	status, grpcCode := 0, ""
 	if s.Response != nil {
 		status = s.Response.Status
+		grpcCode = s.Response.GRPCCode
 	}
 
 	assertionCount, assertionPassed := countAssertions(s)
@@ -941,6 +945,7 @@ func toStepSummary(s archive.StepRecord, isCleanup bool, runStart time.Time) Ste
 		StepID:               archive.StepID(s),
 		Node:                 s.Node,
 		Status:               status,
+		GRPCCode:             grpcCode,
 		DurationMs:           s.DurationMs,
 		DurationDisplay:      formatDuration(s.DurationMs),
 		Passed:               archive.StepPassed(s),
@@ -1036,6 +1041,7 @@ func toIterationSummaries(its []archive.IterationRecord) []IterationSummary {
 		}
 		if it.Response != nil {
 			sum.Status = it.Response.Status
+			sum.GRPCCode = it.Response.GRPCCode
 		}
 		for name, v := range it.Outputs {
 			switch v.(type) {
@@ -1126,14 +1132,38 @@ func toRequestDetail(r *archive.RequestRecord) *RequestDetail {
 	if r == nil {
 		return nil
 	}
-	return &RequestDetail{
+	d := &RequestDetail{
 		Method:      r.Method,
 		URL:         r.URL,
 		OriginalURL: r.OriginalURL,
 		Headers:     toHeaderEntries(r.Headers),
 		Body:        r.Body,
 		FormFields:  toFormFields(r.Headers, r.Body),
+		Protocol:    r.Protocol,
 	}
+	if r.Protocol == adapter.ProtocolGRPC {
+		d.Target, d.RPC = splitGRPCURL(r.URL)
+	}
+	return d
+}
+
+// splitGRPCURL separates an archived gRPC URL, "grpc://host:port/pkg.Svc/Method",
+// into the service it went to and the method it called. A URL that does not
+// look like one is returned whole as the target, so a reader shows something
+// rather than nothing.
+func splitGRPCURL(url string) (target, rpc string) {
+	for _, scheme := range []string{"grpc://", "grpcs://"} {
+		rest, found := strings.CutPrefix(url, scheme)
+		if !found {
+			continue
+		}
+		host, method, hasMethod := strings.Cut(rest, "/")
+		if !hasMethod || method == "" {
+			return url, ""
+		}
+		return scheme + host, method
+	}
+	return url, ""
 }
 
 func toResponseDetail(r *archive.ResponseRecord) *ResponseDetail {
@@ -1141,10 +1171,14 @@ func toResponseDetail(r *archive.ResponseRecord) *ResponseDetail {
 		return nil
 	}
 	return &ResponseDetail{
-		Status:     r.Status,
-		Headers:    toHeaderEntries(r.Headers),
-		Body:       r.Body,
-		FormFields: toFormFields(r.Headers, r.Body),
+		Status:      r.Status,
+		Headers:     toHeaderEntries(r.Headers),
+		Body:        r.Body,
+		FormFields:  toFormFields(r.Headers, r.Body),
+		Trailers:    toHeaderEntries(r.Trailers),
+		GRPCCode:    r.GRPCCode,
+		GRPCMessage: r.GRPCMessage,
+		GRPCDetails: r.GRPCDetails,
 	}
 }
 
@@ -1254,9 +1288,13 @@ func toExpectFailureDetail(r *archive.ExpectFailureRecord) *ExpectFailureDetail 
 	if r == nil {
 		return nil
 	}
+	actual := strconv.Itoa(r.Actual)
+	if r.ActualName != "" {
+		actual = r.ActualName
+	}
 	return &ExpectFailureDetail{
-		Expected: r.Expected,
-		Actual:   r.Actual,
+		Expected: plan.ExpectedStatuses(r.Expected).Strings(),
+		Actual:   actual,
 		Passed:   r.Passed,
 	}
 }

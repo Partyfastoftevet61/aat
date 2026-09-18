@@ -43,6 +43,7 @@ var validateGraphCmd = &cobra.Command{
 			GraphPath:     resolved.GraphPath,
 			OASPath:       oasPath,
 			TemplatesPath: resolved.TemplatesPath,
+			ProtoPaths:    resolved.ProtoPaths,
 			Strict:        strict,
 		}
 
@@ -68,6 +69,7 @@ type graphValidateArgs struct {
 	GraphPath     string
 	OASPath       string
 	TemplatesPath string
+	ProtoPaths    []string
 	Strict        bool
 }
 
@@ -159,6 +161,26 @@ func graphValidateCommand(args *graphValidateArgs) int {
 		}
 	}
 
+	// 4b. Protobuf validation, for the project's gRPC nodes.
+	if section := protoSpecCheck(g, args.GraphPath, args.ProtoPaths, registry, args.Strict); section != nil {
+		if section.Status == "OK" {
+			fmt.Println("Protobuf validation: OK " + section.Detail)
+			for _, n := range section.Notes {
+				fmt.Println("  note: " + n)
+			}
+		} else {
+			fmt.Println()
+			for _, e := range section.Errors {
+				fmt.Println(e)
+			}
+			// WARN is for issues that fail only under --strict, which
+			// specCheck has already folded into the status.
+			if section.Status == "FAILED" {
+				hasError = true
+			}
+		}
+	}
+
 	// 5. Adapter output validation (when --templates is provided)
 	if registry != nil {
 		if err := engine.ValidateAdapterOutputs(g, registry); err != nil {
@@ -167,6 +189,21 @@ func graphValidateCommand(args *graphValidateArgs) int {
 			hasError = true
 		} else {
 			fmt.Printf("Adapter outputs: OK (%d templates)\n", templateCount)
+		}
+	}
+
+	// 5b. Node protocols — a node's proto: against its template's protocol:
+	if section := nodeProtocolSection(g, registry, args.Strict); section != nil {
+		if section.Status == "OK" {
+			fmt.Println("Node protocols: OK " + section.Detail)
+		} else {
+			fmt.Println()
+			for _, e := range section.Errors {
+				fmt.Println(e)
+			}
+			if section.Status == "FAILED" {
+				hasError = true
+			}
 		}
 	}
 

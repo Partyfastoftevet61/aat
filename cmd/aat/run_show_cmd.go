@@ -396,6 +396,7 @@ type shownStepRow struct {
 	StepID       string   `json:"step_id"`
 	Node         string   `json:"node"`
 	Status       int      `json:"status,omitempty"`
+	GRPCCode     string   `json:"grpc_code,omitempty"` // the gRPC status name, shown in place of the status
 	Passed       bool     `json:"passed"`
 	DurationMs   int64    `json:"duration_ms"`
 	Requests     int      `json:"requests,omitempty"` // requests a repeated step sent
@@ -557,6 +558,7 @@ func newShownStepRow(index int, id string, s archive.StepRecord) shownStepRow {
 	}
 	if s.Response != nil {
 		row.Status = s.Response.Status
+		row.GRPCCode = s.Response.GRPCCode
 	}
 	for name := range s.Outputs {
 		row.Outputs = append(row.Outputs, name)
@@ -579,21 +581,22 @@ func shownStepPassed(s archive.StepRecord) bool {
 // OUTPUTS for main steps, FOR for the step a cleanup step releases.
 func writeShownSteps(b *strings.Builder, rows []shownStepRow, last string) {
 	idWidth, nodeWidth := len("STEP"), len("NODE")
+	// A gRPC step's status is a name, not three digits, so the column is
+	// measured rather than assumed.
+	statusWidth := len("STATUS")
 	for _, row := range rows {
 		idWidth = max(idWidth, len(row.StepID))
 		nodeWidth = max(nodeWidth, len(row.Node))
+		statusWidth = max(statusWidth, len(shownRowStatus(row)))
 	}
 	line := func(index, id, node, status, result, took, rest string) {
-		row := fmt.Sprintf("%3s  %-*s  %-*s  %6s  %-6s  %7s  %s", index, idWidth, id, nodeWidth, node, status, result, took, rest)
+		row := fmt.Sprintf("%3s  %-*s  %-*s  %*s  %-6s  %7s  %s", index, idWidth, id, nodeWidth, node, statusWidth, status, result, took, rest)
 		b.WriteString(strings.TrimRight(row, " "))
 		b.WriteByte('\n')
 	}
 	line("#", "STEP", "NODE", "STATUS", "RESULT", "TIME", last)
 	for _, row := range rows {
-		status := "-"
-		if row.Status != 0 {
-			status = strconv.Itoa(row.Status)
-		}
+		status := shownRowStatus(row)
 		result := "pass"
 		if !row.Passed {
 			result = "FAIL"
@@ -637,6 +640,8 @@ type shownStep struct {
 	Method            string                    `json:"method,omitempty"`
 	URL               string                    `json:"url,omitempty"`
 	Status            int                       `json:"status,omitempty"`
+	GRPCCode          string                    `json:"grpc_code,omitempty"`    // the gRPC status name, where the step made one
+	GRPCMessage       string                    `json:"grpc_message,omitempty"` // what the server said with it
 	Passed            bool                      `json:"passed"`
 	DurationMs        int64                     `json:"duration_ms"`
 	Retries           int                       `json:"retries,omitempty"`
@@ -696,7 +701,15 @@ func showStep(out io.Writer, step *archive.StepRecord, id string, cleanup bool, 
 		fmt.Fprintf(&b, "%s %s\n", view.Method, view.URL)
 	}
 	status := "no response"
-	if view.Status != 0 {
+	switch {
+	case view.GRPCCode != "":
+		// A gRPC step reports the code the server sent, not the HTTP status
+		// AAT maps it to for its own comparisons.
+		status = "status " + view.GRPCCode
+		if view.GRPCMessage != "" {
+			status += " (" + view.GRPCMessage + ")"
+		}
+	case view.Status != 0:
 		status = fmt.Sprintf("status %d", view.Status)
 	}
 	result := "pass"
@@ -785,6 +798,8 @@ func buildShownStep(step *archive.StepRecord, id string, cleanup bool) shownStep
 	}
 	if step.Response != nil {
 		view.Status = step.Response.Status
+		view.GRPCCode = step.Response.GRPCCode
+		view.GRPCMessage = step.Response.GRPCMessage
 		view.ResponseBodyBytes = compactSize(step.Response.Body)
 	}
 	if step.Validation != nil {
@@ -1152,4 +1167,17 @@ func showShort(s string, limit int) string {
 		count++
 	}
 	return s
+}
+
+// shownRowStatus is the status a steps table shows: a gRPC step's code name,
+// an HTTP step's number, and "-" for a step that got no response.
+func shownRowStatus(row shownStepRow) string {
+	switch {
+	case row.GRPCCode != "":
+		return row.GRPCCode
+	case row.Status != 0:
+		return strconv.Itoa(row.Status)
+	default:
+		return "-"
+	}
 }

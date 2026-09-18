@@ -23,6 +23,8 @@ type HTTPExecutor struct {
 	BaseURL string
 }
 
+var _ Executor = (*HTTPExecutor)(nil)
+
 // NewHTTPExecutor creates an executor whose client times out after
 // DefaultRequestTimeout.
 func NewHTTPExecutor(baseURL string) *HTTPExecutor {
@@ -139,4 +141,20 @@ func JoinURL(base, relPath string) (string, error) {
 	}
 
 	return baseURL.String(), nil
+}
+
+// Protocol names the wire protocol: HTTP.
+func (e *HTTPExecutor) Protocol() string { return ProtocolHTTP }
+
+// Target returns the base URL requests are sent to.
+func (e *HTTPExecutor) Target() string { return e.BaseURL }
+
+// Close releases the client's idle connections. Requests in flight are left
+// alone; the context that started them cancels them. It is idempotent, and
+// never fails, so the error is always nil.
+func (e *HTTPExecutor) Close() error {
+	if e.Client != nil {
+		e.Client.CloseIdleConnections()
+	}
+	return nil
 }

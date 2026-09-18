@@ -9,10 +9,11 @@ import (
 )
 
 func TestValidRetryRule(t *testing.T) {
-	for _, ok := range []string{"transient", "Server", "response_error", "503", " 429 ", "100", "599"} {
+	for _, ok := range []string{"transient", "Server", "response_error", "503", " 429 ", "100", "599", "UNAVAILABLE", "resource-exhausted", "Canceled"} {
 		assert.True(t, ValidRetryRule(ok), ok)
 	}
-	for _, bad := range []string{"", "bogus", "5xx", "99", "600", "-1", "1.5"} {
+	// OK names a gRPC status, but never a failure to retry.
+	for _, bad := range []string{"", "bogus", "5xx", "99", "600", "-1", "1.5", "OK", "NOT_A_STATUS"} {
 		assert.False(t, ValidRetryRule(bad), bad)
 	}
 }

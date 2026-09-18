@@ -399,7 +399,7 @@ func TestShouldRetry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := shouldRetry(tt.cat, 0, tt.config, tt.attempt)
+			got := shouldRetry(tt.cat, 0, "", tt.config, tt.attempt)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -432,15 +432,29 @@ func TestStatusCodeDetail(t *testing.T) {
 
 func TestShouldRetry_StatusCodeRules(t *testing.T) {
 	cfg := &plan.RetryConfig{Max: 3, On: []string{"503", "response_error"}}
-	assert.True(t, shouldRetry(CategoryTransient, 503, cfg, 1), "numeric rule matches the status")
-	assert.False(t, shouldRetry(CategoryTransient, 429, cfg, 1), "same category, different status")
-	assert.True(t, shouldRetry(CategoryResponseError, 200, cfg, 1), "category rule still matches")
+	assert.True(t, shouldRetry(CategoryTransient, 503, "", cfg, 1), "numeric rule matches the status")
+	assert.False(t, shouldRetry(CategoryTransient, 429, "", cfg, 1), "same category, different status")
+	assert.True(t, shouldRetry(CategoryResponseError, 200, "", cfg, 1), "category rule still matches")
 
 	failCfg := &plan.RetryConfig{Max: 3, FailOn: []string{"500"}}
-	assert.False(t, shouldRetry(CategoryServer, 500, failCfg, 1), "failOn status short-circuits")
-	assert.True(t, shouldRetry(CategoryServer, 501, failCfg, 1), "other server statuses use defaults")
+	assert.False(t, shouldRetry(CategoryServer, 500, "", failCfg, 1), "failOn status short-circuits")
+	assert.True(t, shouldRetry(CategoryServer, 501, "", failCfg, 1), "other server statuses use defaults")
 
-	assert.True(t, shouldRetry(CategoryTransient, 0, &plan.RetryConfig{Max: 3, On: []string{"TRANSIENT"}}, 1), "category names are case-insensitive")
+	assert.True(t, shouldRetry(CategoryTransient, 0, "", &plan.RetryConfig{Max: 3, On: []string{"TRANSIENT"}}, 1), "category names are case-insensitive")
+}
+
+func TestShouldRetry_GRPCStatusNameRules(t *testing.T) {
+	on := &plan.RetryConfig{Max: 3, On: []string{"RESOURCE_EXHAUSTED"}}
+	assert.True(t, shouldRetry(CategoryTransient, 429, "RESOURCE_EXHAUSTED", on, 1), "a name matches its own status")
+	assert.True(t, shouldRetry(CategoryTransient, 429, "RESOURCE_EXHAUSTED", &plan.RetryConfig{Max: 3, On: []string{"resource-exhausted"}}, 1), "names are written loosely, as elsewhere")
+	assert.False(t, shouldRetry(CategoryTransient, 503, "UNAVAILABLE", on, 1), "a name matches no other status")
+	assert.False(t, shouldRetry(CategoryTransient, 429, "", on, 1), "a name never matches an HTTP step, even at the status it maps to")
+
+	// INVALID_ARGUMENT, FAILED_PRECONDITION, and OUT_OF_RANGE all map to 400,
+	// so a name is the only way to tell them apart; a number matches all three.
+	failOn := &plan.RetryConfig{Max: 3, On: []string{"400"}, FailOn: []string{"FAILED_PRECONDITION"}}
+	assert.True(t, shouldRetry(CategoryClient, 400, "INVALID_ARGUMENT", failOn, 1))
+	assert.False(t, shouldRetry(CategoryClient, 400, "FAILED_PRECONDITION", failOn, 1))
 }
 
 func TestErrorCategoryNamesMatchPlanRetryCategories(t *testing.T) {

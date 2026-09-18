@@ -448,3 +448,76 @@ func TestGenerateDocs_ConfigurableInput(t *testing.T) {
 	// Required input shows "yes".
 	assert.Contains(t, result, "| query | string | yes |")
 }
+
+func TestGenerateDocs_GRPCNodeNamesItsMethod(t *testing.T) {
+	g, err := Parse([]byte(`version: "1.0.0"
+proto: qdrant.protoset
+nodes:
+  createCollection:
+    description: Create a collection.
+    adapter: createCollection
+    proto: qdrant.Collections/Create
+    inputs:
+      - name: collectionName
+        type: string
+    outputs:
+      - name: collectionName
+        type: string
+        fromInput: collectionName
+`))
+	require.NoError(t, err)
+
+	result := GenerateDocs(g, nil)
+
+	assert.Contains(t, result, "**gRPC:** `qdrant.Collections/Create`")
+	assert.Contains(t, result, "| collectionName | string | (echoes input `collectionName`) |")
+}
+
+func TestFormatDefaultValue(t *testing.T) {
+	points := []any{
+		map[string]any{"id": map[string]any{"num": "1"}, "payload": map[string]any{"city": map[string]any{"stringValue": "Berlin"}}},
+		map[string]any{"id": map[string]any{"num": "2"}, "payload": map[string]any{"city": map[string]any{"stringValue": "London"}}},
+	}
+	tests := []struct {
+		name  string
+		value any
+		max   int
+		want  string
+	}{
+		{"a scalar as it is", 4, 0, "4"},
+		{"a string as it is", "aat-qdrant-{{random 8}}", 0, "aat-qdrant-{{random 8}}"},
+		{"a list of strings as JSON", []any{"", "extra"}, 0, `["","extra"]`},
+		{"an object as JSON, strings quoted", map[string]any{"num": "1"}, 0, `{"num":"1"}`},
+		{"a YAML map with non-string keys", map[any]any{"num": "1"}, 0, `{"num":"1"}`},
+		{"a list of objects in full", points, 0,
+			`[{"id":{"num":"1"},"payload":{"city":{"stringValue":"Berlin"}}},{"id":{"num":"2"},"payload":{"city":{"stringValue":"London"}}}]`},
+		{"a long list as its first element and a count", points, 80,
+			`[{"id":{"num":"1"},"payload":{"city":{"stringValue":"Berlin"}}}, … 2 items]`},
+		{"a long object cut short", map[string]any{"a": "0123456789"}, 10, `{"a":"0123…`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, FormatDefaultValue(tt.value, tt.max))
+		})
+	}
+}
+
+// Generated docs are compared with the committed copy in CI, so the same graph
+// must give the same bytes every time, including where several nodes satisfy
+// one requirement and the map they come from has no order.
+func TestGenerateDocs_IsDeterministic(t *testing.T) {
+	var yaml strings.Builder
+	yaml.WriteString("version: \"1.0.0\"\nnodes:\n  reader:\n    adapter: reader\n    requires: [points]\n")
+	for _, name := range []string{"upsertPoints", "jwtRbacUpsertPoints", "readOnlyUpsertPoints", "anonUpsertPoints", "zUpsertPoints"} {
+		yaml.WriteString("  " + name + ":\n    adapter: " + name + "\n    satisfies: [points]\n")
+	}
+	g, err := Parse([]byte(yaml.String()))
+	require.NoError(t, err)
+	first := GenerateDocs(g, nil)
+	for i := 0; i < 20; i++ {
+		again, err := Parse([]byte(yaml.String()))
+		require.NoError(t, err)
+		require.Equal(t, first, GenerateDocs(again, nil), "run %d differs", i)
+	}
+	assert.Less(t, strings.Index(first, "anonUpsertPoints --> reader"), strings.Index(first, "zUpsertPoints --> reader"))
+}

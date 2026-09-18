@@ -121,7 +121,35 @@ An output declares one piece of data the operation produces. Outputs are extract
 | `description` | string | no | Human-readable description |
 | `optional` | bool | no | If true, `aat validate` does not require the node's template to extract this output. When the output is missing, an optional input that takes it with `from:`, directly or through a named selection, is left out, and a required one fails; `aat validate --strict` warns about a required input that takes an optional output |
 | `display` | string | no | Label for surfacing this output to the user. When set, the extracted value is printed under the step in console output (`  Locator: ABC123`), included as `display_outputs` in `--json` summaries, and stored in the archive |
+| `fromInput` | string | no | One of the node's inputs: the output is that input as the step sent it, rather than something the template extracts (see below) |
 | `elementFields` | list | no | Field definitions for array element structure (see below) |
+
+### Outputs Echoed From Inputs
+
+Some APIs let the client name what it creates, and answer without repeating the name: Qdrant's
+create-collection call replies `{"result": true}`. With nothing in the response to extract, a later
+step — and the node's cleanup, which finds its inputs among outputs — would have no way to read the
+name. `fromInput` makes the input an output:
+
+```yaml
+createCollection:
+  inputs:
+    - name: collectionName
+      type: string
+      default: {value: "aat-qdrant-{{random 8}}"}
+  outputs:
+    - name: created
+      type: boolean
+    - name: collectionName
+      type: string
+      fromInput: collectionName     # the name as sent, generated value included
+  cleanup: deleteCollection         # its collectionName input reads this output
+```
+
+The output is set after a successful response, as extracted outputs are, so a later step reads it
+with `default: {from: createCollection.collectionName}` like any other. The template doesn't extract
+it — `aat validate` reports a template that does — and an input the step left out leaves the output
+unset.
 
 ### Array Outputs and Element Fields
 
@@ -457,6 +485,35 @@ aat validate graph --graph graph.yaml --strict
 The template-aware parts of these checks need the templates: `aat validate` always loads them, and `aat validate graph` loads them from `--templates` or the manifest. Without templates, every input must be a parameter or body property, required fields must be graph inputs, and outputs must be top-level response properties named after the output.
 
 Warnings are informational — intentional divergence from the spec is normal (e.g., omitting optional parameters or extracting only specific response fields).
+
+## Protobuf Integration
+
+A node that calls a gRPC method names it with `proto:` in place of `oas:`, and
+the graph names the descriptor set its methods are declared in:
+
+```yaml
+proto: payments.protoset        # from protoc --descriptor_set_out, or buf build -o
+
+nodes:
+  paymentCharge:
+    adapter: paymentCharge
+    proto: shop.v1.Payments/Charge
+```
+
+The mapping form lets a node name a descriptor set of its own, as `oas.spec`
+does for a node whose operation lives in another document:
+
+```yaml
+    proto:
+      service: legacy.v1.Payments
+      method: Charge
+      descriptor: legacy.protoset
+```
+
+`aat validate` checks every gRPC node against the descriptors offline: that the
+service and method exist, that the method is unary, and that the node's inputs
+and extract paths name fields the request and response messages declare. A node
+carries one contract or the other, never both. See [gRPC](grpc.md).
 
 ## Graph YAML Reference
 

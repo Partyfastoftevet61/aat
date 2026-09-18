@@ -1,0 +1,155 @@
+version: "1.0.0"
+title: Shop payments over gRPC
+description: >-
+  A cart is opened and checked out over HTTP against the shop API
+  (http://localhost:8765/{region}/v1), and the resulting order is charged and
+  refunded over gRPC against the payments service (grpc://localhost:8767),
+  which serves shop.v1.Payments. Both are the aat-sandbox: the same orders,
+  reached two ways. The point of the project is that a step does not care which
+  protocol the step before it used — the order id flows from an HTTP response
+  into a gRPC request with no special handling.
+
+# The contract for the gRPC nodes. A descriptor set is what
+# `protoc --descriptor_set_out` or `buf build -o` writes; aat validate checks
+# every gRPC node against it without a server running.
+proto: payments.protoset
+
+nodes:
+  # --- Shop API, over HTTP ------------------------------------------------
+
+  createCart:
+    description: Open an empty cart (POST /carts).
+    adapter: createCart
+    tags: [cart, http]
+    inputs:
+      - name: customerEmail
+        type: string
+        optional: true
+        description: Attach the cart to a customer; a guest cart omits it
+    outputs:
+      - name: cartId
+        type: string
+      - name: status
+        type: string
+    satisfies: [cartOpen]
+
+  addItem:
+    description: Add a line to the cart (POST /carts/{cartId}/items).
+    adapter: addItem
+    tags: [cart, http]
+    requires: [cartOpen]
+    inputs:
+      - name: cartId
+        type: string
+        default: {from: createCart.cartId}
+      - name: sku
+        type: string
+        default: {value: SKU-1001}
+      - name: quantity
+        type: integer
+        default: {value: 2}
+    outputs:
+      - name: cartId
+        type: string
+      - name: lineCount
+        type: integer
+      - name: subtotal
+        type: integer
+    satisfies: [cartHasItems]
+
+  checkoutCart:
+    description: Turn the cart into an order (POST /carts/{cartId}/checkout).
+    adapter: checkoutCart
+    tags: [cart, http]
+    requires: [cartHasItems]
+    inputs:
+      - name: cartId
+        type: string
+        default: {from: createCart.cartId}
+      - name: shippingTier
+        type: enum[standard, express]
+        default: {value: standard}
+      - name: postalCode
+        type: string
+        default: {value: "78701"}
+    outputs:
+      - name: orderId
+        type: string
+      - name: status
+        type: string
+      - name: currency
+        type: string
+      - name: total
+        type: integer
+        description: The order total in minor units; the charge must match it exactly
+      - name: totalDisplay
+        type: string
+    satisfies: [orderPlaced]
+
+  # --- Payments, over gRPC ------------------------------------------------
+
+  paymentCharge:
+    description: >-
+      Capture payment for the order (shop.v1.Payments/Charge). The amount must
+      equal the order total and the currency must be the order's own; card
+      4000000000000002 is always declined.
+    adapter: paymentCharge
+    tags: [payments, grpc]
+    proto: shop.v1.Payments/Charge
+    requires: [orderPlaced]
+    inputs:
+      - name: orderId
+        type: string
+        default: {from: checkoutCart.orderId}
+      - name: amount
+        type: integer
+        default: {from: checkoutCart.total}
+        description: >-
+          The charge amount, wired from the order total. aat validate checks
+          it where the template's message puts it, and reports a field the
+          request message does not declare.
+      - name: currency
+        type: string
+        default: {from: checkoutCart.currency}
+      - name: method
+        type: enum[card, gift_card, paypal]
+        default: {value: card}
+      - name: cardNumber
+        type: string
+        default: {value: "4242424242424242"}
+    outputs:
+      - name: paymentId
+        type: string
+      - name: paymentStatus
+        type: string
+      - name: orderStatus
+        type: string
+      - name: amountDisplay
+        type: string
+    satisfies: [orderPaid]
+
+  paymentRefund:
+    description: >-
+      Refund the order (shop.v1.Payments/Refund). Omitting the amount refunds
+      whatever is left.
+    adapter: paymentRefund
+    tags: [payments, grpc]
+    proto: shop.v1.Payments/Refund
+    requires: [orderPaid]
+    inputs:
+      - name: orderId
+        type: string
+        default: {from: checkoutCart.orderId}
+    outputs:
+      - name: refundId
+        type: string
+      - name: paymentId
+        type: string
+        description: The payment the money came back from.
+      - name: refundStatus
+        type: string
+      - name: refundedAmount
+        type: string
+        description: >-
+          What this refund returned, in minor units. An int64, so it reads as
+          a string: "20082", not 20082.

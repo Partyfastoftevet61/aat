@@ -1,0 +1,19 @@
+adapter: addItem
+protocol: http
+
+request:
+  method: POST
+  path: /carts/{{cartId}}/items
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "sku": "{{sku}}",
+      "quantity": {{quantity}}
+    }
+
+response:
+  extract:
+    cartId: cartId
+    lineCount: lineCount
+    subtotal: subtotal

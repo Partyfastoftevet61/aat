@@ -28,7 +28,7 @@ func outputRefsPlan(checkout, refund, verify []MechanicalAssertion) *Plan {
 		Steps: []Step{
 			{Node: "getCart"},
 			{ID: "checkout", Node: "checkoutCart", Assertions: &Assertions{Mechanical: checkout}},
-			{ID: "declinedCard", Node: "paymentCharge", ExpectFailure: &ExpectFailure{Status: []int{402}}},
+			{ID: "declinedCard", Node: "paymentCharge", ExpectFailure: &ExpectFailure{Status: HTTPStatuses([]int{402})}},
 			{ID: "refund", Node: "paymentRefund", Assertions: &Assertions{Mechanical: refund}},
 		},
 		Verification: []VerificationStep{{Node: "getOrder", Assertions: &Assertions{Mechanical: verify}}},

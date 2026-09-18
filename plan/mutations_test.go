@@ -39,9 +39,9 @@ func TestExpandMutations_EmitsSiblingPerMutation(t *testing.T) {
 						"age":      {Default: 30},
 					},
 					Mutations: []Mutation{
-						{Name: "empty-lastName", Set: map[string]any{"lastName": ""}, ExpectStatus: []int{400}},
-						{Name: "negative-age", Set: map[string]any{"age": -1}, ExpectStatus: []int{400, 422}, Description: "age must be positive"},
-						{Name: "malformed-body", RawBody: `{"oops":`, ExpectStatus: []int{400}},
+						{Name: "empty-lastName", Set: map[string]any{"lastName": ""}, ExpectStatus: HTTPStatuses([]int{400})},
+						{Name: "negative-age", Set: map[string]any{"age": -1}, ExpectStatus: HTTPStatuses([]int{400, 422}), Description: "age must be positive"},
+						{Name: "malformed-body", RawBody: `{"oops":`, ExpectStatus: HTTPStatuses([]int{400})},
 					},
 				},
 			},
@@ -63,7 +63,7 @@ func TestExpandMutations_EmitsSiblingPerMutation(t *testing.T) {
 	assert.Equal(t, "", empty.Values["lastName"].Default, "Set overwrites parent's value")
 	assert.Equal(t, 30, empty.Values["age"].Default, "non-overridden values inherited from parent")
 	require.NotNil(t, empty.ExpectFailure)
-	assert.Equal(t, []int{400}, empty.ExpectFailure.Status)
+	assert.Equal(t, []int{400}, empty.ExpectFailure.Status.Codes())
 	assert.Empty(t, empty.RawBody)
 	assert.Empty(t, empty.Mutations)
 
@@ -71,7 +71,7 @@ func TestExpandMutations_EmitsSiblingPerMutation(t *testing.T) {
 	assert.Equal(t, "happy--negative-age", neg.ID)
 	assert.Equal(t, -1, neg.Values["age"].Default)
 	require.NotNil(t, neg.ExpectFailure)
-	assert.Equal(t, []int{400, 422}, neg.ExpectFailure.Status)
+	assert.Equal(t, []int{400, 422}, neg.ExpectFailure.Status.Codes())
 	assert.Equal(t, "age must be positive", neg.ExpectFailure.Description)
 
 	raw := inst.Execution.Steps[3]
@@ -92,7 +92,7 @@ func TestExpandMutations_NoParentID_FallsBackToNodeName(t *testing.T) {
 						"age":      {Default: 30},
 					},
 					Mutations: []Mutation{
-						{Name: "bad", Set: map[string]any{"age": -1}, ExpectStatus: []int{400}},
+						{Name: "bad", Set: map[string]any{"age": -1}, ExpectStatus: HTTPStatuses([]int{400})},
 					},
 				},
 			},
@@ -124,7 +124,7 @@ func TestExpandMutations_InheritsDependsOn(t *testing.T) {
 						"age":      {Default: 30},
 					},
 					Mutations: []Mutation{
-						{Name: "bad", Set: map[string]any{"age": -1}, ExpectStatus: []int{400}},
+						{Name: "bad", Set: map[string]any{"age": -1}, ExpectStatus: HTTPStatuses([]int{400})},
 					},
 				},
 			},
@@ -209,8 +209,8 @@ func TestExpandMutations_Isolated_ClonesClosure(t *testing.T) {
 	addItem := &p.Execution.Steps[2]
 	addItem.MutationScope = "isolated"
 	addItem.Mutations = []Mutation{
-		{Name: "empty-productId", Set: map[string]any{"productId": ""}, ExpectStatus: []int{400}},
-		{Name: "unknown-productId", Set: map[string]any{"productId": "NO-SUCH"}, ExpectStatus: []int{404}},
+		{Name: "empty-productId", Set: map[string]any{"productId": ""}, ExpectStatus: HTTPStatuses([]int{400})},
+		{Name: "unknown-productId", Set: map[string]any{"productId": "NO-SUCH"}, ExpectStatus: HTTPStatuses([]int{404})},
 	}
 
 	inst, err := InstantiateAndValidate(p, g)
@@ -252,7 +252,7 @@ func TestExpandMutations_Isolated_RewritesValueRefs(t *testing.T) {
 	addItem := &p.Execution.Steps[2]
 	addItem.MutationScope = "isolated"
 	addItem.Mutations = []Mutation{
-		{Name: "bad", Set: map[string]any{"productId": ""}, ExpectStatus: []int{400}},
+		{Name: "bad", Set: map[string]any{"productId": ""}, ExpectStatus: HTTPStatuses([]int{400})},
 	}
 
 	inst, err := InstantiateAndValidate(p, g)
@@ -309,7 +309,7 @@ func TestExpandMutations_Isolated_DiamondDependency(t *testing.T) {
 						"productId": {Default: "P1"},
 					},
 					Mutations: []Mutation{
-						{Name: "bad", Set: map[string]any{"productId": ""}, ExpectStatus: []int{400}},
+						{Name: "bad", Set: map[string]any{"productId": ""}, ExpectStatus: HTTPStatuses([]int{400})},
 					},
 				},
 			},
@@ -350,7 +350,7 @@ func TestExpandMutations_Isolated_EmptyClosure(t *testing.T) {
 						"age":      {Default: 30},
 					},
 					Mutations: []Mutation{
-						{Name: "bad", Set: map[string]any{"age": -1}, ExpectStatus: []int{400}},
+						{Name: "bad", Set: map[string]any{"age": -1}, ExpectStatus: HTTPStatuses([]int{400})},
 					},
 				},
 			},
@@ -369,7 +369,7 @@ func TestExpandMutations_Shared_DefaultUnchanged(t *testing.T) {
 	p := isolatedBasePlan()
 	addItem := &p.Execution.Steps[2]
 	addItem.Mutations = []Mutation{
-		{Name: "bad", Set: map[string]any{"productId": ""}, ExpectStatus: []int{400}},
+		{Name: "bad", Set: map[string]any{"productId": ""}, ExpectStatus: HTTPStatuses([]int{400})},
 	}
 	inst, err := InstantiateAndValidate(p, g)
 	require.NoError(t, err)
@@ -387,7 +387,7 @@ func TestValidateMutationsSyntax_UnknownScope(t *testing.T) {
 				Node:          "createBooking",
 				MutationScope: "bogus",
 				Mutations: []Mutation{
-					{Name: "m", Set: map[string]any{"a": 1}, ExpectStatus: []int{400}},
+					{Name: "m", Set: map[string]any{"a": 1}, ExpectStatus: HTTPStatuses([]int{400})},
 				},
 			}},
 		},
@@ -424,7 +424,7 @@ func TestInstantiateAndValidate_IsolatedCollision(t *testing.T) {
 	addItem := &p.Execution.Steps[2]
 	addItem.MutationScope = "isolated"
 	addItem.Mutations = []Mutation{
-		{Name: "bad", Set: map[string]any{"productId": ""}, ExpectStatus: []int{400}},
+		{Name: "bad", Set: map[string]any{"productId": ""}, ExpectStatus: HTTPStatuses([]int{400})},
 	}
 	_, err := InstantiateAndValidate(p, g)
 	require.Error(t, err)
@@ -457,10 +457,10 @@ func TestStripMutations_ClearsFieldsLeavesRest(t *testing.T) {
 					Values: map[string]StepValue{
 						"productId": {Default: "P1"},
 					},
-					ExpectFailure: &ExpectFailure{Status: []int{404}},
+					ExpectFailure: &ExpectFailure{Status: HTTPStatuses([]int{404})},
 					RawBody:       `{"raw":"body"}`,
 					Mutations: []Mutation{
-						{Name: "bad", Set: map[string]any{"productId": ""}, ExpectStatus: []int{400}},
+						{Name: "bad", Set: map[string]any{"productId": ""}, ExpectStatus: HTTPStatuses([]int{400})},
 					},
 				},
 			},
@@ -480,7 +480,7 @@ func TestStripMutations_ClearsFieldsLeavesRest(t *testing.T) {
 	assert.Equal(t, "P1", parent.Values["productId"].Default)
 	assert.Equal(t, `{"raw":"body"}`, parent.RawBody, "standalone rawBody preserved")
 	require.NotNil(t, parent.ExpectFailure)
-	assert.Equal(t, []int{404}, parent.ExpectFailure.Status, "standalone expectFailure preserved")
+	assert.Equal(t, []int{404}, parent.ExpectFailure.Status.Codes(), "standalone expectFailure preserved")
 	assert.Equal(t, "addItem", p.Intent.Goal, "plan intent preserved")
 }
 
@@ -494,8 +494,8 @@ func TestStripMutations_ThenInstantiateOnlyHappyPath(t *testing.T) {
 	addItem := &p.Execution.Steps[2]
 	addItem.MutationScope = "isolated"
 	addItem.Mutations = []Mutation{
-		{Name: "bad", Set: map[string]any{"productId": ""}, ExpectStatus: []int{400}},
-		{Name: "worse", Set: map[string]any{"productId": "NO"}, ExpectStatus: []int{404}},
+		{Name: "bad", Set: map[string]any{"productId": ""}, ExpectStatus: HTTPStatuses([]int{400})},
+		{Name: "worse", Set: map[string]any{"productId": "NO"}, ExpectStatus: HTTPStatuses([]int{404})},
 	}
 
 	StripMutations(p)
@@ -514,20 +514,20 @@ func TestValidateMutationsSyntax(t *testing.T) {
 	}{
 		{
 			name:        "empty name",
-			mutations:   []Mutation{{Name: "", Set: map[string]any{"age": 1}, ExpectStatus: []int{400}}},
+			mutations:   []Mutation{{Name: "", Set: map[string]any{"age": 1}, ExpectStatus: HTTPStatuses([]int{400})}},
 			wantErrLike: "empty name",
 		},
 		{
 			name: "duplicate names",
 			mutations: []Mutation{
-				{Name: "dup", Set: map[string]any{"age": 1}, ExpectStatus: []int{400}},
-				{Name: "dup", Set: map[string]any{"age": 2}, ExpectStatus: []int{400}},
+				{Name: "dup", Set: map[string]any{"age": 1}, ExpectStatus: HTTPStatuses([]int{400})},
+				{Name: "dup", Set: map[string]any{"age": 2}, ExpectStatus: HTTPStatuses([]int{400})},
 			},
 			wantErrLike: "duplicate mutation name",
 		},
 		{
 			name:        "missing set and rawBody",
-			mutations:   []Mutation{{Name: "nothing", ExpectStatus: []int{400}}},
+			mutations:   []Mutation{{Name: "nothing", ExpectStatus: HTTPStatuses([]int{400})}},
 			wantErrLike: "at least one of set or rawBody",
 		},
 		{
@@ -537,8 +537,8 @@ func TestValidateMutationsSyntax(t *testing.T) {
 		},
 		{
 			name:        "expectStatus below 400",
-			mutations:   []Mutation{{Name: "bad", Set: map[string]any{"a": 1}, ExpectStatus: []int{200}}},
-			wantErrLike: ">= 400",
+			mutations:   []Mutation{{Name: "bad", Set: map[string]any{"a": 1}, ExpectStatus: HTTPStatuses([]int{200})}},
+			wantErrLike: "must be a failure status",
 		},
 	}
 	for _, tc := range cases {

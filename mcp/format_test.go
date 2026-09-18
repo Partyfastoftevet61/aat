@@ -292,3 +292,9 @@ func TestFormatChainTrace(t *testing.T) {
 		assert.Contains(t, result, "Alternatives: alt1, alt2")
 	})
 }
+
+func TestFormatGraphDefault_ListsAndObjectsAsJSON(t *testing.T) {
+	d := &graph.InputDefault{Value: []any{map[string]any{"id": map[string]any{"num": "1"}}}}
+	assert.Equal(t, `[{"id":{"num":"1"}}]`, formatGraphDefault(d), "an assistant copies what it reads, so the string stays quoted")
+	assert.Equal(t, "Cosine", formatGraphDefault(&graph.InputDefault{Value: "Cosine"}))
+}

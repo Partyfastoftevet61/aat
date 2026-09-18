@@ -61,7 +61,7 @@ func TestValidate_Repeat(t *testing.T) {
 			rc := tt.repeat
 			step := Step{Node: tt.node, Repeat: &rc}
 			if tt.fail {
-				step.ExpectFailure = &ExpectFailure{Status: []int{404}}
+				step.ExpectFailure = &ExpectFailure{Status: HTTPStatuses([]int{404})}
 			}
 			err := Validate(&Plan{Execution: Execution{Steps: []Step{step}}}, repeatGraph())
 			if tt.want == "" {
@@ -137,7 +137,7 @@ func TestInstantiate_MutationOfRepeatedStepDoesNotRepeat(t *testing.T) {
 		Node:      "getSearch",
 		Values:    map[string]StepValue{"searchId": {Default: "s1"}},
 		Repeat:    &RepeatConfig{Until: "remainingBatches == 0"},
-		Mutations: []Mutation{{Name: "unknown-search", Set: map[string]any{"searchId": "nope"}, ExpectStatus: []int{404}}},
+		Mutations: []Mutation{{Name: "unknown-search", Set: map[string]any{"searchId": "nope"}, ExpectStatus: HTTPStatuses([]int{404})}},
 	}}}}
 
 	instantiated, err := InstantiateAndValidate(p, g)

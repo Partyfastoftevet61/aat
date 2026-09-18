@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gburgyan/aat/internal/protoreg"
 	"github.com/gburgyan/aat/internal/yamlx"
 	"github.com/tidwall/gjson"
 	"gopkg.in/yaml.v3"
@@ -23,7 +24,10 @@ type Template struct {
 	Response TemplateResponse `yaml:"response"`
 }
 
-// TemplateRequest defines the HTTP request shape within a template.
+// TemplateRequest defines the request shape within a template. Which fields
+// apply depends on the template's protocol: an HTTP template has a method and
+// a path, a gRPC template an rpc and a message. ParseTemplate rejects the
+// other protocol's fields by name.
 type TemplateRequest struct {
 	Method  string            `yaml:"method"`
 	Path    string            `yaml:"path"`
@@ -32,7 +36,24 @@ type TemplateRequest struct {
 	// Form is a form-encoded body written as a mapping (see FormFields). It is
 	// nil when the template has none; a request has a Body or a Form.
 	Form FormFields `yaml:"form,omitempty"`
+
+	// RPC names the gRPC method, as in "shop.v1.Carts/CreateCart".
+	RPC string `yaml:"rpc,omitempty"`
+	// Metadata is what headers are to HTTP: the entries a gRPC request sends
+	// alongside its message.
+	Metadata map[string]string `yaml:"metadata,omitempty"`
+	// Message is the gRPC request message, written as JSON with the same
+	// {{key}} placeholders a body uses.
+	Message string `yaml:"message,omitempty"`
 }
+
+// Service and Method split the template's rpc field. They are empty when the
+// template is not a gRPC one, or when its rpc field is malformed, which
+// ParseTemplate rejects.
+func (r TemplateRequest) Service() string { s, _, _ := protoreg.SplitFullMethod(r.RPC); return s }
+
+// Method is the RPC's method name; see Service.
+func (r TemplateRequest) MethodName() string { _, m, _ := protoreg.SplitFullMethod(r.RPC); return m }
 
 // TemplateResponse defines how outputs are extracted from the response.
 type TemplateResponse struct {
@@ -202,30 +223,84 @@ func ParseTemplate(data []byte) (*Template, error) {
 	if t.Adapter == "" {
 		return nil, fmt.Errorf("template missing required field: adapter")
 	}
-	if t.Request.Method == "" {
-		return nil, fmt.Errorf("template missing required field: request.method")
-	}
-	if t.Request.Path == "" {
-		return nil, fmt.Errorf("template missing required field: request.path")
-	}
 
 	if t.Protocol == "" {
-		t.Protocol = "http"
+		t.Protocol = ProtocolHTTP
 	}
-	if t.Protocol != "http" {
-		return nil, fmt.Errorf("unsupported protocol %q (only \"http\" is supported)", t.Protocol)
+	switch t.Protocol {
+	case ProtocolHTTP:
+		if err := t.validateHTTPRequest(); err != nil {
+			return nil, err
+		}
+	case ProtocolGRPC:
+		if err := t.validateGRPCRequest(); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("unsupported protocol %q (%q and %q are supported)", t.Protocol, ProtocolHTTP, ProtocolGRPC)
+	}
+
+	return &t, nil
+}
+
+// validateHTTPRequest checks the fields an HTTP template needs, and that it
+// carries none of the gRPC ones.
+func (t *Template) validateHTTPRequest() error {
+	if t.Request.Method == "" {
+		return fmt.Errorf("template missing required field: request.method")
+	}
+	if t.Request.Path == "" {
+		return fmt.Errorf("template missing required field: request.path")
+	}
+	for _, f := range []struct{ name, value string }{
+		{"rpc", t.Request.RPC},
+		{"message", t.Request.Message},
+	} {
+		if f.value != "" {
+			return fmt.Errorf("request.%s belongs to a gRPC template; this one is %q (set protocol: %s)", f.name, t.Protocol, ProtocolGRPC)
+		}
+	}
+	if t.Request.Metadata != nil {
+		return fmt.Errorf("request.metadata belongs to a gRPC template; an HTTP template sends request.headers")
 	}
 
 	if t.Request.Form != nil {
 		if t.Request.Body != "" {
-			return nil, fmt.Errorf("template has both request.body and request.form; a request sends one of them")
+			return fmt.Errorf("template has both request.body and request.form; a request sends one of them")
 		}
 		if contentType, ok := headerValue(t.Request.Headers, "Content-Type"); ok && !isFormContentType(contentType) {
-			return nil, fmt.Errorf("request.form is sent as %s, but the template's Content-Type header is %q", FormContentType, contentType)
+			return fmt.Errorf("request.form is sent as %s, but the template's Content-Type header is %q", FormContentType, contentType)
 		}
 	}
+	return nil
+}
 
-	return &t, nil
+// validateGRPCRequest checks the fields a gRPC template needs, and that it
+// carries none of the HTTP ones. A gRPC call has no path, no verb, and no form
+// encoding: everything the request says is in its message.
+func (t *Template) validateGRPCRequest() error {
+	if t.Request.RPC == "" {
+		return fmt.Errorf("template missing required field: request.rpc (as in \"shop.v1.Carts/CreateCart\")")
+	}
+	if _, _, ok := protoreg.SplitFullMethod(t.Request.RPC); !ok {
+		return fmt.Errorf("request.rpc %q must name a service and a method, as in \"shop.v1.Carts/CreateCart\"", t.Request.RPC)
+	}
+	for _, f := range []struct{ name, value string }{
+		{"method", t.Request.Method},
+		{"path", t.Request.Path},
+		{"body", t.Request.Body},
+	} {
+		if f.value != "" {
+			return fmt.Errorf("request.%s belongs to an HTTP template; a gRPC request names its rpc and sends a message", f.name)
+		}
+	}
+	if t.Request.Headers != nil {
+		return fmt.Errorf("request.headers belongs to an HTTP template; a gRPC request sends request.metadata")
+	}
+	if t.Request.Form != nil {
+		return fmt.Errorf("request.form belongs to an HTTP template; a gRPC request sends a message")
+	}
+	return nil
 }
 
 // ParseTemplateFile reads a file and parses it as a template. Errors name the
@@ -252,6 +327,10 @@ func NewTemplateAdapter(tmpl Template) *TemplateAdapter {
 // escaped for where it lands (see renderContext); config supplies the headers
 // every request starts with.
 func (a *TemplateAdapter) BuildRequest(inputs map[string]any, config *EnvironmentConfig) (*Request, error) {
+	if a.tmpl.Protocol == ProtocolGRPC {
+		return a.buildGRPCRequest(inputs, config)
+	}
+
 	path, err := substitutePlaceholders(a.tmpl.Request.Path, inputs, renderPath)
 	if err != nil {
 		return nil, fmt.Errorf("path substitution: %w", err)
@@ -327,6 +406,60 @@ func (a *TemplateAdapter) BuildRequest(inputs map[string]any, config *Environmen
 	}, nil
 }
 
+// buildGRPCRequest renders a gRPC request: the message, which is JSON, and
+// the metadata, which is what headers are to HTTP.
+//
+// The credential reaches a gRPC call the same way it reaches an HTTP one. The
+// environment resolves auth to a header pair, and metadata carries it, so
+// oauth2, apikey, and bearer all work with no gRPC-specific machinery.
+func (a *TemplateAdapter) buildGRPCRequest(inputs map[string]any, config *EnvironmentConfig) (*Request, error) {
+	message, err := substitutePlaceholders(a.tmpl.Request.Message, inputs, renderJSON)
+	if err != nil {
+		return nil, fmt.Errorf("message substitution: %w", err)
+	}
+
+	metadata := make(map[string]string)
+	if config != nil {
+		for k, v := range config.Headers {
+			setHeader(metadata, k, v)
+		}
+	}
+	for k, v := range a.tmpl.Request.Metadata {
+		rendered, err := substitutePlaceholders(v, inputs, renderRaw)
+		if err != nil {
+			return nil, fmt.Errorf("metadata substitution for %q: %w", k, err)
+		}
+		setHeader(metadata, k, rendered)
+	}
+	// Protected entries go last: a template cannot replace the credential.
+	if config != nil {
+		for k, v := range config.Protected {
+			setHeader(metadata, k, v)
+		}
+	}
+	// A gRPC call carries no body media type, and an Accept has no meaning
+	// when the descriptors decide the encoding.
+	for _, name := range []string{"Content-Type", "Accept"} {
+		deleteHeaderFold(metadata, name)
+	}
+
+	return &Request{
+		Protocol: ProtocolGRPC,
+		Path:     a.tmpl.Request.RPC,
+		Headers:  metadata,
+		Body:     []byte(strings.TrimSpace(message)),
+	}, nil
+}
+
+// deleteHeaderFold removes every entry named name, whatever its case.
+func deleteHeaderFold(headers map[string]string, name string) {
+	for existing := range headers {
+		if strings.EqualFold(existing, name) {
+			delete(headers, existing)
+		}
+	}
+}
+
 // ExtractOutputs parses the response body as JSON and extracts values using
 // the template's extract rules (GJSON paths), and reads the response headers
 // its header rules name. When an extract rule has Fields and the extracted
@@ -349,7 +482,7 @@ func (a *TemplateAdapter) ExtractOutputs(resp *Response) (map[string]any, error)
 
 	for name, rule := range a.tmpl.Response.Extract {
 		if rule.Header != "" {
-			if values := headerValues(resp.Headers, rule.Header); len(values) > 0 {
+			if values := resp.HeaderValues(rule.Header); len(values) > 0 {
 				outputs[name] = strings.Join(values, ", ")
 				continue
 			}
@@ -390,7 +523,7 @@ func (a *TemplateAdapter) ExtractOutputs(resp *Response) (map[string]any, error)
 	}
 
 	if a.tmpl.Response.Transform != "" {
-		transformed, err := runTransformWithLog(a.tmpl.Response.Transform, outputs, bodyStr, resp.Headers, os.Stderr)
+		transformed, err := runTransformWithLog(a.tmpl.Response.Transform, outputs, bodyStr, resp.mergedHeaders(), os.Stderr)
 		if err != nil {
 			return nil, fmt.Errorf("transform: %w", err)
 		}
@@ -874,10 +1007,11 @@ func ClassifyInputs(tmpl *Template) (required, conditional, iterable []string) {
 	condInnerKeys := make(map[string]bool)
 	allKeys := make(map[string]bool)
 
-	// Analyze all text sources: path, header values, body, and form values. A
-	// header or form value that is one placeholder is left out when its input
-	// has no value, so that input is conditional unless another part of the
-	// template needs it.
+	// Analyze all text sources: path, header values, body, form values, and a
+	// gRPC template's message and metadata. A header or form value that is one
+	// placeholder is left out when its input has no value, so that input is
+	// conditional unless another part of the template needs it. A metadata
+	// value is always rendered, so its placeholders are required.
 	sources := []string{tmpl.Request.Path}
 	var whole []string
 	addSource := func(src string) {
@@ -895,6 +1029,12 @@ func ClassifyInputs(tmpl *Template) (required, conditional, iterable []string) {
 	}
 	for _, text := range tmpl.Request.Form.texts() {
 		addSource(text)
+	}
+	if tmpl.Request.Message != "" {
+		sources = append(sources, tmpl.Request.Message)
+	}
+	for _, v := range tmpl.Request.Metadata {
+		sources = append(sources, v)
 	}
 
 	for _, src := range sources {

@@ -128,11 +128,16 @@ type DisplayOutputRecord struct {
 	Value any    `json:"value,omitempty"`
 }
 
-// ExpectFailureRecord captures the outcome of a negative assertion.
+// ExpectFailureRecord captures the outcome of a negative assertion. Expected
+// holds the statuses as the plan wrote them, so an HTTP plan archives numbers
+// and a gRPC one archives names.
 type ExpectFailureRecord struct {
-	Expected []int `json:"expected"`
-	Actual   int   `json:"actual"`
-	Passed   bool  `json:"passed"`
+	Expected []plan.ExpectedStatus `json:"expected"`
+	Actual   int                   `json:"actual"`
+	// ActualName is the gRPC status the step came back with, and is empty for
+	// an HTTP step.
+	ActualName string `json:"actualName,omitempty"`
+	Passed     bool   `json:"passed"`
 }
 
 // ResponseBodyErrorRecord captures an error detected in a 2xx response body.
@@ -178,13 +183,31 @@ type RequestRecord struct {
 	OriginalURL string            `json:"originalUrl,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"`
 	Body        json.RawMessage   `json:"body,omitempty"`
+	// Protocol names how the request was sent. It is empty for HTTP, which
+	// every archive written before there was a second protocol is.
+	Protocol string `json:"protocol,omitempty" redact:"-"`
 }
 
 // ResponseRecord captures the HTTP response.
 type ResponseRecord struct {
+	// Status is the HTTP status, or for a gRPC response the one its code maps
+	// to, so that a reader comparing statuses needs no special case.
 	Status  int               `json:"status"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    json.RawMessage   `json:"body,omitempty"`
+
+	// Trailers are a gRPC call's trailing metadata, kept apart from its header
+	// metadata because a server chooses which to send a value in. It is empty
+	// for an HTTP response.
+	Trailers map[string]string `json:"trailers,omitempty"`
+
+	// GRPCCode is the gRPC status name, such as "NOT_FOUND". It is empty for
+	// an HTTP response, and is what a reader should show when it is not.
+	GRPCCode string `json:"grpcCode,omitempty" redact:"-"`
+	// GRPCMessage is the message the server sent with the status.
+	GRPCMessage string `json:"grpcMessage,omitempty"`
+	// GRPCDetails are the status details, each already encoded as JSON.
+	GRPCDetails []json.RawMessage `json:"grpcDetails,omitempty"`
 }
 
 // ValidationRecord captures the outcome of mechanical assertions.

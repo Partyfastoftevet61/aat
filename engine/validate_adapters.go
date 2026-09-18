@@ -25,14 +25,7 @@ func (e *AdapterValidationError) Error() string {
 // plan's steps and cleanup. This is used during Engine.Run() to avoid
 // failing on unrelated template issues for nodes not used in the plan.
 func ValidateAdapterOutputsForPlan(g *graph.Graph, registry *adapter.Registry, p *plan.Plan) error {
-	nodeSet := make(map[string]bool)
-	for _, step := range p.Execution.Steps {
-		nodeSet[step.Node] = true
-	}
-	for _, cs := range p.Execution.Cleanup {
-		nodeSet[cs.Node] = true
-	}
-	return validateAdapterOutputsForNodes(g, registry, nodeSet)
+	return validateAdapterOutputsForNodes(g, registry, planNodeSet(p))
 }
 
 // ValidateAdapterOutputs checks that graph-declared outputs match the
@@ -63,6 +56,8 @@ func OutputExtractPaths(g *graph.Graph, registry *adapter.Registry) oas.OutputPa
 		for _, out := range node.Outputs {
 			rule, extracted := tmpl.Response.Extract[out.Name]
 			switch {
+			case out.FromInput != "":
+				outputs[out.Name] = "" // echoed from an input; not in the response
 			case extracted && rule.Header == "":
 				outputs[out.Name] = rule.GJSONPath()
 			case extracted, tmpl.HasTransform():
@@ -70,6 +65,24 @@ func OutputExtractPaths(g *graph.Graph, registry *adapter.Registry) oas.OutputPa
 			}
 		}
 		paths[name] = outputs
+	}
+	return paths
+}
+
+// TemplateMessageInputPaths maps each node with a gRPC template to where the
+// template's message places each input (see adapter.Template.MessageInputPaths),
+// for the protobuf input check. A node whose message can't be scanned is left
+// out, and its inputs are checked by name instead.
+func TemplateMessageInputPaths(g *graph.Graph, registry *adapter.Registry) map[string]map[string][]string {
+	paths := make(map[string]map[string][]string)
+	for name, node := range g.Nodes {
+		tmpl, ok := registry.GetTemplate(node.Adapter)
+		if !ok || tmpl.Protocol != adapter.ProtocolGRPC {
+			continue
+		}
+		if placed, ok := tmpl.MessageInputPaths(); ok {
+			paths[name] = placed
+		}
 	}
 	return paths
 }
@@ -193,7 +206,15 @@ func validateAdapterOutputsForNodes(g *graph.Graph, registry *adapter.Registry, 
 
 		// Graph output not extracted by template. A Lua transform can compute
 		// outputs that no extract rule produces, so it is trusted to set them.
+		// An output echoed from an input comes from the request instead, and
+		// an extract rule for it would be overwritten, so one is an error.
 		for _, out := range node.Outputs {
+			if out.FromInput != "" {
+				if extractKeys[out.Name] {
+					errs = append(errs, fmt.Sprintf("node %q: output %q is echoed from input %q, so the template must not also extract it", name, out.Name, out.FromInput))
+				}
+				continue
+			}
 			if !extractKeys[out.Name] {
 				if out.Optional || tmpl.HasTransform() {
 					continue

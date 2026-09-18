@@ -14,7 +14,6 @@ import (
 	"github.com/gburgyan/aat/domain"
 	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/graph/oas"
-	"github.com/gburgyan/aat/internal/httpstatus"
 	"github.com/gburgyan/aat/internal/predicate"
 	"github.com/gburgyan/aat/plan"
 	"github.com/gburgyan/aat/validate"
@@ -154,12 +153,21 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 		}
 	}
 
-	// 3. Validate adapter outputs match graph declarations (only for plan-used nodes)
+	// 3. Validate each node's protocol against its template's. This comes
+	// before the output check because a node pointed at a template of the
+	// wrong protocol trips that one too, and the mismatch is the root cause.
+	// It also means a mismatched project fails before the first step creates
+	// anything, rather than part-way through.
+	if err := ValidateNodeProtocolsForPlan(e.graph, e.registry, instantiatedPlan).Err(); err != nil {
+		return &RunResult{Outcome: OutcomeError, Error: err, InstantiatedPlan: instantiatedPlan}
+	}
+
+	// 3b. Validate adapter outputs match graph declarations (only for plan-used nodes)
 	if err := ValidateAdapterOutputsForPlan(e.graph, e.registry, instantiatedPlan); err != nil {
 		return &RunResult{Outcome: OutcomeError, Error: err, InstantiatedPlan: instantiatedPlan}
 	}
 
-	// 3b. Validate template required placeholders vs optional graph inputs
+	// 3c. Validate template required placeholders vs optional graph inputs
 	if err := ValidateTemplateInputsForPlan(e.graph, e.registry, instantiatedPlan); err != nil {
 		return &RunResult{Outcome: OutcomeError, Error: err, InstantiatedPlan: instantiatedPlan}
 	}
@@ -231,12 +239,9 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 				ActualStatus:     stepResult.StatusCode,
 				Description:      step.ExpectFailure.Description,
 			}
-			for _, expected := range step.ExpectFailure.Status {
-				if stepResult.StatusCode == expected {
-					efr.Passed = true
-					break
-				}
-			}
+			// A gRPC step is matched by status name when the plan wrote one,
+			// so that codes sharing an HTTP status stay distinguishable.
+			efr.Passed = step.ExpectFailure.Status.Matches(stepResult.StatusCode, grpcStatusName(stepResult.Response))
 			stepResult.ExpectFailure = efr
 			stepResults[len(stepResults)-1] = stepResult
 
@@ -259,12 +264,13 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 
 			// Unexpected success or wrong error code — FAIL.
 			outcome = OutcomeFailed
-			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s: expected failure status %v but got %d", stepRef(step), step.ExpectFailure.Status, stepResult.StatusCode))
+			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s: expected failure status %s but got %s", stepRef(step),
+				strings.Join(step.ExpectFailure.Status.Strings(), ", "), ActualStatusText(stepResult.Response, stepResult.StatusCode)))
 		}
 
 		if stepResult.StatusCode >= 400 {
 			outcome = OutcomeFailed
-			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s returned status %d", stepRef(step), stepResult.StatusCode))
+			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s returned %s", stepRef(step), failureStatusText(stepResult.Response, stepResult.StatusCode)))
 		}
 
 		// Check for response body errors (API returned 2xx but body indicates error)
@@ -506,7 +512,7 @@ func (e *Engine) runVerification(ctx context.Context, steps []plan.Step, state *
 		case sr.Error != nil:
 			return results, OutcomeError, fmt.Errorf("verification step %s: %w", stepRef(step), sr.Error)
 		case sr.StatusCode >= 400:
-			failure = fmt.Errorf("verification step %s returned status %d", stepRef(step), sr.StatusCode)
+			failure = fmt.Errorf("verification step %s returned %s", stepRef(step), failureStatusText(sr.Response, sr.StatusCode))
 		case sr.ResponseBodyError != nil:
 			failure = fmt.Errorf("verification step %s: %s", stepRef(step), sr.ResponseBodyError.Summary())
 		case sr.Validation != nil && !sr.Validation.Passed:
@@ -727,7 +733,7 @@ func (e *Engine) executeStepWith(ctx context.Context, step plan.Step, node *grap
 
 	// Resolve executor/config/rewrite for this node
 	exec, cfg, rewrite := e.router.Resolve(node.Name)
-	actualBaseURL := exec.BaseURL
+	actualBaseURL := exec.Target()
 
 	// Build request
 	req, err := adp.BuildRequest(inputs, cfg)
@@ -745,9 +751,12 @@ func (e *Engine) executeStepWith(ctx context.Context, step plan.Step, node *grap
 		}
 	}
 
-	// Apply path rewriting if configured for this node
+	// Apply path rewriting if configured for this node. A gRPC request's path
+	// is its method, which a strip-and-prefix rewrite cannot mean anything
+	// for; config rejects that combination when an environment names both, and
+	// the guard here holds for a route assembled any other way.
 	originalPath := req.Path
-	if rewrite != nil {
+	if rewrite != nil && !req.IsGRPC() {
 		req.Path = adapter.RewritePath(req.Path, rewrite)
 	}
 
@@ -806,6 +815,7 @@ func (e *Engine) executeStepWith(ctx context.Context, step plan.Step, node *grap
 		if hasTemplate {
 			convertHeaderOutputs(outputs, node, tmpl)
 		}
+		outputs = echoInputOutputs(outputs, node, inputs)
 		result.Outputs = outputs
 
 		// Record transform script if present
@@ -860,7 +870,7 @@ func (e *Engine) runStepAssertions(step plan.Step, node *graph.Node, state *RunS
 			// or one written before an overlay added expectFailure) can never
 			// hold on a negative step, so it is reported as skipped. One that
 			// agrees with expectFailure, such as 409 or 4xx, is evaluated.
-			if step.ExpectFailure != nil && a.Type == string(validate.AssertStatus) && httpstatus.ContradictsFailure(a.Expect) {
+			if step.ExpectFailure != nil && a.Type == string(validate.AssertStatus) && plan.ContradictsFailure(a.Expect) {
 				merged.Results = append(merged.Results, validate.AssertionResult{
 					Type:    validate.AssertStatus,
 					Passed:  true,
@@ -900,7 +910,8 @@ func (e *Engine) runStepAssertions(step plan.Step, node *graph.Node, state *RunS
 		schemaCheck := buildSchemaCheck(result.OASValidation)
 
 		if len(normalAssertions) > 0 {
-			nr := validate.RunMechanical(resp.StatusCode, normalBody,
+			statusInfo := validate.StatusInfo{Code: resp.StatusCode, GRPCName: grpcStatusName(resp)}
+			nr := validate.RunMechanical(statusInfo, normalBody,
 				withDisplayedExprs(convertAssertions(normalAssertions), ectx), normalEval, schemaCheck)
 			merged.Results = append(merged.Results, nr.Results...)
 			if !nr.Passed {
@@ -908,7 +919,7 @@ func (e *Engine) runStepAssertions(step plan.Step, node *graph.Node, state *RunS
 			}
 		}
 		if len(rawAssertions) > 0 {
-			rr := validate.RunMechanical(resp.StatusCode, resp.Body,
+			rr := validate.RunMechanical(validate.StatusInfo{Code: resp.StatusCode, GRPCName: grpcStatusName(resp)}, resp.Body,
 				withDisplayedExprs(convertAssertions(rawAssertions), ectx), predicateEval, schemaCheck)
 			merged.Results = append(merged.Results, rr.Results...)
 			if !rr.Passed {

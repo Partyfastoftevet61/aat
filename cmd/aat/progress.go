@@ -17,6 +17,11 @@ type CLIProgressObserver struct {
 	out   io.Writer
 	term  TerminalInfo
 	total int // cached from OnRunStart for the ABORTED and STOPPED counts
+	// statusWidth is the width of the status column. Three digits suit an
+	// HTTP-only run; a gRPC one needs room for a name. The observer is fed a
+	// step at a time and never sees the plan, so the width is measured from
+	// the plan up front — see planStatusWidth.
+	statusWidth int
 }
 
 func (o *CLIProgressObserver) OnRunStart(total int) {
@@ -28,7 +33,7 @@ func (o *CLIProgressObserver) OnStepStart(index, total int, step plan.Step) {
 }
 
 func (o *CLIProgressObserver) OnStepComplete(index, total int, result engine.StepResult) {
-	writeStepResult(o.out, "  ", index, total, result, o.term)
+	writeStepResult(o.out, "  ", index, total, result, o.term, o.statusWidth)
 }
 
 func (o *CLIProgressObserver) OnCleanupStart(total int) {
@@ -37,7 +42,7 @@ func (o *CLIProgressObserver) OnCleanupStart(total int) {
 }
 
 func (o *CLIProgressObserver) OnCleanupStepComplete(index, total int, result engine.StepResult) {
-	writeCleanupResult(o.out, "    ", result, o.term)
+	writeCleanupResult(o.out, "    ", result, o.term, o.statusWidth)
 }
 
 // OnCleanupSkipped implements engine.CleanupSkipObserver.
@@ -77,7 +82,7 @@ func (o *CLIProgressObserver) OnRetryStart(attempt, maxAttempts int) {
 // indented beneath the label. lead is the indent before "[i/n]": the plan
 // observer uses two spaces and the sequential batch observer four, so both
 // print the same lines.
-func writeStepResult(w io.Writer, lead string, index, total int, result engine.StepResult, term TerminalInfo) {
+func writeStepResult(w io.Writer, lead string, index, total int, result engine.StepResult, term TerminalInfo, statusWidth int) {
 	color := term.IsTTY
 	totalStr := strconv.Itoa(total)
 	label := stepLabel(result, nodeColWidth(term.Width, 60), color)
@@ -90,7 +95,7 @@ func writeStepResult(w io.Writer, lead string, index, total int, result engine.S
 		_, _ = fmt.Fprintf(w, "%s %s: %s%s\n", prefix, colorize("ERROR", colorRed, color), result.Error, stepMarks(result, color))
 	case result.Response != nil:
 		duration := colorize(formatDuration(result.Duration), colorDim, color)
-		_, _ = fmt.Fprintf(w, "%s %s  %s%s\n", prefix, colorStatus(result.StatusCode, color), duration, stepMarks(result, color))
+		_, _ = fmt.Fprintf(w, "%s %s  %s%s\n", prefix, statusCol(result, statusWidth, color), duration, stepMarks(result, color))
 		for _, do := range result.DisplayOutputs {
 			_, _ = fmt.Fprintf(w, "%s%s: %v\n", indent, do.Label, do.Value)
 		}
@@ -112,7 +117,7 @@ func writeCleanupHeader(w io.Writer, lead string, color bool) {
 
 // writeCleanupResult prints one cleanup step: its label, then its status and
 // duration or its error.
-func writeCleanupResult(w io.Writer, lead string, result engine.StepResult, term TerminalInfo) {
+func writeCleanupResult(w io.Writer, lead string, result engine.StepResult, term TerminalInfo, statusWidth int) {
 	color := term.IsTTY
 	prefix := lead + stepLabel(result, nodeColWidth(term.Width, 58), false)
 	switch {
@@ -120,7 +125,7 @@ func writeCleanupResult(w io.Writer, lead string, result engine.StepResult, term
 		_, _ = fmt.Fprintf(w, "%s %s: %s\n", prefix, colorize("ERROR", colorRed, color), result.Error)
 	case result.Response != nil:
 		duration := colorize(formatDuration(result.Duration), colorDim, color)
-		_, _ = fmt.Fprintf(w, "%s %s  %s\n", prefix, colorStatus(result.StatusCode, color), duration)
+		_, _ = fmt.Fprintf(w, "%s %s  %s\n", prefix, statusCol(result, statusWidth, color), duration)
 	default:
 		_, _ = fmt.Fprintf(w, "%s (no response)\n", prefix)
 	}
@@ -268,3 +273,12 @@ func retryNote(result engine.StepResult) string {
 	}
 	return note
 }
+
+// statusSizer is a progress observer whose status column can be sized once the
+// plan is known. engine.ProgressObserver is handed one step at a time and
+// never sees the plan, so cmd measures the column and tells the observer.
+type statusSizer interface {
+	setStatusWidth(width int)
+}
+
+func (o *CLIProgressObserver) setStatusWidth(width int) { o.statusWidth = width }

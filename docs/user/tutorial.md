@@ -36,6 +36,7 @@ aat-sandbox serve
 ```text
 aat-sandbox: shop API      http://127.0.0.1:8765/{us,eu}/v1
 aat-sandbox: payments API  http://127.0.0.1:8766/{us,eu}/v1   (header X-API-Key: pay-demo-key)
+aat-sandbox: payments gRPC  grpc://127.0.0.1:8767   (service shop.v1.Payments, metadata x-api-key: pay-demo-key)
   token:    POST http://127.0.0.1:8765/oauth/token  grant_type=password username=demo password=demo client_id=aat-shop client_secret=aat-shop-secret
   regions:  us (USD, sales tax added at checkout)  ·  eu (EUR, VAT included, no overnight tier)
   chaos:    GET /inventory/SKU-1004 -> STALE_READ once per token; GET /shipments/{id} -> 503 for the first 2 calls
@@ -43,7 +44,7 @@ aat-sandbox: payments API  http://127.0.0.1:8766/{us,eu}/v1   (header X-API-Key:
   reset:    POST http://127.0.0.1:8765/admin/reset
 ```
 
-The banner lists everything this tutorial needs: the two base URLs (the region, `us` or `eu`, is part of the path), the OAuth2 token endpoint and its demo credentials, and the payments API key.
+The banner lists everything this tutorial needs: the two base URLs (the region, `us` or `eu`, is part of the path), the OAuth2 token endpoint and its demo credentials, and the payments API key. The gRPC line is the same payments API served a second way; this tutorial doesn't use it, and the [gRPC guide](grpc.md) does.
 
 ## Step 2: Create the Project
 

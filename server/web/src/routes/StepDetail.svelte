@@ -2,7 +2,7 @@
   import type { StepDetail, OASValidationDetail, RequestDetail } from '../lib/types';
   import { fetchStep, fetchAttemptStep } from '../lib/api';
   import { navigate, encPath } from '../lib/router';
-  import { formatDuration, httpStatusCategory, retryLabel } from '../lib/format';
+  import { formatDuration, httpStatusCategory, retryLabel, statusLabel } from '../lib/format';
   import LoadingSpinner from '../components/LoadingSpinner.svelte';
   import Tabs from '../components/Tabs.svelte';
   import JsonViewer from '../components/JsonViewer.svelte';
@@ -122,6 +122,12 @@
 
   let curlCopyState = $state('');
 
+  let isGrpc = $derived(step?.request?.protocol === 'grpc');
+  // The label a reader should see: the gRPC status name where the server sent
+  // one, and the HTTP status code otherwise.
+  let statusText = $derived(statusLabel(step?.status, step?.response?.grpcCode));
+  let copyLabel = $derived(isGrpc ? 'Copy as grpcurl' : 'Copy as cURL');
+
   // Quote a string for safe inclusion inside single quotes in a POSIX shell.
   function shellQuote(s: string): string {
     return `'${s.replace(/'/g, `'\\''`)}'`;
@@ -139,10 +145,46 @@
     return lines.join(' \\\n');
   }
 
+  /**
+   * Render the request as a grpcurl command.
+   *
+   * The target loses its scheme, which grpcurl does not take, and a plaintext
+   * one gains -plaintext; grpc:// means no TLS, so the flag is not guesswork.
+   * Metadata goes in -H, as headers do for curl. -d is always present: with
+   * no -d, grpcurl reads the request message from stdin and the pasted
+   * command appears to hang, and an empty body is what the executor sends as
+   * {} anyway.
+   *
+   * The first line is a shell comment, so it pastes harmlessly. grpcurl learns
+   * a method's messages from the server's reflection service, which many
+   * servers, aat-sandbox among them, do not run; it then needs the descriptor
+   * set the project already has. The archive does not record where that file
+   * is, so the comment says what to add rather than the command guessing.
+   */
+  function buildGrpcurl(req: RequestDetail): string {
+    const target = req.target ?? '';
+    const plaintext = target.startsWith('grpc://');
+    const host = target.replace(/^grpcs?:\/\//, '');
+
+    const lines: string[] = ['grpcurl'];
+    if (plaintext) lines.push('  -plaintext');
+    for (const h of req.headers ?? []) {
+      lines.push(`  -H ${shellQuote(`${h.name}: ${h.value}`)}`);
+    }
+    const hasBody = req.body !== undefined && req.body !== null;
+    const body = hasBody ? (typeof req.body === 'string' ? req.body : JSON.stringify(req.body)) : '{}';
+    lines.push(`  -d ${shellQuote(body)}`);
+    lines.push(`  ${shellQuote(host)}`);
+    lines.push(`  ${shellQuote(req.rpc ?? '')}`);
+    const hint = '# If the server has no reflection service, add: -protoset <your descriptor set>';
+    return `${hint}\n${lines.join(' \\\n')}`;
+  }
+
   async function copyCurl() {
     if (!step?.request) return;
+    const command = isGrpc ? buildGrpcurl(step.request) : buildCurl(step.request);
     try {
-      await navigator.clipboard.writeText(buildCurl(step.request));
+      await navigator.clipboard.writeText(command);
       curlCopyState = 'Copied!';
     } catch {
       curlCopyState = 'Failed';
@@ -228,7 +270,7 @@
         <div class="step-detail-meta-item">
           <span class="meta-label">Status</span>
           <span class="meta-value">
-            <span class="step-status step-status-{statusCat}">{step.status}</span>
+            <span class="step-status step-status-{statusCat}">{statusText}</span>
           </span>
         </div>
       {/if}
@@ -270,13 +312,19 @@
     <div class="tab-panel">
       {#if activeTab === 'request' && step.request}
         <div class="http-method-url">
-          <span class="http-method">{step.request.method}</span>
-          <span class="http-url">{step.request.url}</span>
+          {#if isGrpc}
+            <span class="http-method">gRPC</span>
+            <span class="http-url">{step.request.rpc}</span>
+            <span class="grpc-target">{step.request.target}</span>
+          {:else}
+            <span class="http-method">{step.request.method}</span>
+            <span class="http-url">{step.request.url}</span>
+          {/if}
           {#if step.request.originalUrl}
             <span class="override-badge">OVERRIDE</span>
           {/if}
-          <button class="curl-copy-btn" onclick={copyCurl} title="Copy this request as a cURL command">
-            {curlCopyState || 'Copy as cURL'}
+          <button class="curl-copy-btn" onclick={copyCurl} title="Copy this request as a {isGrpc ? 'grpcurl' : 'cURL'} command">
+            {curlCopyState || copyLabel}
           </button>
         </div>
         {#if step.request.originalUrl}
@@ -286,7 +334,9 @@
         {/if}
         {#if step.request.headers && step.request.headers.length > 0}
           <details open={readPref('reqHeadersOpen', true)} ontoggle={(e: Event) => savePref('reqHeadersOpen', e)}>
-            <summary class="section-heading collapsible-heading">Headers ({step.request.headers.length})</summary>
+            <summary class="section-heading collapsible-heading">
+              {isGrpc ? 'Metadata' : 'Headers'} ({step.request.headers.length})
+            </summary>
             <HeadersTable headers={step.request.headers} />
           </details>
         {/if}
@@ -302,13 +352,28 @@
       {#if activeTab === 'response' && step.response}
         <div class="http-method-url">
           <span class="step-status step-status-{httpStatusCategory(step.response.status)}" style="font-size: 0.9rem;">
-            {step.response.status}
+            {statusLabel(step.response.status, step.response.grpcCode)}
           </span>
+          {#if step.response.grpcMessage}
+            <span class="grpc-message">{step.response.grpcMessage}</span>
+          {/if}
         </div>
+        {#if step.response.grpcDetails && step.response.grpcDetails.length > 0}
+          <h4 class="section-heading">Status details ({step.response.grpcDetails.length})</h4>
+          <JsonViewer data={step.response.grpcDetails} />
+        {/if}
         {#if step.response.headers && step.response.headers.length > 0}
           <details open={readPref('resHeadersOpen', true)} ontoggle={(e: Event) => savePref('resHeadersOpen', e)}>
-            <summary class="section-heading collapsible-heading">Headers ({step.response.headers.length})</summary>
+            <summary class="section-heading collapsible-heading">
+              {isGrpc ? 'Metadata' : 'Headers'} ({step.response.headers.length})
+            </summary>
             <HeadersTable headers={step.response.headers} />
+          </details>
+        {/if}
+        {#if step.response.trailers && step.response.trailers.length > 0}
+          <details open={readPref('resTrailersOpen', true)} ontoggle={(e: Event) => savePref('resTrailersOpen', e)}>
+            <summary class="section-heading collapsible-heading">Trailers ({step.response.trailers.length})</summary>
+            <HeadersTable headers={step.response.trailers} />
           </details>
         {/if}
         {#if step.response.formFields && step.response.formFields.length > 0}
