@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gburgyan/aat/adapter"
+	"github.com/gburgyan/aat/internal/grpcstatus"
 	"github.com/gburgyan/aat/plan"
 )
 
@@ -235,10 +236,11 @@ func defaultRetryable(cat ErrorCategory) bool {
 }
 
 // shouldRetry determines whether a failed step should be retried based on
-// the error category, the HTTP status code, the retry configuration, and the
-// current attempt number. Rules in On/FailOn are either category names
-// (e.g. "transient") or HTTP status codes written as integers (e.g. 503).
-func shouldRetry(cat ErrorCategory, status int, config *plan.RetryConfig, attempt int) bool {
+// the error category, the HTTP status code, the gRPC status name ("" for an
+// HTTP step), the retry configuration, and the current attempt number. Rules
+// in On/FailOn are category names (e.g. "transient"), HTTP status codes
+// written as integers (e.g. 503), or gRPC status names (e.g. "UNAVAILABLE").
+func shouldRetry(cat ErrorCategory, status int, grpcName string, config *plan.RetryConfig, attempt int) bool {
 	if config == nil {
 		return false
 	}
@@ -248,7 +250,7 @@ func shouldRetry(cat ErrorCategory, status int, config *plan.RetryConfig, attemp
 
 	// FailOn overrides everything — if any rule matches, never retry
 	for _, f := range config.FailOn {
-		if retryRuleMatches(f, cat, status) {
+		if retryRuleMatches(f, cat, status, grpcName) {
 			return false
 		}
 	}
@@ -256,7 +258,7 @@ func shouldRetry(cat ErrorCategory, status int, config *plan.RetryConfig, attemp
 	// If On is specified, only retry when a rule matches
 	if len(config.On) > 0 {
 		for _, o := range config.On {
-			if retryRuleMatches(o, cat, status) {
+			if retryRuleMatches(o, cat, status, grpcName) {
 				return true
 			}
 		}
@@ -268,12 +270,18 @@ func shouldRetry(cat ErrorCategory, status int, config *plan.RetryConfig, attemp
 }
 
 // retryRuleMatches reports whether a single retry rule matches a failure.
-// Numeric rules compare against the HTTP status code; other rules compare
-// (case-insensitively) against the error category name.
-func retryRuleMatches(rule string, cat ErrorCategory, status int) bool {
+// Numeric rules compare against the HTTP status code, which a gRPC status maps
+// to; a gRPC status name matches that status alone, since several share one
+// HTTP status; other rules compare (case-insensitively) against the error
+// category name.
+func retryRuleMatches(rule string, cat ErrorCategory, status int, grpcName string) bool {
 	rule = strings.TrimSpace(rule)
 	if code, err := strconv.Atoi(rule); err == nil {
 		return status != 0 && code == status
+	}
+	if code, ok := grpcstatus.CodeByName(rule); ok {
+		got, isGRPC := grpcstatus.CodeByName(grpcName)
+		return grpcName != "" && isGRPC && got == code
 	}
 	return strings.EqualFold(rule, cat.String())
 }

@@ -509,7 +509,7 @@ Steps can configure retry behavior:
 | `retry.on` | Rules that trigger a retry — error category names and/or HTTP status codes |
 | `retry.failOn` | Rules that cause immediate failure with no retry; checked before `on` |
 
-Each entry in `on` and `failOn` is either an **error category** name or an **HTTP status code** written as an integer. The two can be mixed freely: `on: [503, transient]` retries on any transient failure *and* on a bare 503. AAT classifies every failure into exactly one category:
+Each entry in `on` and `failOn` is an **error category** name, an **HTTP status code** written as an integer, or a **[gRPC](grpc.md) status name**. They can be mixed freely: `on: [503, transient]` retries on any transient failure *and* on a bare 503. A gRPC name matches that status alone, where a number matches every gRPC status that maps to it: `failOn: [FAILED_PRECONDITION]` stops at that code but lets `INVALID_ARGUMENT`, also a 400, retry. AAT classifies every failure into exactly one category:
 
 | Category | Covers |
 |----------|--------|

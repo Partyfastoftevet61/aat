@@ -560,7 +560,7 @@ assertions:
 
 `retry: {max: 3, on: [transient], failOn: [auth]}` retries a failed step.
 
-- **Rules** in `on` and `failOn` are failure categories or HTTP status codes (`on: [503]`):
+- **Rules** in `on` and `failOn` are failure categories, HTTP status codes (`on: [503]`), or gRPC status names (`on: [UNAVAILABLE]`), which match that status alone:
   - `transient`: 429, 502, 503, 504, or a refused or reset connection
   - `server`: other 5xx
   - `client`: other 4xx

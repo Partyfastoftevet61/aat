@@ -9,6 +9,7 @@ import (
 
 	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/graph"
+	"github.com/gburgyan/aat/internal/grpcstatus"
 	"github.com/gburgyan/aat/internal/predicate"
 )
 
@@ -16,8 +17,9 @@ import (
 // retry.failOn. The engine's ErrorCategory names must stay in sync with this list.
 var RetryCategories = []string{"transient", "client", "auth", "server", "adapter", "network", "timeout", "response_error"}
 
-// ValidRetryRule reports whether a retry rule is a known category name or an
-// HTTP status code in the range 100-599.
+// ValidRetryRule reports whether a retry rule is a known category name, an
+// HTTP status code in the range 100-599, or a gRPC status name other than OK,
+// which is never a failure.
 func ValidRetryRule(rule string) bool {
 	rule = strings.TrimSpace(rule)
 	if code, err := strconv.Atoi(rule); err == nil {
@@ -28,7 +30,8 @@ func ValidRetryRule(rule string) bool {
 			return true
 		}
 	}
-	return false
+	code, ok := grpcstatus.CodeByName(rule)
+	return ok && code != grpcstatus.OK
 }
 
 // validateRetryConfig returns validation errors for a step's retry block.
@@ -42,12 +45,12 @@ func validateRetryConfig(prefix string, rc *RetryConfig) []string {
 	}
 	for _, r := range rc.On {
 		if !ValidRetryRule(r) {
-			errs = append(errs, fmt.Sprintf("%s: retry.on has unknown rule %q (use a category: %s, or an HTTP status code)", prefix, r, strings.Join(RetryCategories, ", ")))
+			errs = append(errs, fmt.Sprintf("%s: retry.on has unknown rule %q (use a category: %s, an HTTP status code, or a gRPC status name)", prefix, r, strings.Join(RetryCategories, ", ")))
 		}
 	}
 	for _, r := range rc.FailOn {
 		if !ValidRetryRule(r) {
-			errs = append(errs, fmt.Sprintf("%s: retry.failOn has unknown rule %q (use a category: %s, or an HTTP status code)", prefix, r, strings.Join(RetryCategories, ", ")))
+			errs = append(errs, fmt.Sprintf("%s: retry.failOn has unknown rule %q (use a category: %s, an HTTP status code, or a gRPC status name)", prefix, r, strings.Join(RetryCategories, ", ")))
 		}
 	}
 	return errs

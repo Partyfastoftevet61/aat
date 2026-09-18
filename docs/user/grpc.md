@@ -299,7 +299,10 @@ Under the covers each gRPC code carries the HTTP status it maps to, which is
 how retries, error categories, and `2xx`-style classes keep working unchanged:
 `UNAVAILABLE` and `RESOURCE_EXHAUSTED` are transient and get retried,
 `UNAUTHENTICATED` and `PERMISSION_DENIED` are auth failures. `OK` is the only
-code that maps below 400.
+code that maps below 400. A retry rule can name a status too, and then matches
+it alone: `retry: {max: 2, on: [ABORTED]}`, or `failOn: [FAILED_PRECONDITION]`
+to stop retrying at that code while `INVALID_ARGUMENT`, the same HTTP 400,
+still retries.
 
 ### A failed call still has a body
 
