@@ -13,6 +13,7 @@ An AI coding assistant needs one document to author and run an AAT project: the 
 - [Project setup](https://gburgyan.github.io/aat/project-setup/): the manifest and the project layout
 - [API graphs](https://gburgyan.github.io/aat/graphs/): nodes, inputs, outputs, ordering, and cleanup
 - [Templates](https://gburgyan.github.io/aat/templates/): requests and response extraction
+- [gRPC](https://gburgyan.github.io/aat/grpc/): gRPC nodes and templates, status names, and protobuf's JSON encoding
 - [Lua transforms](https://gburgyan.github.io/aat/lua-transforms/): outputs computed from a response
 - [Environments](https://gburgyan.github.io/aat/environments/): base URLs, auth, and multiple environments
 - [Plans and recipes](https://gburgyan.github.io/aat/plans/): steps, values, assertions, and layers

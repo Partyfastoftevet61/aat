@@ -49,6 +49,7 @@ Progressive reading order — each builds on the previous.
 | [Project Setup](project-setup.md) | The `aat-project.yaml` manifest, directory layout, and auto-discovery rules |
 | [API Graphs](graphs.md) | Nodes, inputs, outputs, ordering, and the operation model your tests build on |
 | [Templates](templates.md) | HTTP request/response YAML files, placeholders, extraction, and conditional blocks |
+| [gRPC](grpc.md) | Descriptor sets, gRPC nodes and templates, `grpc://` routing, status names, and how protobuf messages read as JSON |
 | [Lua Transforms](lua-transforms.md) | Post-processing responses with inline Lua scripts |
 | [Environments](environments.md) | Base URLs, auth, secrets, headers, multiple environments, and per-host overrides |
 | [Plans and Recipes](plans.md) | Recipes (compact format), full plans, steps, values, assertions, and layers |
@@ -163,7 +164,7 @@ A choice point in a base workflow where one of several named workflow fragments 
 One operation in a plan, mapped to a graph node, with resolved input values and optional assertions. [-> plans.md](plans.md)
 
 ### Template
-A YAML file defining the HTTP request shape and response extraction rules for a single graph node. [-> templates.md](templates.md)
+A YAML file defining the HTTP request shape, or the [gRPC](grpc.md) call, and response extraction rules for a single graph node. [-> templates.md](templates.md)
 
 ### Value Pool
 A curated list of valid values for a domain type in the domain file, used by `aat prompt`, `aat docs generate`, and the MCP tools; runs never read it (a `pool` default on an input is what varies run data). [-> domain.md](domain.md)

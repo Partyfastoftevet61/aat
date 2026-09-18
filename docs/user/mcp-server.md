@@ -46,6 +46,8 @@ aat mcp serve --persona test    # test lifecycle tools (26)
 
 The seven OpenAPI tools register only when an OAS spec is loaded (from the manifest's `oas` field or the graph's `oas` references), which is why the `api` and all-tools counts vary.
 
+A [gRPC](grpc.md) node needs no tools of its own: the template and node tools describe it by its service and method, its metadata, and its message, where they show an HTTP node's method, path, headers, and body, and the archive tools report the gRPC status the server sent. There is no descriptor-set counterpart to the OpenAPI tools, so an assistant writing new gRPC nodes reads the `.proto` source.
+
 | Persona | Target User | Focus |
 |---------|------------|-------|
 | `api` | Integration developer | Understanding endpoints, data shapes, schemas, domain rules |

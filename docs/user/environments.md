@@ -108,7 +108,7 @@ AAT detects the format automatically: if the YAML has an `environments` key, it'
 The `shared` section provides defaults that merge into every environment. Per-environment fields override shared fields:
 
 - **`headers`**, **`values`**, **`vars`** — map merge (environment keys win, shared keys preserved)
-- **`auth`**, **`llm`** — full replace (if the environment specifies auth, it replaces shared auth entirely)
+- **`auth`**, **`llm`**, **`grpc`** — full replace (if the environment specifies auth, it replaces shared auth entirely)
 - **`settings`** — field-level merge (environment can override individual settings fields)
 
 ### Inheritance with `extends`
@@ -435,6 +435,14 @@ grpc:
     serverName: api.internal       # when the address is not the certificate's name
     insecureSkipVerify: false      # a sandbox with a self-signed certificate, nothing else
 ```
+
+One `grpc:` block serves every `grpcs://` route of the environment, overrides
+included.
+
+An override's or overlay's `expectFailure.status` takes numbers only. It
+matches a gRPC step through the HTTP status the code maps to, so `[400]`
+matches `INVALID_ARGUMENT` and `FAILED_PRECONDITION` alike; a plan's own
+`expectFailure` can [name the status](plans.md#negative-testing-expectfailure).
 
 `pathRewrite` has no meaning for a gRPC route — a path there is a method name —
 and naming both is an error rather than a silent no-op. See [gRPC](grpc.md).
@@ -906,6 +914,14 @@ llm:                                      # LLM configuration (for aat prompt)
 settings:                                 # optional — runtime defaults
   oasValidation: auto                     #   auto, strict, or off (default: auto)
   minRequestInterval: 250ms               #   least time between request starts (default: none)
+
+grpc:                                     # optional — TLS for grpcs:// routes (see gRPC Targets)
+  tls:
+    caFile: certs/ca.pem                  #   a private certificate authority
+    certFile: certs/client.pem            #   client certificate, for mTLS
+    keyFile: certs/client-key.pem
+    serverName: api.internal              #   when the address is not the certificate's name
+    insecureSkipVerify: false             #   self-signed sandboxes only
 
 notes: "Staging environment for QA"       # optional — freeform notes
 

@@ -228,7 +228,10 @@ grpc:
     insecureSkipVerify: false      # a sandbox with a self-signed certificate, nothing else
 ```
 
-Paths resolve beside the environment file.
+Paths resolve beside the environment file. One `grpc:` block serves every
+`grpcs://` route of the environment; an override cannot carry its own. In a
+multi-environment file, an environment that declares `grpc:` replaces the block
+it inherits whole, as it does for `auth`.
 
 ## Validating before you run
 
@@ -236,8 +239,13 @@ Paths resolve beside the environment file.
 server running:
 
 ```
-Protobuf validation: OK
+Protobuf validation: OK (2 gRPC nodes)
+Node protocols:      OK (2 gRPC, 3 HTTP)
 ```
+
+The second line checks that each node's `proto:` and its template's
+`protocol:` and `rpc:` agree — see
+[Validation](validation.md#node-protocols).
 
 It catches what otherwise fails at run time, or worse, quietly:
 
@@ -412,6 +420,17 @@ it would mean a second execution model. For a flow that genuinely needs one,
   [MCP server](mcp-server.md), which describes gRPC operations by service,
   method, metadata, and message.
 - gRPC-Web and the Connect protocol are not supported.
+- A call gets the same fixed 30-second timeout an HTTP request gets, and fails
+  in the `timeout` category. It is not configurable.
+- A response message larger than 4 MiB, gRPC's default receive limit, fails
+  with `RESOURCE_EXHAUSTED`. That code is transient, so a step with a `retry`
+  rule retries it to no effect; page the request instead.
+- `expectFailure` in an [override or an overlay file](environments.md#input-value-and-expected-failure-overrides)
+  takes numbers only, so it matches a gRPC step through the HTTP mapping
+  (`status: [400]`) and cannot tell `INVALID_ARGUMENT` from
+  `FAILED_PRECONDITION`. A plan's own `expectFailure` can.
+- The MCP server has no tools for browsing a descriptor set, as it has for an
+  OpenAPI spec. An assistant writing new gRPC nodes reads the `.proto` source.
 - gRPC's own retry and load-balancing configuration is deliberately disabled;
   AAT [retries steps](running.md#retries) itself, and both would double every
   attempt.
