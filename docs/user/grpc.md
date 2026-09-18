@@ -34,6 +34,15 @@ PASSED (5/5 steps, 164ms)
 Three HTTP steps, then two gRPC ones. `make example-grpc` runs the whole thing
 from the repository root, starting its own sandbox; that is what CI runs.
 
+With `aat` and `aat-sandbox` installed rather than built, the project comes out
+of the sandbox binary, which serves from the same descriptor set:
+
+```bash
+aat-sandbox init --example grpc-payments grpc-payments && cd grpc-payments
+aat-sandbox serve &
+aat run plan charge-and-refund
+```
+
 ## What you need
 
 **A descriptor set.** AAT reads a `FileDescriptorSet` — the compiled form of
@@ -412,7 +421,10 @@ status INVALID_ARGUMENT (CARD_DECLINED: card ending in 0002 was declined by the 
 
 The [web UI](web-ui.md) shows the method and the service it went to in place of
 a verb and a URL, separates metadata from trailers, and offers **Copy as
-grpcurl** where an HTTP step offers Copy as cURL.
+grpcurl** where an HTTP step offers Copy as cURL. grpcurl learns a method's
+messages from the server's reflection service; for a server without one, which
+includes `aat-sandbox`, add `-protoset` with your descriptor set, as the
+command's first line says. Credentials are `[REDACTED]`, as they are for cURL.
 
 [Archives](archives.md) record `protocol`, `grpcCode`, `grpcMessage`,
 `grpcDetails`, and `trailers` alongside the usual fields. The `status` field
@@ -450,6 +462,12 @@ it would mean a second execution model. For a flow that genuinely needs one,
   its size, as an HTTP response is: gRPC's 4 MiB default does not apply.
 - The MCP server has no tools for browsing a descriptor set, as it has for an
   OpenAPI spec. An assistant writing new gRPC nodes reads the `.proto` source.
+- Binary metadata, a key ending in `-bin`, is not handled specially. gRPC
+  base64-encodes such a value itself, so a template writes the raw value and
+  cannot write arbitrary bytes; a binary value a server returns is not valid
+  text, and is archived with its unreadable bytes replaced.
+- `unknown` in `retry.on` or `retry.failOn` is the gRPC status `UNKNOWN`. No
+  error category has that name, so nothing else could be meant.
 - gRPC's own retry and load-balancing configuration is deliberately disabled;
   AAT [retries steps](running.md#retries) itself, and both would double every
   attempt.

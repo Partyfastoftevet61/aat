@@ -37,7 +37,7 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 | Package | Responsibility |
 |---------|---------------|
 | `cmd/aat/` | CLI binary — thin wrapper, wires packages together |
-| `cmd/aat-sandbox/` | Demo API binary: `serve` runs the offline shop sandbox, `init` extracts `examples/shop` |
+| `cmd/aat-sandbox/` | Demo API binary: `serve` runs the offline shop sandbox, `init` extracts `examples/shop`, or `examples/grpc-payments` with `--example` |
 | `graph/` | API graph model, YAML parsing, traversal, backward chaining, diffing |
 | `graph/proto/` | Validates gRPC nodes against protobuf descriptors (implements `graph.SpecValidator`) |
 | `adapter/` | Adapter and Executor interfaces, HTTP and gRPC executors, Tier 1/3 loaders |
@@ -62,7 +62,7 @@ make clean         # Remove binaries and frontend artifacts (node_modules, dist)
 | `internal/primer/` | The AI assistant primer (`llms.md`): embedded for `aat docs primer`, included by `docs/user/llms.md`, and published as `llms-full.txt` |
 | `internal/testutil/` | Shared test helpers and fixtures |
 | `internal/version/` | Build version info |
-| root `embed.go` | `package aat`: embeds `examples/shop` for `aat-sandbox init` |
+| root `embed.go` | `package aat`: embeds `examples/shop` and `examples/grpc-payments` for `aat-sandbox init`; the sandbox serves gRPC from the second's descriptor set |
 
 ## Dependency Rules
 

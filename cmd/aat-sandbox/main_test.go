@@ -48,6 +48,26 @@ func TestInitCommand_ExtractsEmbeddedFiles(t *testing.T) {
 	assert.NoError(t, err, "openapi.yaml is part of the example")
 }
 
+// The gRPC example is embedded for the sandbox to serve from, so an installed
+// aat-sandbox can hand it out too, with no checkout of the repository.
+func TestInitCommand_ExtractsTheGRPCExample(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "grpc-payments")
+	var out bytes.Buffer
+	require.NoError(t, initCommand(initArgs{Dir: dir, Example: "grpc-payments"}, &out))
+	assert.Contains(t, out.String(), "aat run plan charge-and-refund")
+
+	for _, name := range []string{"aat-project.yaml", "payments.protoset", "plans/charge-and-refund.yaml", "templates/paymentCharge.yaml"} {
+		_, err := os.Stat(filepath.Join(dir, filepath.FromSlash(name)))
+		assert.NoError(t, err, name)
+	}
+}
+
+func TestInitCommand_UnknownExample(t *testing.T) {
+	err := initCommand(initArgs{Dir: t.TempDir(), Example: "petstore"}, &bytes.Buffer{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "grpc-payments and shop")
+}
+
 func TestInitCommand_RefusesNonEmptyUnlessForced(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "keep.txt"), []byte("x"), 0o644))

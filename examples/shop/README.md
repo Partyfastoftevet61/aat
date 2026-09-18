@@ -10,7 +10,7 @@ tests, a response visualizer, and MCP configuration for AI coding tools.
 
 ```bash
 aat-sandbox init shop && cd shop   # extract this project (in a source checkout: cd examples/shop)
-aat-sandbox serve &                # shop API on :8765, payments API on :8766
+aat-sandbox serve &                # shop API on :8765, payments on :8766, payments over gRPC on :8767
 aat run plan full-lifecycle
 aat run plan smoke --env eu
 aat run batch --layer-group shipping-standard,shipping-express --layer-group basket-gear,basket-apparel --parallel 4

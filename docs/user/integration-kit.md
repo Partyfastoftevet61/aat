@@ -184,7 +184,7 @@ The airline project passed a simple test: one prompt, a working client. The shop
 ```bash
 mkdir kit-test && cd kit-test
 aat-sandbox init shop                                # the example project
-aat-sandbox serve &                                  # shop API on :8765, payments API on :8766
+aat-sandbox serve &                                  # shop API on :8765, payments on :8766 (and over gRPC on :8767)
 sh shop/package-kit.sh integrator/vendor/shop-kit
 cd integrator
 cat >.mcp.json <<'EOF'

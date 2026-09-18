@@ -25,6 +25,9 @@ cd examples/grpc-payments
 `make example-grpc` runs all of that from the repository root, starting its own
 sandbox. That is also what CI runs.
 
+Without the repository, `aat-sandbox init --example grpc-payments <dir>`
+extracts this project from the sandbox binary.
+
 ## What is here
 
 | File | |

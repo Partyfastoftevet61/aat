@@ -65,6 +65,10 @@ the graph and plan formats may still change before 1.0.
   whichever protocol reached them. It is served dynamically from the same descriptor set the
   project reads, so the two cannot describe different APIs. `make proto` regenerates it.
 
+  `aat-sandbox init --example grpc-payments <dir>` extracts the project from the sandbox binary, so an
+  installed `aat-sandbox` runs the gRPC demo with no checkout of the repository; `init` with no flag
+  still extracts the shop.
+
 - **`docs/user/grpc.md`**, a guide covering descriptor sets, the template and graph shape, routing
   and auth, status names, and the proto3 JSON encoding rules most likely to surprise a plan author
   — starting with 64-bit integers, which encode as strings. The AI assistant primer gained the same
@@ -128,6 +132,10 @@ the graph and plan formats may still change before 1.0.
   learned gRPC. They now say what the tools return for either protocol. `aat://api/overview` listed a
   gRPC node with no method at all, and `get_oas_operation` told an assistant that a gRPC node was
   missing its OAS reference; the overview names the method, and the tool says what the node is.
+
+  **Copy as grpcurl** produced a command that failed against any server without reflection, the
+  sandbox included, with nothing to say why; it now opens with a comment naming the `-protoset` flag
+  to add.
 
   The demo's gRPC replies carried an empty payment id. The HTTP payments API calls it `paymentId` and
   `payments.proto` called it `id`, and the sandbox's gRPC service discarded the field it could not

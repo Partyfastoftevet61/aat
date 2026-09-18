@@ -28,8 +28,8 @@ type GRPCExecutor struct {
 	// ownsPool is set when the executor was given no pool and made one.
 	ownsPool bool
 	reg      *protoreg.Registry
-	secure bool
-	tls    TLSConfig
+	secure   bool
+	tls      TLSConfig
 	// timeout bounds one call, as http.Client.Timeout bounds one request. It
 	// is DefaultRequestTimeout; tests shorten it.
 	timeout time.Duration

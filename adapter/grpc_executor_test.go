@@ -189,9 +189,6 @@ func TestGRPCExecutor_MetadataAndTrailers(t *testing.T) {
 	// Keys are stored as the wire sent them: lowercase, not canonicalized to
 	// X-Request-Id, which is the spelling an archive and a copied grpcurl
 	// command show.
-	// Keys are stored as the wire sent them: lowercase, not canonicalized to
-	// X-Request-Id, which is the spelling an archive and a copied grpcurl
-	// command show.
 	assert.Contains(t, headerKeys(resp.Headers), "x-request-id", "header metadata is wire-spelled")
 	assert.NotContains(t, headerKeys(resp.Headers), "X-Request-Id", "no canonicalized spelling")
 	assert.Equal(t, []string{"x-cost"}, headerKeys(resp.Trailers), "a trailer is kept apart from a header")

@@ -154,6 +154,12 @@
    * no -d, grpcurl reads the request message from stdin and the pasted
    * command appears to hang, and an empty body is what the executor sends as
    * {} anyway.
+   *
+   * The first line is a shell comment, so it pastes harmlessly. grpcurl learns
+   * a method's messages from the server's reflection service, which many
+   * servers, aat-sandbox among them, do not run; it then needs the descriptor
+   * set the project already has. The archive does not record where that file
+   * is, so the comment says what to add rather than the command guessing.
    */
   function buildGrpcurl(req: RequestDetail): string {
     const target = req.target ?? '';
@@ -170,7 +176,8 @@
     lines.push(`  -d ${shellQuote(body)}`);
     lines.push(`  ${shellQuote(host)}`);
     lines.push(`  ${shellQuote(req.rpc ?? '')}`);
-    return lines.join(' \\\n');
+    const hint = '# If the server has no reflection service, add: -protoset <your descriptor set>';
+    return `${hint}\n${lines.join(' \\\n')}`;
   }
 
   async function copyCurl() {

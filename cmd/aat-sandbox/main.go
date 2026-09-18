@@ -194,15 +194,28 @@ func displayAddr(addr net.Addr) string {
 type initArgs struct {
 	Dir   string
 	Force bool
+	// Example names the embedded project to extract; empty means shop.
+	Example string
+}
+
+// examples are the projects init can extract, each with the plan its next
+// steps suggest running first.
+var examples = map[string]struct {
+	fs        func() (fs.FS, error)
+	firstPlan string
+}{
+	"shop":          {aat.ShopExampleFS, "full-lifecycle"},
+	"grpc-payments": {aat.GRPCPaymentsExampleFS, "charge-and-refund"},
 }
 
 var initCmd = &cobra.Command{
 	Use:   "init <dir>",
-	Short: "Extract the examples/shop AAT project into a directory",
+	Short: "Extract an example AAT project into a directory: examples/shop, or examples/grpc-payments with --example",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		force, _ := cmd.Flags().GetBool("force")
-		return initCommand(initArgs{Dir: args[0], Force: force}, cmd.OutOrStdout())
+		example, _ := cmd.Flags().GetString("example")
+		return initCommand(initArgs{Dir: args[0], Force: force, Example: example}, cmd.OutOrStdout())
 	},
 }
 
@@ -212,6 +225,13 @@ func initCommand(a initArgs, out io.Writer) error {
 	if a.Dir == "" {
 		return &exitError{Code: 2, Err: errors.New("init: target directory is required")}
 	}
+	if a.Example == "" {
+		a.Example = "shop"
+	}
+	example, known := examples[a.Example]
+	if !known {
+		return &exitError{Code: 2, Err: fmt.Errorf("init: unknown example %q: the examples are grpc-payments and shop", a.Example)}
+	}
 	if entries, err := os.ReadDir(a.Dir); err == nil {
 		if len(entries) > 0 && !a.Force {
 			return &exitError{Code: 1, Err: fmt.Errorf("directory %s is not empty; use --force to overwrite", a.Dir)}
@@ -220,7 +240,7 @@ func initCommand(a initArgs, out io.Writer) error {
 		return fmt.Errorf("init: %w", err)
 	}
 
-	src, err := aat.ShopExampleFS()
+	src, err := example.fs()
 	if err != nil {
 		return fmt.Errorf("init: embedded example: %w", err)
 	}
@@ -247,7 +267,7 @@ func initCommand(a initArgs, out io.Writer) error {
 		return fmt.Errorf("init: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(out, "Extracted %d files to %s\n\nNext steps:\n  cd %s\n  aat-sandbox serve &\n  aat run plan full-lifecycle\n", count, a.Dir, a.Dir)
+	_, _ = fmt.Fprintf(out, "Extracted %d files to %s\n\nNext steps:\n  cd %s\n  aat-sandbox serve &\n  aat run plan %s\n", count, a.Dir, a.Dir, example.firstPlan)
 	return nil
 }
 
@@ -263,6 +283,7 @@ func init() {
 	f.Bool("quiet", false, "suppress the startup banner")
 
 	initCmd.Flags().Bool("force", false, "write into a non-empty directory, overwriting files")
+	initCmd.Flags().String("example", "shop", "the project to extract: shop, or grpc-payments (one plan across HTTP and gRPC)")
 
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(initCmd)

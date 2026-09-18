@@ -48,7 +48,7 @@ Progressive reading order — each builds on the previous.
 |----------|-------------------|
 | [Project Setup](project-setup.md) | The `aat-project.yaml` manifest, directory layout, and auto-discovery rules |
 | [API Graphs](graphs.md) | Nodes, inputs, outputs, ordering, and the operation model your tests build on |
-| [Templates](templates.md) | HTTP request/response YAML files, placeholders, extraction, and conditional blocks |
+| [Templates](templates.md) | Request and response YAML files, placeholders, extraction, and conditional blocks |
 | [gRPC](grpc.md) | Descriptor sets, gRPC nodes and templates, `grpc://` routing, status names, and how protobuf messages read as JSON |
 | [Lua Transforms](lua-transforms.md) | Post-processing responses with inline Lua scripts |
 | [Environments](environments.md) | Base URLs, auth, secrets, headers, multiple environments, and per-host overrides |
