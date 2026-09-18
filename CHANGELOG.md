@@ -66,6 +66,12 @@ the graph and plan formats may still change before 1.0.
   ground so agents author gRPC plans correctly.
 
 ### Fixed
+- **`fieldEquals` compares a list or an object by its structure.** Anything but a scalar used to be
+  compared by its printed form, so `{population: 3645000}` failed against the JSON
+  `{"population": 3645000}` (a float prints as `3.645e+06`), and `["4"]` passed against `[4]`. Lists
+  and objects now match element by element and key by key, numbers by value and strings only as
+  strings, at any depth; a failure shows both sides as JSON. `errorDetection` rules compare the same
+  way.
 - **gRPC rough edges, found by reviewing the feature against its own docs.** A descriptor set named
   by `proto:` in `aat-project.yaml` — the form the guide teaches first — was parsed and read by
   nothing, so every gRPC node went unvalidated and the run then failed telling the user to do what

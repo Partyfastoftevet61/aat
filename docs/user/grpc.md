@@ -349,7 +349,9 @@ so only extraction is affected — and `aat validate` reports a path written the
 wrong way rather than letting it silently read nothing.
 
 **Zero values are present.** A field that is `0`, `""`, or `false` appears in
-the JSON rather than being omitted, so an extract rule for it does not fail.
+the JSON rather than being omitted, so an extract rule for it does not fail. An
+empty list is `[]` and an empty map `{}`, even for a deprecated repeated field
+the server never sets, so compare whole objects with that in mind.
 An unset `optional` field, an unset message field, and an absent map entry
 stay absent, which is what makes `fieldAbsent` meaningful.
 

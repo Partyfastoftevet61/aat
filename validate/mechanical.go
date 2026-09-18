@@ -288,7 +288,11 @@ func checkFieldEquals(body []byte, a MechanicalAssertion) AssertionResult {
 		ar.Message = fmt.Sprintf("field %q equals %v", a.Path, a.Value)
 	} else {
 		ar.Passed = false
-		ar.Message = fmt.Sprintf("field %q: expected %v, got %v", a.Path, a.Value, r.Value())
+		got := fmt.Sprintf("%v", r.Value())
+		if r.IsObject() || r.IsArray() {
+			got = r.Raw
+		}
+		ar.Message = fmt.Sprintf("field %q: expected %s, got %s", a.Path, describeExpected(a.Value), got)
 	}
 	return ar
 }
@@ -336,21 +340,133 @@ func checkPredicate(body []byte, a MechanicalAssertion, predicateEval PredicateE
 	return ar
 }
 
-// ValuesEqual compares a gjson.Result with an expected value, handling numeric coercion.
+// ValuesEqual compares a gjson.Result with an expected value from a plan. A
+// number matches a number of the same value whatever its Go type, so a plan's 4
+// matches a response's 4.0. A list or an object matches element by element and
+// key by key under the same rules, so {population: 3645000} matches the JSON
+// {"population":3645000}, and ["4"] never matches [4]: a string is not a number
+// at any depth.
 func ValuesEqual(r gjson.Result, expected any) bool {
-	switch e := expected.(type) {
-	case string:
-		return r.Type == gjson.String && r.Str == e
-	case bool:
-		return r.Type == gjson.True && e || r.Type == gjson.False && !e
-	case float64:
-		return r.Type == gjson.Number && r.Num == e
-	case int:
-		return r.Type == gjson.Number && r.Num == float64(e)
-	case int64:
-		return r.Type == gjson.Number && r.Num == float64(e)
-	default:
-		// Fallback: compare string representations
-		return fmt.Sprintf("%v", r.Value()) == fmt.Sprintf("%v", expected)
+	return jsonValueEqual(r.Value(), expected)
+}
+
+// jsonValueEqual reports whether actual, a value decoded from JSON, equals
+// expected, a value from YAML or an evaluated expression.
+func jsonValueEqual(actual, expected any) bool {
+	if n, ok := asFloat(expected); ok {
+		a, isNum := actual.(float64)
+		return isNum && a == n
 	}
+	switch e := expected.(type) {
+	case nil:
+		return actual == nil
+	case string:
+		a, ok := actual.(string)
+		return ok && a == e
+	case bool:
+		a, ok := actual.(bool)
+		return ok && a == e
+	case []any:
+		a, ok := actual.([]any)
+		if !ok || len(a) != len(e) {
+			return false
+		}
+		for i := range e {
+			if !jsonValueEqual(a[i], e[i]) {
+				return false
+			}
+		}
+		return true
+	case map[string]any:
+		a, ok := actual.(map[string]any)
+		if !ok || len(a) != len(e) {
+			return false
+		}
+		for k, v := range e {
+			av, ok := a[k]
+			if !ok || !jsonValueEqual(av, v) {
+				return false
+			}
+		}
+		return true
+	case map[any]any:
+		keyed := make(map[string]any, len(e))
+		for k, v := range e {
+			keyed[fmt.Sprint(k)] = v
+		}
+		return jsonValueEqual(actual, keyed)
+	}
+	return fmt.Sprintf("%v", actual) == fmt.Sprintf("%v", expected)
+}
+
+// asFloat returns a numeric value of any Go number type as a float64.
+func asFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int8:
+		return float64(n), true
+	case int16:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case uint:
+		return float64(n), true
+	case uint8:
+		return float64(n), true
+	case uint16:
+		return float64(n), true
+	case uint32:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	}
+	return 0, false
+}
+
+// describeExpected renders an expected value for a failure message: a list or
+// an object as JSON, so it reads like the response it is compared with.
+func describeExpected(v any) string {
+	switch v.(type) {
+	case []any, map[string]any, map[any]any:
+		if data, err := json.Marshal(normalizeYAML(v)); err == nil {
+			return string(data)
+		}
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// normalizeYAML turns the map[any]any a YAML decoder can produce into
+// map[string]any, at any depth, so it can be marshaled as JSON.
+func normalizeYAML(v any) any {
+	switch t := v.(type) {
+	case map[any]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			out[fmt.Sprint(k)] = normalizeYAML(val)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			out[k] = normalizeYAML(val)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, val := range t {
+			out[i] = normalizeYAML(val)
+		}
+		return out
+	}
+	return v
 }
