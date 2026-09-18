@@ -152,6 +152,12 @@ the graph and plan formats may still change before 1.0.
   aligned when a step reports a status name instead of three digits. gRPC metadata is archived with
   the lowercase keys the wire uses, so a key grepped for in an archive is the key the server sent.
 
+- **Ctrl-C ends `aat web` at once, and without an error.** A browser keeps spare connections open to a
+  server it is showing, and Go will not close a connection that has sent nothing until it is five
+  seconds old; `aat web` allowed its shutdown five seconds. So stopping it with a browser tab open
+  could wait out the whole of that and then exit with `context deadline exceeded`. A connection that
+  never sent a request is now closed when the shutdown starts. It also made one of AAT's own tests
+  fail intermittently, which is how it was found.
 - **`--override NODE=URL` keeps the node's own credential.** The flag took the environment's top-level
   auth even when an `overrides:` entry gave the node another, so `--override paymentCharge=URL` sent the
   shop's bearer token to the payments host in place of its API key, and the call failed as

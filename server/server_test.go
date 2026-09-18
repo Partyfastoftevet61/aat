@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -254,4 +255,46 @@ func TestIntegration_ListenAndShutdown(t *testing.T) {
 	// ListenAndServe should return ErrServerClosed
 	err = <-errCh
 	assert.ErrorIs(t, err, http.ErrServerClosed)
+}
+
+// A browser opens spare connections and leaves them silent, and so, now and
+// then, does Go's own HTTP client. net/http will not close a connection that
+// has sent nothing until it is five seconds old, so a graceful shutdown with
+// one open used to wait all of that out, and `aat web`, which allows five
+// seconds, ended Ctrl-C with "context deadline exceeded". A connection that
+// never sent a request has nothing to lose, and is closed at once.
+func TestShutdown_DoesNotWaitOnAConnectionThatSentNothing(t *testing.T) {
+	s := NewServer(ServerOptions{Port: freePort(t), ArchiveDir: t.TempDir()})
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.ListenAndServe() }()
+	require.Eventually(t, func() bool { return s.Addr() != "" }, 2*time.Second, 10*time.Millisecond)
+
+	// A request first, so the server is known to be serving.
+	resp, err := http.Get("http://" + s.Addr() + "/health")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+
+	silent, err := net.Dial("tcp", s.Addr())
+	require.NoError(t, err)
+	defer func() { _ = silent.Close() }()
+	// Shutdown can only close what the server has accepted.
+	require.Eventually(t, func() bool { return s.silentConns() == 1 }, 2*time.Second, 5*time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	require.NoError(t, s.Shutdown(ctx))
+	assert.Less(t, time.Since(start), 2*time.Second, "shutdown waited on a connection that had sent nothing")
+	assert.ErrorIs(t, <-errCh, http.ErrServerClosed)
+}
+
+// freePort returns a port nothing is listening on. A test that binds a fixed
+// port fails on a machine where something already has it, `aat web` included.
+func freePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+	require.NoError(t, ln.Close())
+	return port
 }
