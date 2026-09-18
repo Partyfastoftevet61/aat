@@ -501,3 +501,23 @@ func TestFormatDefaultValue(t *testing.T) {
 		})
 	}
 }
+
+// Generated docs are compared with the committed copy in CI, so the same graph
+// must give the same bytes every time, including where several nodes satisfy
+// one requirement and the map they come from has no order.
+func TestGenerateDocs_IsDeterministic(t *testing.T) {
+	var yaml strings.Builder
+	yaml.WriteString("version: \"1.0.0\"\nnodes:\n  reader:\n    adapter: reader\n    requires: [points]\n")
+	for _, name := range []string{"upsertPoints", "jwtRbacUpsertPoints", "readOnlyUpsertPoints", "anonUpsertPoints", "zUpsertPoints"} {
+		yaml.WriteString("  " + name + ":\n    adapter: " + name + "\n    satisfies: [points]\n")
+	}
+	g, err := Parse([]byte(yaml.String()))
+	require.NoError(t, err)
+	first := GenerateDocs(g, nil)
+	for i := 0; i < 20; i++ {
+		again, err := Parse([]byte(yaml.String()))
+		require.NoError(t, err)
+		require.Equal(t, first, GenerateDocs(again, nil), "run %d differs", i)
+	}
+	assert.Less(t, strings.Index(first, "anonUpsertPoints --> reader"), strings.Index(first, "zUpsertPoints --> reader"))
+}

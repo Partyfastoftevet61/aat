@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/gburgyan/aat/internal/protoreg"
@@ -423,12 +424,18 @@ type ErrorDetailMapping struct {
 }
 
 // BuildSatisfierIndex populates the computed satisfier index for fast lookup.
+// Each token's satisfiers are sorted by name, so everything that walks them,
+// generated docs and backward chaining alike, comes out the same every time
+// rather than in map order.
 func (g *Graph) BuildSatisfierIndex() {
 	g.SatisfiersByToken = map[string][]string{}
 	for name, node := range g.Nodes {
 		for _, token := range node.Satisfies {
 			g.SatisfiersByToken[token] = append(g.SatisfiersByToken[token], name)
 		}
+	}
+	for _, satisfiers := range g.SatisfiersByToken {
+		sort.Strings(satisfiers)
 	}
 }
 

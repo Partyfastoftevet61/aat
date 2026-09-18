@@ -75,6 +75,10 @@ the graph and plan formats may still change before 1.0.
   integers, and many APIs' amounts, arrive — although the gRPC guide promised it worked. `<`, `>`,
   `<=`, and `>=` now compare a decimal string with a number by value. `==` and `!=` stay strict,
   and the error says to quote the number.
+- **`aat docs generate` writes the same file every time.** Where several nodes satisfied one
+  requirement, the diagram listed their arrows in map order, so regenerating an unchanged graph
+  could reorder lines and fail a "docs are current" check. A requirement's satisfiers are now in
+  name order, for the diagram and for backward chaining alike.
 - **A list or an object default reads as JSON.** The MCP node tools and `aat docs generate` printed
   an input's default with Go's `%v`, so a list of objects came out as `[map[id:map[num:1]]]`,
   unreadable, and with the quotes gone that made `"1"` a string, which an assistant copying it would
