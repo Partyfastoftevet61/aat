@@ -120,7 +120,7 @@ These flags apply to both `run plan` and `run batch`.
 | `--templates` | path | from manifest | Templates directory |
 | `--domain` | path | from manifest | Domain knowledge file |
 | `--output` | path | manifest `archives`, else `_output/runs` | Archive output directory (see [Archives](archives.md)) |
-| `--override` | `NODE=URL` | — | Route a node to a different URL (repeatable); keeps the environment headers and auth |
+| `--override` | `NODE=URL` | — | Route a node to a different URL (repeatable); keeps the headers and auth the node would otherwise have had, from its matching `overrides:` entry or the environment |
 | `--overlay` | path | — | Overlay YAML with additional environment overrides |
 | `--var` | `KEY=VALUE` | — | Set a var of a multi-environment file (repeatable; wins over the file's vars) — see [Environments: Setting vars from the command line](environments.md#setting-vars-from-the-command-line) |
 | `--retries` | int | `0` | Max plan-level retries on failure |

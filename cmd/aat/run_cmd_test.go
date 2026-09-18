@@ -1008,6 +1008,67 @@ overrides:
 	assert.Empty(t, gotAuth, "the main bearer token must not reach the override host")
 }
 
+// TestRunCommand_OverrideFlagKeepsTheNodesOwnAuth: env.yaml routes test* to a
+// second host with its own API key. --override testNode=URL moves the node to
+// a third host and changes nothing else: the API key goes with it, and the
+// main bearer token, which the node never carried, does not.
+func TestRunCommand_OverrideFlagKeepsTheNodesOwnAuth(t *testing.T) {
+	unreached := func(name string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Errorf("request reached the %s host: %s %s", name, r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}))
+	}
+	mainServer := unreached("main")
+	defer mainServer.Close()
+	altServer := unreached("env override")
+	defer altServer.Close()
+
+	var gotAuth, gotKey string
+	flagServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth, gotKey = r.Header.Get("Authorization"), r.Header.Get("X-API-Key")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"result": "ok"})
+	}))
+	defer flagServer.Close()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, "env.yaml")
+	require.NoError(t, os.WriteFile(envFile, []byte(`environment: test
+apiBaseUrl: `+mainServer.URL+`
+auth:
+  type: bearer
+  credentials:
+    token:
+      source: literal
+      value: main-token
+overrides:
+  - match: "test*"
+    baseUrl: `+altServer.URL+`
+    auth:
+      type: apikey
+      headerName: X-API-Key
+      credentials:
+        key:
+          source: literal
+          value: alt-key
+`), 0o644))
+
+	res := runCommand(context.Background(), &runArgs{
+		PlanPath:        "testdata/test_plan.yaml",
+		EnvPath:         envFile,
+		GraphPath:       "testdata/test_graph.yaml",
+		TemplatesPath:   "testdata/templates",
+		OutputDir:       filepath.Join(dir, "runs"),
+		Overrides:       []string{"testNode=" + flagServer.URL},
+		NoAutoOverrides: true,
+	}, io.Discard, TerminalInfo{})
+
+	require.NoError(t, res.err)
+	assert.Equal(t, "alt-key", gotKey, "the node keeps the credential its env.yaml override gave it")
+	assert.Empty(t, gotAuth, "the main bearer token must not follow the node to the flag's host")
+}
+
 // TestRunCommand_OverrideFlagInheritsHeadersAndAuth: an --override NODE=URL
 // flag is equivalent to an env.yaml entry with that match and baseUrl, so the
 // request keeps the environment headers, the plan headers, and the credential.

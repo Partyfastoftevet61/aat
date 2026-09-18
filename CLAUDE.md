@@ -232,7 +232,7 @@ cd examples/petstore/
 #   --env-config FILE  environment file (overrides the manifest)
 #   --json             machine-readable JSON summary to stdout
 #   --quiet            suppress progress, show final line only
-#   --override NODE=URL  route a node to a different URL (repeatable; keeps env headers and auth)
+#   --override NODE=URL  route a node to a different URL (repeatable; keeps the node's own headers and auth)
 #   --var KEY=VALUE    set a var of a multi-environment file (repeatable; wins over the file)
 #   --overlay FILE       path to overlay YAML with additional overrides
 #   --no-auto-overrides  disable auto-discovery of .aat-overrides.yaml

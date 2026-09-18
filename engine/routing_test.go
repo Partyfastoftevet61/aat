@@ -398,6 +398,57 @@ func TestExecutorRouter_ValueOverrideLastExpectFailureWins(t *testing.T) {
 	assert.Equal(t, []int{422}, ef.Status.Codes(), "exact beats glob")
 }
 
+// A URL override moves a node and changes nothing else: it keeps the headers,
+// the protected credential, and the rewrite of the route the node already had.
+func TestExecutorRouter_AddURLOverride_KeepsTheRouteTheNodeHad(t *testing.T) {
+	def := &adapter.EnvironmentConfig{BaseURL: "https://shop.example.com", Headers: map[string]string{"Authorization": "Bearer shop"}}
+	payments := &adapter.EnvironmentConfig{
+		BaseURL:   "https://payments.example.com",
+		Headers:   map[string]string{"X-Tenant": "acme"},
+		Protected: map[string]string{"X-API-Key": "pay-key"},
+	}
+	rewrite := &adapter.PathRewrite{Strip: "/v2", Prefix: "/v1"}
+
+	router := NewExecutorRouter(adapter.NewHTTPExecutor(def.BaseURL), def)
+	router.AddOverride("payment*", adapter.NewHTTPExecutor(payments.BaseURL), payments, rewrite)
+	require.NoError(t, router.AddURLOverride("paymentCharge", "http://localhost:9000"))
+	require.NoError(t, router.AddURLOverride("createCart", "http://localhost:9001"))
+
+	exec, cfg, gotRewrite := router.Resolve("paymentCharge")
+	assert.Equal(t, "http://localhost:9000", exec.Target())
+	assert.Equal(t, "http://localhost:9000", cfg.BaseURL)
+	assert.Equal(t, payments.Headers, cfg.Headers)
+	assert.Equal(t, payments.Protected, cfg.Protected, "the matching override's credential, not the default route's")
+	assert.Equal(t, rewrite, gotRewrite)
+
+	_, cfg, gotRewrite = router.Resolve("createCart")
+	assert.Equal(t, def.Headers, cfg.Headers, "a node no override matches keeps the default route's headers")
+	assert.Nil(t, gotRewrite)
+
+	_, cfg, _ = router.Resolve("paymentRefund")
+	assert.Equal(t, "https://payments.example.com", cfg.BaseURL, "other nodes of the glob are untouched")
+	assert.Equal(t, "https://payments.example.com", payments.BaseURL, "the inherited config is copied, not edited")
+}
+
+// A glob flag inherits from an entry registered under the same pattern, and
+// otherwise from the default route.
+func TestExecutorRouter_AddURLOverride_GlobPattern(t *testing.T) {
+	def := &adapter.EnvironmentConfig{Headers: map[string]string{"Authorization": "Bearer shop"}}
+	payments := &adapter.EnvironmentConfig{Protected: map[string]string{"X-API-Key": "pay-key"}}
+
+	router := NewExecutorRouter(adapter.NewHTTPExecutor("https://shop.example.com"), def)
+	router.AddOverride("payment*", adapter.NewHTTPExecutor("https://payments.example.com"), payments, nil)
+	require.NoError(t, router.AddURLOverride("payment*", "http://localhost:9000"))
+	require.NoError(t, router.AddURLOverride("ship*", "http://localhost:9001"))
+
+	_, cfg, _ := router.Resolve("paymentCharge")
+	assert.Equal(t, "http://localhost:9000", cfg.BaseURL)
+	assert.Equal(t, payments.Protected, cfg.Protected)
+
+	_, cfg, _ = router.Resolve("shipOrder")
+	assert.Equal(t, def.Headers, cfg.Headers)
+}
+
 // countingExecutor records how often Close was called, so the router's
 // deduplication and idempotence are observable.
 type countingExecutor struct {

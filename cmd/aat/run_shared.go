@@ -364,21 +364,6 @@ func plannedStepCount(p *plan.Plan, g *graph.Graph, layeredDefaults map[string]*
 	return len(inst.Execution.Steps) + len(plan.VerificationSteps(inst, g, layeredDefaults))
 }
 
-// overrideFlagsToHostOverrides turns --override NODE=URL flags into override
-// entries equivalent to `- match: NODE` with `baseUrl: URL`, so they inherit
-// headers and auth exactly like an env.yaml entry.
-func overrideFlagsToHostOverrides(flags []string) ([]config.HostOverride, error) {
-	overrides := make([]config.HostOverride, 0, len(flags))
-	for _, flag := range flags {
-		name, url, err := parseOverrideFlag(flag)
-		if err != nil {
-			return nil, fmt.Errorf("parsing --override: %w", err)
-		}
-		overrides = append(overrides, config.HostOverride{Match: name, BaseURL: url})
-	}
-	return overrides, nil
-}
-
 // overlayOverrides returns an overlay file's override entries, or nil when no
 // overlay was loaded.
 func overlayOverrides(overlay *config.OverlayFile) []config.HostOverride {
@@ -984,12 +969,8 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 	// 6a–6d. Register per-node overrides from every source, lowest precedence
 	// first: env.yaml, .aat-overrides.yaml, the --overlay file, then --override
 	// flags. The router lets the last registered match of each kind win, and
-	// every source resolves the same way, inheriting headers and the effective
-	// credential unless an entry declares its own auth.
-	flagOverrides, err := overrideFlagsToHostOverrides(rctx.Overrides)
-	if err != nil {
-		return &runResult{setupErr: true, err: err}
-	}
+	// every file source resolves the same way, inheriting headers and the
+	// effective credential unless an entry declares its own auth.
 	sources := []struct {
 		label     string
 		overrides []config.HostOverride
@@ -997,11 +978,22 @@ func loadAndRunPlanToDir(ctx context.Context, rctx *runContext, planPath, runDir
 		{"overrides", rctx.Env.Overrides},
 		{"auto-overrides", overlayOverrides(autoOverlay)},
 		{"overlay overrides", overlayOverrides(envOverlayFile)},
-		{"--override flags", flagOverrides},
 	}
 	for _, src := range sources {
 		if err := addHostOverrides(ctx, router, rctx.Env.APIBaseURL, src.overrides, apiConfig, effectiveProvider); err != nil {
 			return &runResult{setupErr: true, err: fmt.Errorf("building %s: %w", src.label, err)}
+		}
+	}
+	// A flag changes where a node goes and nothing else, so it comes last and
+	// takes the route the files gave the node: a payments node keeps its API
+	// key rather than being handed the environment's bearer token.
+	for _, flag := range rctx.Overrides {
+		name, url, err := parseOverrideFlag(flag)
+		if err != nil {
+			return &runResult{setupErr: true, err: fmt.Errorf("parsing --override: %w", err)}
+		}
+		if err := router.AddURLOverride(name, url); err != nil {
+			return &runResult{setupErr: true, err: fmt.Errorf("building --override flags: %w", err)}
 		}
 	}
 

@@ -469,7 +469,7 @@ Header merge order. A later value replaces an earlier one with the same name, wh
 
 A plan or template header therefore cannot replace the credential, and an overlay header replaces everything before it.
 
-A node matched by an override that routes it (one that sets `baseUrl`, `auth`, `headers`, or `pathRewrite`, or a `--override` flag) takes the same environment, plan, and template headers. If the override declares its own `auth`, the inherited credential is dropped. Then come the override's `headers`, the credential of its effective auth, and the overlay headers, in that order. A template header cannot replace the override's headers either.
+A node matched by an override that routes it (one that sets `baseUrl`, `auth`, `headers`, or `pathRewrite`) takes the same environment, plan, and template headers. If the override declares its own `auth`, the inherited credential is dropped. Then come the override's `headers`, the credential of its effective auth, and the overlay headers, in that order. A template header cannot replace the override's headers either. A `--override NODE=URL` flag adds nothing to this: the node keeps whichever of these routes it already had, at a new URL (see [Runtime Overrides](#runtime-overrides)).
 
 ## Values
 
@@ -658,7 +658,7 @@ Two mechanisms let you adjust routing without editing the environment file:
 aat run plan checkout.yaml --override createPayment=https://sandbox.payments.example.com
 ```
 
-This flag is repeatable for multiple overrides. Each one behaves exactly like an entry `- match: NODE` with `baseUrl: URL`: the request keeps the environment headers, the plan headers, overlay headers, and the credential of the effective auth.
+This flag is repeatable for multiple overrides. Each one changes where the node's requests go and nothing else. The request keeps the headers, the credential, and the `pathRewrite` the node would otherwise have had: those of the `overrides:` entry that matches it, in `env.yaml` or an overlay file, and the environment's when none does. A `payment*` node that `env.yaml` sends to a payments host with an API key keeps the API key at the flag's URL, and the environment's bearer token doesn't follow it there. A `grpc://` URL drops an inherited `pathRewrite`, which has no meaning for a gRPC route. A glob (`--override 'payment*=URL'`) inherits from an entry written with the same pattern, and from the environment otherwise.
 
 **`--overlay` flag** — merges a sparse overlay file on top of the base environment:
 

@@ -117,6 +117,11 @@ the graph and plan formats may still change before 1.0.
   aligned when a step reports a status name instead of three digits. gRPC metadata is archived with
   the lowercase keys the wire uses, so a key grepped for in an archive is the key the server sent.
 
+- **`--override NODE=URL` keeps the node's own credential.** The flag took the environment's top-level
+  auth even when an `overrides:` entry gave the node another, so `--override paymentCharge=URL` sent the
+  shop's bearer token to the payments host in place of its API key, and the call failed as
+  unauthenticated. A flag now changes the URL and nothing else: the node keeps the headers, the
+  credential, and the `pathRewrite` of the entry that matches it, or the environment's when none does.
 - The Homebrew cask clears the macOS quarantine attribute with a declarative `postflight_steps` stanza, so `brew` no
   longer warns that `postflight` is deprecated and asks users to report it to the tap. The published cask in
   `gburgyan/homebrew-tap` was updated in place, so the warning is gone without waiting for the next release.
