@@ -258,7 +258,7 @@ request:
 
 response:
   extract:
-    paymentId: id
+    paymentId: paymentId
 ```
 
 - The node names the method too: `proto: shop.v1.Payments/Charge`, in place of `oas:`. The graph or the manifest names the descriptor set with `proto: payments.protoset` — a `FileDescriptorSet` from `protoc --descriptor_set_out` or `buf build -o`, never `.proto` source

@@ -143,7 +143,7 @@ request:
 
 response:
   extract:
-    paymentId: id
+    paymentId: paymentId
     paymentStatus: status
 ```
 

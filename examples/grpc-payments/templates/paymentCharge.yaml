@@ -19,7 +19,7 @@ request:
 
 response:
   extract:
-    paymentId: id
+    paymentId: paymentId
     paymentStatus: status
     orderStatus: orderStatus
     amountDisplay: amountDisplay

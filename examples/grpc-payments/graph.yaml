@@ -140,13 +140,16 @@ nodes:
       - name: orderId
         type: string
         default: {from: checkoutCart.orderId}
-      - name: reason
-        type: string
-        default: {value: customer changed their mind}
     outputs:
+      - name: refundId
+        type: string
       - name: paymentId
         type: string
-      - name: paymentStatus
+        description: The payment the money came back from.
+      - name: refundStatus
         type: string
       - name: refundedAmount
-        type: integer
+        type: string
+        description: >-
+          What this refund returned, in minor units. An int64, so it reads as
+          a string: "20082", not 20082.

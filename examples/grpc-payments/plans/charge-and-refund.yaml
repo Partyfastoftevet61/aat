@@ -37,6 +37,8 @@ execution:
           - type: fieldEquals
             path: $.orderStatus
             value: paid
+          - type: predicate
+            expr: 'paymentId != ""'
 
     - id: refund
       node: paymentRefund
@@ -46,5 +48,13 @@ execution:
           - type: status
             expect: OK
           - type: fieldEquals
-            path: $.paymentStatus
+            path: $.refundStatus
             value: refunded
+          # The refund names the payment it came from: the id the charge step
+          # returned, two gRPC calls apart.
+          - type: fieldEquals
+            path: $.paymentId
+            value: "{{charge.paymentId}}"
+          # An int64 reads as a string, and an ordering still compares by value.
+          - type: predicate
+            expr: refundedAmount > 0

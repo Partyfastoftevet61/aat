@@ -6,12 +6,12 @@ request:
   # Omitting amount refunds whatever is left on the order.
   message: |
     {
-      "orderId": "{{orderId}}",
-      "reason": "{{reason}}"
+      "orderId": "{{orderId}}"
     }
 
 response:
   extract:
-    paymentId: id
-    paymentStatus: status
-    refundedAmount: refundedAmount
+    refundId: refundId
+    paymentId: paymentId
+    refundStatus: status
+    refundedAmount: amount

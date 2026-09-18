@@ -110,6 +110,14 @@ the graph and plan formats may still change before 1.0.
   documentation always said it was. A status assertion written as a gRPC status name can no longer
   contradict `expectFailure` unnoticed.
 
+  The demo's gRPC replies carried an empty payment id. The HTTP payments API calls it `paymentId` and
+  `payments.proto` called it `id`, and the sandbox's gRPC service discarded the field it could not
+  place, so `examples/grpc-payments` extracted `""` and nothing asserted otherwise; a refund came back
+  as a half-empty `Payment`, and an `amount` of `0` refunded the whole order. The proto now mirrors the
+  HTTP API field for field — a refund is a `RefundRecord` with its own id and the payment's — a field
+  the two disagree on fails the call instead of vanishing, and the example and `make example-grpc`
+  assert the id.
+
   The web UI shows the gRPC status a plan wrote rather than the HTTP status it maps to — several
   gRPC statuses share one, so the number could not say which — and so do the CLI's failure summary
   and the MCP archive tools. **Copy as grpcurl** always emits `-d`, without which grpcurl reads the

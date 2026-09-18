@@ -13,6 +13,10 @@ syntax = "proto3";
 package shop.v1;
 
 // Payments charges and refunds orders created through the shop API.
+//
+// Every message mirrors the JSON the HTTP payments API sends and takes, field
+// for field, because the gRPC service is that API reached another way. A field
+// the HTTP API gains and this file lacks fails the call rather than vanishing.
 service Payments {
   // Charge captures payment for an order. The amount must match the order
   // total exactly, and the currency must be the order's own.
@@ -20,7 +24,7 @@ service Payments {
 
   // Refund returns money for an order. Omitting the amount refunds whatever
   // is left.
-  rpc Refund(RefundRequest) returns (Payment);
+  rpc Refund(RefundRequest) returns (RefundRecord);
 }
 
 message ChargeRequest {
@@ -46,14 +50,14 @@ message ChargeRequest {
 message RefundRequest {
   // order_id is the order to refund.
   string order_id = 1;
-  // amount is in minor units; omit it to refund the remaining balance.
-  int64 amount = 2;
-  // reason is recorded with the refund.
-  string reason = 3;
+  // amount is in minor units; omit it to refund the remaining balance. It is
+  // optional so that an amount of 0 is sent and refused, rather than read as
+  // omitted and refunded in full.
+  optional int64 amount = 2;
 }
 
 message Payment {
-  string id = 1;
+  string payment_id = 1;
   string order_id = 2;
   // order_status is the order's status after the payment, such as paid.
   string order_status = 3;
@@ -65,5 +69,20 @@ message Payment {
   string amount_display = 7;
   string currency = 8;
   string created_at = 9;
-  int64 refunded_amount = 10;
+}
+
+// RefundRecord is one refund. It is not named Refund because, inside the
+// service, that name is the method's.
+message RefundRecord {
+  string refund_id = 1;
+  // payment_id is the payment the money came back from.
+  string payment_id = 2;
+  string order_id = 3;
+  // status is refunded.
+  string status = 4;
+  // amount is what this refund returned, in minor units.
+  int64 amount = 5;
+  string amount_display = 6;
+  string currency = 7;
+  string created_at = 8;
 }

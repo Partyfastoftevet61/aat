@@ -168,20 +168,26 @@ func (s *Server) requestBody(in *dynamicpb.Message) ([]byte, error) {
 			out[fd.JSONName()] = in.Get(fd).Int()
 		case protoreflect.StringKind:
 			out[fd.JSONName()] = in.Get(fd).String()
+		case protoreflect.BoolKind:
+			out[fd.JSONName()] = in.Get(fd).Bool()
 		default:
-			out[fd.JSONName()] = in.Get(fd).Interface()
+			// The payments API takes strings, amounts, and flags. Anything
+			// else has no rendering here, and guessing one would send the
+			// handler something the caller never wrote.
+			return nil, status.Errorf(codes.Unimplemented, "the sandbox cannot send %s: a %s field has no JSON form here", fd.FullName(), fd.Kind())
 		}
 	}
 	return json.Marshal(out)
 }
 
 // responseMessage builds a method's response from the payments API's JSON.
-// Unknown fields are discarded rather than refused: the HTTP API may carry
-// more than the proto declares, and that is the sandbox's problem to tolerate,
-// not the caller's.
+// An unknown field is refused, not discarded. The proto mirrors the HTTP API
+// field for field, and discarding is how the payment id once went missing
+// unnoticed: HTTP said paymentId, the proto said id, and every reply carried
+// an empty one. A field the two disagree on now fails the call, and the tests.
 func (s *Server) responseMessage(md protoreflect.MethodDescriptor, body []byte) (any, error) {
 	msg := dynamicpb.NewMessage(md.Output())
-	opts := protojson.UnmarshalOptions{DiscardUnknown: true, Resolver: s.types}
+	opts := protojson.UnmarshalOptions{Resolver: s.types}
 	if err := opts.Unmarshal(body, msg); err != nil {
 		return nil, status.Errorf(codes.Internal, "encoding the %s reply: %v", md.Name(), err)
 	}

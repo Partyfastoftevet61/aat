@@ -58,7 +58,13 @@ func start(t *testing.T) (*grpc.ClientConn, *shop.Server, *protoreg.Registry) {
 // charge calls shop.v1.Payments/Charge with the given request JSON.
 func charge(t *testing.T, conn *grpc.ClientConn, reg *protoreg.Registry, requestJSON string) (*dynamicpb.Message, error) {
 	t.Helper()
-	md, err := reg.Method("shop.v1.Payments", "Charge")
+	return call(t, conn, reg, "Charge", requestJSON)
+}
+
+// call invokes one Payments method with a request written as JSON.
+func call(t *testing.T, conn *grpc.ClientConn, reg *protoreg.Registry, method, requestJSON string) (*dynamicpb.Message, error) {
+	t.Helper()
+	md, err := reg.Method("shop.v1.Payments", method)
 	require.NoError(t, err)
 
 	in, err := reg.JSONToMessage(md.Input(), []byte(requestJSON))
@@ -66,8 +72,18 @@ func charge(t *testing.T, conn *grpc.ClientConn, reg *protoreg.Registry, request
 	out := dynamicpb.NewMessage(md.Output())
 
 	ctx := metadata.AppendToOutgoingContext(context.Background(), apiKeyHeader, shop.DemoAPIKey)
-	err = conn.Invoke(ctx, "/shop.v1.Payments/Charge", in, out)
+	err = conn.Invoke(ctx, "/shop.v1.Payments/"+method, in, out)
 	return out, err
+}
+
+// reply decodes a response message the way AAT reads one.
+func reply(t *testing.T, reg *protoreg.Registry, out *dynamicpb.Message) map[string]any {
+	t.Helper()
+	body, err := reg.MessageToJSON(out)
+	require.NoError(t, err)
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(body, &decoded))
+	return decoded
 }
 
 func TestNew_RejectsABadDescriptorSet(t *testing.T) {
@@ -152,9 +168,42 @@ func TestServer_ChargeAnOrderPlacedOverHTTP(t *testing.T) {
 	assert.Equal(t, "captured", payment["status"])
 	assert.Equal(t, "paid", payment["orderStatus"], "the order moved on, so the façade reached the real store")
 	assert.Equal(t, orderID, payment["orderId"])
+	assert.NotEmpty(t, payment["paymentId"], "the id the HTTP API assigned survives the crossing")
 	// An int64 reads back as a JSON string; this is the encoding rule plan
 	// authors meet first.
 	assert.Equal(t, fmt.Sprintf("%d", total), payment["amount"])
+}
+
+// TestServer_Refund covers the reply the façade once emptied: a refund is its
+// own record, naming itself and the payment it came from.
+func TestServer_Refund(t *testing.T) {
+	conn, srv, reg := start(t)
+	orderID, currency, total := placeOrder(t, srv)
+	out, err := charge(t, conn, reg, fmt.Sprintf(
+		`{"orderId":%q,"amount":"%d","currency":%q,"method":"card","cardNumber":"4242424242424242"}`,
+		orderID, total, currency))
+	require.NoError(t, err)
+	paymentID := reply(t, reg, out)["paymentId"]
+
+	// An amount of 0 is sent and refused. Read as "omitted", it would refund
+	// the whole payment.
+	_, err = call(t, conn, reg, "Refund", fmt.Sprintf(`{"orderId":%q,"amount":"0"}`, orderID))
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err), "error: %v", err)
+
+	out, err = call(t, conn, reg, "Refund", fmt.Sprintf(`{"orderId":%q,"amount":"100"}`, orderID))
+	require.NoError(t, err)
+	partial := reply(t, reg, out)
+	assert.NotEmpty(t, partial["refundId"])
+	assert.Equal(t, paymentID, partial["paymentId"])
+	assert.Equal(t, "100", partial["amount"])
+
+	// No amount refunds what is left.
+	out, err = call(t, conn, reg, "Refund", fmt.Sprintf(`{"orderId":%q}`, orderID))
+	require.NoError(t, err)
+	rest := reply(t, reg, out)
+	assert.Equal(t, fmt.Sprintf("%d", total-100), rest["amount"])
+	assert.NotEqual(t, partial["refundId"], rest["refundId"])
 }
 
 func TestServer_DeclinedCard(t *testing.T) {

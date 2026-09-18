@@ -25,6 +25,10 @@ expect() {
   fi
 }
 
+# listening PORT: whether anything accepts connections there. The gRPC listener
+# has no /healthz to ask, so this opens the port and closes it again.
+listening() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
 for tool in curl jq "$aat" "$sandbox"; do
   command -v "$tool" >/dev/null || fail "$tool not found (run make example-grpc, or set AAT and AAT_SANDBOX)"
 done
@@ -33,6 +37,11 @@ for port in 8765 8766; do
     fail "something already answers on port $port; stop it first"
   fi
 done
+# A busy gRPC port stops the sandbox after its HTTP listeners are up, and the
+# charge step then fails as UNAVAILABLE, which says nothing about why.
+if listening 8767; then
+  fail "something already listens on port 8767; stop it first"
+fi
 
 cd "$root/examples/grpc-payments"
 mkdir -p "$out"
@@ -45,6 +54,11 @@ for port in 8765 8766; do
   curl -fs -o /dev/null --retry 20 --retry-connrefused --retry-max-time 10 "http://127.0.0.1:$port/healthz" ||
     fail "the sandbox did not come up on port $port"
 done
+for _ in $(seq 1 50); do
+  listening 8767 && break
+  sleep 0.2
+done
+listening 8767 || fail "the sandbox did not come up on port 8767"
 
 step "aat validate --strict: the gRPC graph against its descriptor set"
 "$aat" validate --strict
@@ -57,6 +71,10 @@ expect "$out/charge-and-refund.json" '.outcome == "passed" and ([.steps[] | sele
 # known to have crossed the protocol boundary.
 expect "$out/charge-and-refund.json" '[.steps[] | select(.name == "charge" and .passed)] | length == 1'
 expect "$out/charge-and-refund.json" '[.steps[] | select(.name == "refund" and .passed)] | length == 1'
+# The payment id is the one value only the gRPC reply carries, so it is read
+# from the archive too: an empty one once passed every other check here.
+charged="$(jq -r '.archive_path' "$out/charge-and-refund.json")"
+expect "$charged" '[.steps[] | select(.stepId == "charge") | .outputs.paymentId | select(. != null and . != "")] | length == 1'
 
 step "aat run plan declined-card: a gRPC status named in expectFailure"
 "$aat" run plan declined-card --output "$out" --json > "$out/declined-card.json"
