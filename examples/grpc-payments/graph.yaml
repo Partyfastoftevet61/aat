@@ -105,9 +105,9 @@ nodes:
         type: integer
         default: {from: checkoutCart.total}
         description: >-
-          The charge amount, wired from the order total. It is the request
-          message's own field name; aat validate checks that, and reports an
-          input the message does not declare.
+          The charge amount, wired from the order total. aat validate checks
+          it where the template's message puts it, and reports a field the
+          request message does not declare.
       - name: currency
         type: string
         default: {from: checkoutCart.currency}

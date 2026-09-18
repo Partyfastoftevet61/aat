@@ -69,6 +69,24 @@ func OutputExtractPaths(g *graph.Graph, registry *adapter.Registry) oas.OutputPa
 	return paths
 }
 
+// TemplateMessageInputPaths maps each node with a gRPC template to where the
+// template's message places each input (see adapter.Template.MessageInputPaths),
+// for the protobuf input check. A node whose message can't be scanned is left
+// out, and its inputs are checked by name instead.
+func TemplateMessageInputPaths(g *graph.Graph, registry *adapter.Registry) map[string]map[string][]string {
+	paths := make(map[string]map[string][]string)
+	for name, node := range g.Nodes {
+		tmpl, ok := registry.GetTemplate(node.Adapter)
+		if !ok || tmpl.Protocol != adapter.ProtocolGRPC {
+			continue
+		}
+		if placed, ok := tmpl.MessageInputPaths(); ok {
+			paths[name] = placed
+		}
+	}
+	return paths
+}
+
 // TemplateSuppliedFields maps each templated node to the request fields its
 // template always sends itself, for the static OAS required-parameter check
 // (see oas.Validator.WithSuppliedFields).

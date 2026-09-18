@@ -19,6 +19,10 @@ type Validator struct {
 	// template extracts it from, so the check follows the template rather than
 	// assuming a top-level field named after the output.
 	outputPaths OutputPaths
+	// inputPaths maps node name → input name → where the template's message
+	// places the input, so the check follows the template rather than
+	// expecting a top-level field named after the input.
+	inputPaths InputPaths
 	// projectRefs names descriptor sets that apply to the whole project, for a
 	// node whose graph names none.
 	projectRefs []string
@@ -27,6 +31,12 @@ type Validator struct {
 // OutputPaths maps node name → output name → extract path. It mirrors
 // oas.OutputPaths, and engine.OutputExtractPaths builds both.
 type OutputPaths map[string]map[string]string
+
+// InputPaths maps node name → input name → the GJSON paths at which the
+// node's template places the input in its request message. An input with no
+// paths reaches the request without a field to check, such as in metadata.
+// engine.TemplateMessageInputPaths builds it.
+type InputPaths map[string]map[string][]string
 
 // NewValidator creates a validator with no descriptor sets loaded.
 func NewValidator() *Validator {
@@ -37,6 +47,14 @@ func NewValidator() *Validator {
 // extract path instead of at a field named after the output.
 func (v *Validator) WithOutputPaths(paths OutputPaths) *Validator {
 	v.outputPaths = paths
+	return v
+}
+
+// WithInputPaths makes the input check look for each input where the
+// template's message places it. A node absent from paths, or an input absent
+// from its node's entry, is checked by name.
+func (v *Validator) WithInputPaths(paths InputPaths) *Validator {
+	v.inputPaths = paths
 	return v
 }
 
@@ -204,13 +222,26 @@ func (v *Validator) validateNode(result *graph.SpecValidationResult, name string
 		return
 	}
 
-	v.checkInputs(fail, warn, node, md.Input())
+	v.checkInputs(fail, warn, name, node, md.Input())
 	v.checkOutputs(fail, name, node, md.Output())
 }
 
-// checkInputs reports inputs the request message does not declare.
-func (v *Validator) checkInputs(fail, warn func(string, ...any), node *graph.Node, msg protoreflect.MessageDescriptor) {
+// checkInputs reports inputs the request message does not declare. An input
+// the template places in its message is checked where it goes; one it doesn't
+// place must name a top-level field.
+func (v *Validator) checkInputs(fail, warn func(string, ...any), name string, node *graph.Node, msg protoreflect.MessageDescriptor) {
+	placements := v.inputPaths[name]
 	for _, in := range node.Inputs {
+		if paths, placed := placements[in.Name]; placed {
+			// The codec rejects a field the message doesn't declare, so a
+			// placement that doesn't resolve fails every request.
+			for _, path := range paths {
+				if res := walkPath(msg, path); res.problem != "" {
+					fail("input %q is sent at %q: %s", in.Name, path, res.problem)
+				}
+			}
+			continue
+		}
 		if fieldByAnyName(msg, in.Name) != nil {
 			continue
 		}

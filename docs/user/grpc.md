@@ -239,15 +239,24 @@ server running:
 Protobuf validation: OK
 ```
 
-It catches the three things that otherwise fail at run time, or worse, quietly:
+It catches what otherwise fails at run time, or worse, quietly:
 
 ```
 node "paymentCharge": service "shop.v1.Payment" not found (did you mean "shop.v1.Payments"?)
 node "paymentCharge": shop.v1.Payments/Watch is a server-streaming method; aat runs unary methods
+node "createCollection": input "vectorSize" is sent at "vectorsConfig.Params.size": qdrant.VectorsConfig does not declare "Params" (did you mean "params"?)
+node "getCollection": output "project" reads "result.config.metadta.project": qdrant.CollectionConfig does not declare "metadta"
 node "paymentCharge": output "orderId" reads "order_id", but the response encodes that field as "orderId"
 ```
 
-That last one is the one to know about — see below.
+Inputs are checked where the template's `message:` puts them, however deep:
+`"vectorsConfig": {"params": {"size": "{{vectorSize}}"}}` checks
+`vectorSize` at `vectorsConfig.params.size`, through oneof members and map
+values alike. An input the message doesn't use must name a top-level field of
+the request, or it is reported as reaching the request some other way.
+
+Outputs are checked along their extract paths the same way. That last error is
+the one to know about — see below.
 
 ## Statuses
 

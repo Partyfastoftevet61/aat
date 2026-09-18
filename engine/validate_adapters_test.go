@@ -682,3 +682,33 @@ func TestAdapterValidationError_Error(t *testing.T) {
 	assert.Contains(t, msg, `node "a"`)
 	assert.Contains(t, msg, `node "b"`)
 }
+
+func TestTemplateMessageInputPaths(t *testing.T) {
+	g := &graph.Graph{Nodes: map[string]*graph.Node{
+		"createCollection": {Name: "createCollection", Adapter: "createCollection"},
+		"broken":           {Name: "broken", Adapter: "broken"},
+		"restGet":          {Name: "restGet", Adapter: "restGet"},
+	}}
+	registry := adapter.NewRegistry()
+	require.NoError(t, registry.Register("createCollection", adapter.NewTemplateAdapter(adapter.Template{
+		Adapter: "createCollection", Protocol: adapter.ProtocolGRPC,
+		Request: adapter.TemplateRequest{
+			RPC:     "qdrant.Collections/Create",
+			Message: `{"collectionName": "{{collectionName}}", "vectorsConfig": {"params": {"size": "{{vectorSize}}"}}}`,
+		},
+	})))
+	require.NoError(t, registry.Register("broken", adapter.NewTemplateAdapter(adapter.Template{
+		Adapter: "broken", Protocol: adapter.ProtocolGRPC,
+		Request: adapter.TemplateRequest{RPC: "qdrant.Collections/Get", Message: `{"collectionName": `},
+	})))
+	require.NoError(t, registry.Register("restGet", adapter.NewTemplateAdapter(adapter.Template{
+		Adapter: "restGet", Protocol: adapter.ProtocolHTTP,
+		Request: adapter.TemplateRequest{Method: "GET", Path: "/collections/{{collectionName}}"},
+	})))
+
+	// An unreadable message and an HTTP template are both left out, so their
+	// inputs are checked by name.
+	assert.Equal(t, map[string]map[string][]string{
+		"createCollection": {"collectionName": {"collectionName"}, "vectorSize": {"vectorsConfig.params.size"}},
+	}, TemplateMessageInputPaths(g, registry))
+}

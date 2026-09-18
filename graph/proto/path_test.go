@@ -124,3 +124,67 @@ func TestPaths_AgreeWithTheCodec(t *testing.T) {
 		})
 	}
 }
+
+func TestValidate_InputsAreCheckedWhereTheTemplatePlacesThem(t *testing.T) {
+	create := func(inputs ...string) *graph.Graph {
+		node := &graph.Node{Proto: &graph.ProtoRef{Service: "vectors.v1.Collections", Method: "Create"}}
+		for _, in := range inputs {
+			node.Inputs = append(node.Inputs, graph.Input{Name: in, Type: "string"})
+		}
+		return &graph.Graph{Proto: pointsRef, Nodes: map[string]*graph.Node{"n": node}}
+	}
+
+	tests := []struct {
+		name       string
+		placements map[string][]string
+		inputs     []string
+		want       string // the issues, one per line
+	}{
+		{
+			name: "nested fields, oneof members, and map values resolve",
+			placements: map[string][]string{
+				"collectionName": {"collectionName"},
+				"vectorSize":     {"vectorsConfig.params.size"},
+				"denseSize":      {"vectorsConfig.paramsMap.map.dense.size"},
+				"project":        {"metadata.project.stringValue"},
+				"region":         {`labels.my\.region`},
+				"anyKey":         {"labels.*"},
+			},
+			inputs: []string{"collectionName", "vectorSize", "denseSize", "project", "region", "anyKey"},
+		},
+		{
+			name:       "the proto name spelling is accepted in a request",
+			placements: map[string][]string{"vectorSize": {"vectors_config.params.size"}},
+			inputs:     []string{"vectorSize"},
+		},
+		{
+			name:       "an input sent only as metadata has nothing to check",
+			placements: map[string][]string{"tenant": {}},
+			inputs:     []string{"tenant"},
+		},
+		{
+			name:       "a misspelled nested key is an error",
+			placements: map[string][]string{"vectorSize": {"vectorsConfig.Params.size"}},
+			inputs:     []string{"vectorSize"},
+			want:       `error: input "vectorSize" is sent at "vectorsConfig.Params.size": vectors.v1.VectorsConfig does not declare "Params" (did you mean "params"?)` + "\n",
+		},
+		{
+			name:       "a field below a scalar is an error",
+			placements: map[string][]string{"collectionName": {"collectionName.x"}},
+			inputs:     []string{"collectionName"},
+			want:       `error: input "collectionName" is sent at "collectionName.x": "collectionName" is a string, which has nothing below it` + "\n",
+		},
+		{
+			name:       "an input the template doesn't place is still checked by name",
+			placements: map[string][]string{},
+			inputs:     []string{"distance"},
+			want:       `warning: input "distance" is not a field of vectors.v1.CreateCollection; it must reach the request another way, such as metadata` + "\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := pointsValidator(t).WithInputPaths(InputPaths{"n": tt.placements})
+			assert.Equal(t, tt.want, messages(t, v.Validate(create(tt.inputs...))))
+		})
+	}
+}

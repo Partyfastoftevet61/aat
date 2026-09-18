@@ -172,8 +172,10 @@ passes, with a note saying so; a node that names a method with no descriptor
 set anywhere fails, naming both places one can be declared.
 
 It reports an unknown or misspelled service or method, a streaming method
-(AAT runs unary methods only), an input the request message does not declare,
-and — the one that would otherwise fail silently — an extract path written with
+(AAT runs unary methods only), an input the template places where the request
+message has no such field (checked at its place in `message:`, however deep), an
+extract path that reads nothing, and — the one that would otherwise fail
+silently — an extract path written with
 a field's `.proto` name when the response encodes it under its JSON name:
 
 ```

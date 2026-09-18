@@ -63,7 +63,8 @@ func protoSpecCheck(g *graph.Graph, graphPath string, projectProto []string, reg
 
 	validator := proto.NewValidator().WithProjectDescriptors(projectProto)
 	if registry != nil {
-		validator.WithOutputPaths(proto.OutputPaths(engine.OutputExtractPaths(g, registry)))
+		validator.WithOutputPaths(proto.OutputPaths(engine.OutputExtractPaths(g, registry))).
+			WithInputPaths(proto.InputPaths(engine.TemplateMessageInputPaths(g, registry)))
 	}
 
 	section := specCheck("Protobuf validation", validator, g, graphPath, projectProto, strict)

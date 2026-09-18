@@ -27,7 +27,9 @@ the graph and plan formats may still change before 1.0.
   gRPC statuses share one HTTP status. Numbers still work, so a plan can read against either
   protocol. `aat validate` checks gRPC nodes against the
   descriptors offline, catching an unknown or misspelled method, a streaming method, and an extract
-  path written with a field's proto name when the response encodes it under its JSON name. It reads
+  path written with a field's proto name when the response encodes it under its JSON name. An input
+  is checked where the template's `message:` places it, however deep — `vectorsConfig.params.size`,
+  a oneof member, a map value — rather than required to name a top-level field. It reads
   an extract path the way extraction does — an escaped dot stays in its key, a `#(...)` query is one
   step, a map field's next step is any key, and a modifier or a pipe ends what it checks — and a
   path that reads nothing says where it went wrong: a list read without an index, or a scalar read
