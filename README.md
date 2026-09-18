@@ -93,7 +93,7 @@ Four complete projects against real, public APIs live in their own repositories.
 | [aat-shippo](https://github.com/gburgyan/aat-shippo) | 46 of 70 operations, 28 plans, 9 layers; 28/28 in ~2½ min | **Rating, buying, refunding, and tracking shipments**: layers as the headline, with a lane × parcel matrix, six deterministic tracking fixtures, and real shipping labels rendered in the web UI |
 | [aat-qdrant](https://github.com/gburgyan/aat-qdrant) | all 52 public unary gRPC methods, 77 operations, 38 plans, 6 layers; 38/38 in ~70 s | **A vector database over gRPC**: the protobuf a real API sends (oneofs, maps, 64-bit ids, a cursor that is a message), errors asserted by status name, credentials as metadata, and a few REST reads of the same data checked against Qdrant's OpenAPI spec. It is what AAT's gRPC support was stress-tested against |
 
-Each is a complete AAT project in its own repository: clone it, export a free test-mode key, and it runs against your account. aat-qdrant needs no account: it runs against a pinned Qdrant in Docker, and needs an `aat` with gRPC support, which is not in a release yet (build from source). [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/) says what each covers and leaves out.
+Each is a complete AAT project in its own repository: clone it, export a free test-mode key, and it runs against your account. aat-qdrant needs no account: it runs against a pinned Qdrant in Docker, and needs aat 0.3.0 or later, the first release with gRPC. [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/) says what each covers and leaves out.
 
 ## What it does
 

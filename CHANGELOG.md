@@ -6,6 +6,30 @@ the graph and plan formats may still change before 1.0.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-18
+
+The gRPC release, and the one [aat-qdrant](https://github.com/gburgyan/aat-qdrant) was built on; it needs this
+version or later.
+
+**Highlights.** AAT drives gRPC services the way it drives REST ones: a node names a method with `proto:`, a template
+declares `protocol: grpc` with an `rpc`, `metadata`, and a `message` written as JSON, and an environment routes to a
+`grpc://` or `grpcs://` target, so one plan can check an order out over HTTP and charge it over gRPC. Protobuf reaches
+the rest of AAT as JSON, so extraction, predicates, assertions, retries, cleanup, archives, `aat run show`, the web
+UI, and the MCP server all work unchanged. Statuses are asserted by name (`expect: OK`, `status: [NOT_FOUND]`), in
+plans, overrides, overlays, and retry rules, because several gRPC statuses share one HTTP status. `aat validate`
+checks every gRPC node against a descriptor set offline: unknown methods, streaming methods, inputs where the message
+puts them, and extract paths, including one spelled by its `.proto` name. It is tested over TLS and mutual TLS, runs
+unary methods only, and ships with an offline demo (`aat-sandbox` serves payments over gRPC;
+`aat-sandbox init --example grpc-payments`), the [gRPC guide](https://gburgyan.github.io/aat/grpc/), and a fourth
+public project that drives all 52 of Qdrant's unary methods with it.
+
+**Breaking and noticeable.** `fieldEquals` compares a list or an object by its structure, so `["4"]` no longer equals
+`[4]`, and `<`, `>`, `<=`, and `>=` compare a decimal string with a number by value. `--override NODE=URL` keeps the
+headers and credential the node already had, from its matching `overrides:` entry, where it used to take the
+environment's. `aat-sandbox serve` listens on a third port, `:8767` (`--grpc-port`). `aat docs generate` and the MCP
+node tools print a list or object default as JSON, and `aat docs generate` orders a requirement's satisfiers by name.
+Ctrl-C ends `aat web` at once. The binary grows from about 28 MB to about 44 MB with the gRPC and protobuf libraries.
+
 ### Added
 - **Outputs echoed from inputs.** A node output can declare `fromInput: <input>` to be that input as
   the step sent it instead of something the template extracts. It is for an API where the client
@@ -1116,7 +1140,8 @@ The first tagged version.
   headers, and OAuth2 token caching.
 - The Petstore example, the user documentation, and the Apache 2.0 license.
 
-[Unreleased]: https://github.com/gburgyan/aat/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/gburgyan/aat/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/gburgyan/aat/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/gburgyan/aat/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gburgyan/aat/compare/v0.0.4...v0.1.0
 [0.0.4]: https://github.com/gburgyan/aat/compare/v0.0.3...v0.0.4

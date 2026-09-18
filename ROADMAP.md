@@ -2,12 +2,14 @@
 
 ## Status
 
-AAT's public launch release is v0.2.0. It was built and proven against a private 74-node airline
+AAT's current release is v0.3.0, which added gRPC; the public launch release was v0.2.0. It was built and proven against a private 74-node airline
 booking API with 63 workflows, 53 recipes, and 6 environments, so the core loop — graph, templates,
-plans, engine, archives, web UI, MCP server — has carried real traffic. Three further projects run
-against real, public APIs in test mode: [aat-duffel](https://github.com/gburgyan/aat-duffel),
+plans, engine, archives, web UI, MCP server — has carried real traffic. Four further projects run
+against real, public APIs: [aat-duffel](https://github.com/gburgyan/aat-duffel),
 [aat-stripe](https://github.com/gburgyan/aat-stripe), and
-[aat-shippo](https://github.com/gburgyan/aat-shippo). It is maintained by one person.
+[aat-shippo](https://github.com/gburgyan/aat-shippo) in test mode, and
+[aat-qdrant](https://github.com/gburgyan/aat-qdrant) over gRPC against a local container. It is
+maintained by one person.
 
 The graph and plan YAML formats may still change before 1.0. Breaking changes will be listed in
 `CHANGELOG.md` with migration notes.

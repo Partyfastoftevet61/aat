@@ -17,7 +17,7 @@ Four more projects run against real, public APIs and live in their own repositor
 | [aat-shippo](https://github.com/gburgyan/aat-shippo) | Shippo shipping, test mode | 46 of 70 operations, 28 plans, 9 layers; 28/28 in ~2½ min | Layers as the headline — a lane × parcel matrix and six deterministic tracking fixtures — with real shipping labels rendered in the web UI |
 | [aat-qdrant](https://github.com/gburgyan/aat-qdrant) | Qdrant vector database over gRPC, local container | all 52 public unary gRPC methods as 77 operations, 38 plans, 6 layers; 38/38 in ~70 s | The one that speaks [gRPC](../grpc.md): real protobuf (oneofs, maps, 64-bit ids, a cursor that is a message), errors asserted by status name, and what AAT's gRPC support was stress-tested against |
 
-The first three each need a free test-mode account and its token; the README of each says which. aat-qdrant needs Docker, and an `aat` with gRPC support, which is not in a release yet.
+The first three each need a free test-mode account and its token; the README of each says which. aat-qdrant needs Docker, and aat 0.3.0 or later, the first release with gRPC.
 
 The [Airline case study](airline-case-study.md) describes the project AAT was built for — a private 74-node airline booking API with 63 workflows, 53 recipes, and 6 environments — and which features that scale relies on.
 
