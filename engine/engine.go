@@ -815,6 +815,7 @@ func (e *Engine) executeStepWith(ctx context.Context, step plan.Step, node *grap
 		if hasTemplate {
 			convertHeaderOutputs(outputs, node, tmpl)
 		}
+		outputs = echoInputOutputs(outputs, node, inputs)
 		result.Outputs = outputs
 
 		// Record transform script if present

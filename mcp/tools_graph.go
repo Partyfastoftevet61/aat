@@ -561,6 +561,9 @@ func (s *Server) handleGetResponseShape(_ context.Context, req mcp.CallToolReque
 				path = "`" + p + "`"
 			}
 		}
+		if out.FromInput != "" {
+			path = "echoes input `" + out.FromInput + "`"
+		}
 		consumedBy := ""
 		if c, ok := consumers[out.Name]; ok {
 			consumedBy = strings.Join(c, ", ")
@@ -654,6 +657,9 @@ func (s *Server) handleExplainField(_ context.Context, req mcp.CallToolRequest) 
 				fmt.Fprintf(&b, "**Type:** %s\n", out.Type)
 				if out.Description != "" {
 					fmt.Fprintf(&b, "**Description:** %s\n", out.Description)
+				}
+				if out.FromInput != "" {
+					fmt.Fprintf(&b, "**Echoes input:** %s (the value the step sent, not read from the response)\n", out.FromInput)
 				}
 				if len(out.ElementFields) > 0 {
 					b.WriteString("\n**Element Fields:**\n")

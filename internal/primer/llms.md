@@ -166,6 +166,7 @@ default:
 | `type` | yes | Data type |
 | `optional` | no | If true, the template need not extract it. A path the response lacks leaves the step without the output, and a null value is extracted as null; a `predicate` assertion that names either fails (see Predicate syntax under Assertion Types) |
 | `display` | no | Label that prints the value under the step in run output |
+| `fromInput` | no | Names one of the node's inputs: the output is that input as sent, not extracted. For a create whose reply doesn't repeat the client-chosen name, so later steps and the cleanup can read it |
 | `elementFields` | no | For array outputs — describes fields on each element |
 
 ### Array Outputs

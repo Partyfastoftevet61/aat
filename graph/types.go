@@ -367,12 +367,19 @@ type Constraint struct {
 }
 
 // Output describes a single output value produced by a node.
+//
+// An output is extracted from the response by the node's template, unless
+// FromInput names one of the node's inputs: then the output is that input as
+// the step sent it. That serves an API where the client names what it creates
+// and the reply doesn't say it back, so a later step, or the node's cleanup,
+// can read the name as an output like any other.
 type Output struct {
 	Name          string  `yaml:"name"`
 	Type          string  `yaml:"type"`
 	Description   string  `yaml:"description,omitempty"`
 	Optional      bool    `yaml:"optional,omitempty"`
 	Display       string  `yaml:"display,omitempty"`
+	FromInput     string  `yaml:"fromInput,omitempty"`
 	ElementFields []Field `yaml:"elementFields,omitempty"`
 }
 

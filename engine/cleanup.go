@@ -222,6 +222,7 @@ func (e *Engine) executeCleanupEntry(ctx context.Context, entry CleanupEntry, no
 		if tmpl, ok := e.registry.GetTemplate(node.Adapter); ok {
 			convertHeaderOutputs(outputs, node, tmpl)
 		}
+		outputs = echoInputOutputs(outputs, node, inputs)
 		result.Outputs = outputs
 	}
 	// Cleanup extraction errors are silently ignored — empty outputs is fine

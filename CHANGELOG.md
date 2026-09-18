@@ -7,6 +7,12 @@ the graph and plan formats may still change before 1.0.
 ## [Unreleased]
 
 ### Added
+- **Outputs echoed from inputs.** A node output can declare `fromInput: <input>` to be that input as
+  the step sent it instead of something the template extracts. It is for an API where the client
+  names what it creates and the reply doesn't say it back — Qdrant's create-collection answers
+  `{"result": true}` — so a later step and the node's cleanup can read the name like any other
+  output. `aat validate` checks that the input exists and that the template doesn't also extract
+  the output.
 - **gRPC, for unary methods (experimental).** A graph node names a gRPC method with `proto:`, a
   template declares `protocol: grpc` and describes the call with `rpc:`, `metadata:`, and `message:`,
   and an environment routes to it with a `grpc://` or `grpcs://` target. Descriptors come from a

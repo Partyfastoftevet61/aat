@@ -56,6 +56,8 @@ func OutputExtractPaths(g *graph.Graph, registry *adapter.Registry) oas.OutputPa
 		for _, out := range node.Outputs {
 			rule, extracted := tmpl.Response.Extract[out.Name]
 			switch {
+			case out.FromInput != "":
+				outputs[out.Name] = "" // echoed from an input; not in the response
 			case extracted && rule.Header == "":
 				outputs[out.Name] = rule.GJSONPath()
 			case extracted, tmpl.HasTransform():
@@ -186,7 +188,15 @@ func validateAdapterOutputsForNodes(g *graph.Graph, registry *adapter.Registry, 
 
 		// Graph output not extracted by template. A Lua transform can compute
 		// outputs that no extract rule produces, so it is trusted to set them.
+		// An output echoed from an input comes from the request instead, and
+		// an extract rule for it would be overwritten, so one is an error.
 		for _, out := range node.Outputs {
+			if out.FromInput != "" {
+				if extractKeys[out.Name] {
+					errs = append(errs, fmt.Sprintf("node %q: output %q is echoed from input %q, so the template must not also extract it", name, out.Name, out.FromInput))
+				}
+				continue
+			}
 			if !extractKeys[out.Name] {
 				if out.Optional || tmpl.HasTransform() {
 					continue

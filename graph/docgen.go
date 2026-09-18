@@ -288,7 +288,11 @@ func writeNodeSection(b *strings.Builder, name string, node *Node, g *Graph, opt
 		b.WriteString("| Name | Type | Description |\n")
 		b.WriteString("|------|------|-------------|\n")
 		for _, out := range node.Outputs {
-			fmt.Fprintf(b, "| %s | %s | %s |\n", out.Name, out.Type, out.Description)
+			desc := out.Description
+			if out.FromInput != "" {
+				desc = strings.TrimSpace(desc + " (echoes input `" + out.FromInput + "`)")
+			}
+			fmt.Fprintf(b, "| %s | %s | %s |\n", out.Name, out.Type, desc)
 			for _, ef := range out.ElementFields {
 				path := ""
 				if ef.Path != "" && ef.Path != ef.Name {

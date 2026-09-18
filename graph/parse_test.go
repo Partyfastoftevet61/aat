@@ -404,7 +404,7 @@ func TestParse_UnknownKeys(t *testing.T) {
 		{
 			name: "path on an output",
 			yaml: head + "    outputs:\n      - name: id\n        type: string\n        path: $.id\n",
-			want: `line 8: unknown key "path" in output (valid keys: description, display, elementFields, name, optional, type)`,
+			want: `line 8: unknown key "path" in output (valid keys: description, display, elementFields, fromInput, name, optional, type)`,
 		},
 		{
 			name: "source on an input",

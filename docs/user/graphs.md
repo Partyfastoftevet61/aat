@@ -121,7 +121,35 @@ An output declares one piece of data the operation produces. Outputs are extract
 | `description` | string | no | Human-readable description |
 | `optional` | bool | no | If true, `aat validate` does not require the node's template to extract this output. When the output is missing, an optional input that takes it with `from:`, directly or through a named selection, is left out, and a required one fails; `aat validate --strict` warns about a required input that takes an optional output |
 | `display` | string | no | Label for surfacing this output to the user. When set, the extracted value is printed under the step in console output (`  Locator: ABC123`), included as `display_outputs` in `--json` summaries, and stored in the archive |
+| `fromInput` | string | no | One of the node's inputs: the output is that input as the step sent it, rather than something the template extracts (see below) |
 | `elementFields` | list | no | Field definitions for array element structure (see below) |
+
+### Outputs Echoed From Inputs
+
+Some APIs let the client name what it creates, and answer without repeating the name: Qdrant's
+create-collection call replies `{"result": true}`. With nothing in the response to extract, a later
+step — and the node's cleanup, which finds its inputs among outputs — would have no way to read the
+name. `fromInput` makes the input an output:
+
+```yaml
+createCollection:
+  inputs:
+    - name: collectionName
+      type: string
+      default: {value: "aat-qdrant-{{random 8}}"}
+  outputs:
+    - name: created
+      type: boolean
+    - name: collectionName
+      type: string
+      fromInput: collectionName     # the name as sent, generated value included
+  cleanup: deleteCollection         # its collectionName input reads this output
+```
+
+The output is set after a successful response, as extracted outputs are, so a later step reads it
+with `default: {from: createCollection.collectionName}` like any other. The template doesn't extract
+it — `aat validate` reports a template that does — and an input the step left out leaves the output
+unset.
 
 ### Array Outputs and Element Fields
 
