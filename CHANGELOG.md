@@ -123,6 +123,12 @@ the graph and plan formats may still change before 1.0.
   `error_details.proto`; they are now always read. And a reply over 4 MiB, gRPC's default limit, failed
   as `RESOURCE_EXHAUSTED` and was retried as transient; a reply is now read whatever its size.
 
+  The MCP server's tool and resource descriptions — the text an assistant chooses a tool by — still
+  called every template an HTTP template with a method and a path, though the tools themselves had
+  learned gRPC. They now say what the tools return for either protocol. `aat://api/overview` listed a
+  gRPC node with no method at all, and `get_oas_operation` told an assistant that a gRPC node was
+  missing its OAS reference; the overview names the method, and the tool says what the node is.
+
   The demo's gRPC replies carried an empty payment id. The HTTP payments API calls it `paymentId` and
   `payments.proto` called it `id`, and the sandbox's gRPC service discarded the field it could not
   place, so `examples/grpc-payments` extracted `""` and nothing asserted otherwise; a refund came back

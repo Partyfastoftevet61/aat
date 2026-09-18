@@ -222,10 +222,14 @@ func (s *Server) handleGenerateClientCode(_ context.Context, req mcp.GetPromptRe
 		}
 	}
 
+	call := "HTTP call"
+	if node.Proto != nil {
+		call = "gRPC call"
+	}
 	instruction := fmt.Sprintf(
 		"Generate %s client code for calling the %s API endpoint. "+
-			"Include request construction, HTTP call, response parsing, and error handling.",
-		language, nodeName,
+			"Include request construction, %s, response parsing, and error handling.",
+		language, nodeName, call,
 	)
 
 	return &mcp.GetPromptResult{

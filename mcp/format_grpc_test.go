@@ -1,12 +1,16 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
 	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/archive"
+	"github.com/gburgyan/aat/graph"
 	"github.com/gburgyan/aat/plan"
+	"github.com/mark3labs/mcp-go/mcp"
+	v3high "github.com/pb33f/libopenapi/datamodel/high/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -108,4 +112,51 @@ func TestFormatStep_ExpectFailureHTTPIsUnchanged(t *testing.T) {
 		},
 	}
 	assert.Contains(t, formatStepRecord(step, 1, 1), "got 404")
+}
+
+// grpcNodeContext is a project with one gRPC node beside the HTTP ones.
+func grpcNodeContext(t *testing.T) *ServerContext {
+	t.Helper()
+	ctx := buildPersonaTestContext()
+	ctx.Graph.Nodes["charge"] = &graph.Node{
+		Name:        "charge",
+		Description: "Capture payment",
+		Adapter:     "chargeTmpl",
+		Proto:       &graph.ProtoRef{Service: "shop.v1.Payments", Method: "Charge"},
+	}
+	require.NoError(t, ctx.Registry.Register("chargeTmpl", adapter.NewTemplateAdapter(adapter.Template{
+		Adapter: "chargeTmpl", Protocol: adapter.ProtocolGRPC,
+		Request: adapter.TemplateRequest{RPC: "shop.v1.Payments/Charge"},
+	})))
+	return ctx
+}
+
+// A gRPC node has no verb and no path, and used to be listed with neither.
+func TestHandleAPIOverviewResource_NamesAGRPCMethod(t *testing.T) {
+	srv := NewIntegrationServer(grpcNodeContext(t))
+
+	req := mcp.ReadResourceRequest{}
+	req.Params.URI = "aat://api/overview"
+	contents, err := srv.handleAPIOverviewResource(context.Background(), req)
+	require.NoError(t, err)
+
+	text := contents[0].(mcp.TextResourceContents).Text
+	assert.Contains(t, text, "**charge** gRPC `shop.v1.Payments/Charge` — Capture payment")
+	assert.Contains(t, text, "**search** POST `/api/search`", "an HTTP node reads as before")
+}
+
+// Asked for a gRPC node's OpenAPI operation, the server says what the node is
+// rather than that something is missing.
+func TestHandleGetOASOperation_GRPCNode(t *testing.T) {
+	ctx := grpcNodeContext(t)
+	ctx.OASSpecs = map[string]*v3high.Document{"test.yaml": {}}
+	srv := NewServer(ctx)
+
+	result := callTool(t, srv.handleGetOASOperation, map[string]any{"node": "charge"})
+
+	assert.True(t, result.IsError)
+	text := resultText(t, result)
+	assert.Contains(t, text, "gRPC method shop.v1.Payments/Charge")
+	assert.Contains(t, text, "inspect_template")
+	assert.NotContains(t, text, "HTTP")
 }

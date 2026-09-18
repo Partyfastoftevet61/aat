@@ -208,7 +208,12 @@ func (s *Server) resolveNodeOperation(nodeName string) (*v3high.Operation, strin
 		if node.Adapter != "" {
 			adapterInfo = fmt.Sprintf(" (adapter: %s)", node.Adapter)
 		}
-		return nil, "", "", nil, fmt.Sprintf("Node %q has no OAS reference%s. Use %s with that adapter name for HTTP details.", nodeName, adapterInfo, toolName)
+		// A gRPC node never has one: its contract is a protobuf method, and
+		// saying only that the OAS reference is missing reads as a gap.
+		if node.Proto != nil {
+			return nil, "", "", nil, fmt.Sprintf("Node %q calls the gRPC method %s, so it has no OpenAPI operation%s. Use %s with that adapter name for its service, method, metadata, and message.", nodeName, node.Proto.String(), adapterInfo, toolName)
+		}
+		return nil, "", "", nil, fmt.Sprintf("Node %q has no OAS reference%s. Use %s with that adapter name for its request template.", nodeName, adapterInfo, toolName)
 	}
 
 	if len(s.ctx.OASSpecs) == 0 {

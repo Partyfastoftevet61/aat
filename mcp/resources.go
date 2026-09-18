@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/intent"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -22,7 +23,7 @@ func (s *Server) registerResources() {
 
 	s.mcp.AddResource(
 		mcp.NewResource("aat://templates", "Adapter Templates",
-			mcp.WithResourceDescription("HTTP templates for all registered adapters"),
+			mcp.WithResourceDescription("Request templates, HTTP and gRPC, for all registered adapters"),
 			mcp.WithMIMEType("text/markdown"),
 		),
 		s.handleTemplatesResource,
@@ -65,7 +66,7 @@ func (s *Server) registerResources() {
 
 	s.mcp.AddResourceTemplate(
 		mcp.NewResourceTemplate("aat://template/{adapter}", "Template Detail",
-			mcp.WithTemplateDescription("HTTP template detail for a specific adapter"),
+			mcp.WithTemplateDescription("Request template detail for a specific adapter, HTTP or gRPC"),
 			mcp.WithTemplateMIMEType("text/markdown"),
 		),
 		s.handleTemplateResource,
@@ -73,7 +74,7 @@ func (s *Server) registerResources() {
 
 	s.mcp.AddResourceTemplate(
 		mcp.NewResourceTemplate("aat://workflow/{name}", "Workflow Detail",
-			mcp.WithTemplateDescription("Enriched step-by-step recipe for a workflow showing HTTP methods, data flow, and inputs"),
+			mcp.WithTemplateDescription("Enriched step-by-step recipe for a workflow showing each call's method, data flow, and inputs"),
 			mcp.WithTemplateMIMEType("text/markdown"),
 		),
 		s.handleWorkflowResource,
@@ -84,7 +85,7 @@ func (s *Server) registerResources() {
 func (s *Server) registerIntegrationResources() {
 	s.mcp.AddResource(
 		mcp.NewResource("aat://api/overview", "API Overview",
-			mcp.WithResourceDescription("Compact overview of all API operations: name, HTTP method, path, and description"),
+			mcp.WithResourceDescription("Compact overview of all API operations: name, HTTP method and path or gRPC method, and description"),
 			mcp.WithMIMEType("text/markdown"),
 		),
 		s.handleAPIOverviewResource,
@@ -126,7 +127,7 @@ func (s *Server) registerIntegrationResources() {
 
 	s.mcp.AddResourceTemplate(
 		mcp.NewResourceTemplate("aat://template/{adapter}", "Request Template",
-			mcp.WithTemplateDescription("HTTP request template for a specific adapter"),
+			mcp.WithTemplateDescription("Request template for a specific adapter, HTTP or gRPC"),
 			mcp.WithTemplateMIMEType("text/markdown"),
 		),
 		s.handleTemplateResource,
@@ -134,7 +135,7 @@ func (s *Server) registerIntegrationResources() {
 
 	s.mcp.AddResourceTemplate(
 		mcp.NewResourceTemplate("aat://flow/{name}", "Integration Flow",
-			mcp.WithTemplateDescription("Step-by-step integration flow showing HTTP methods, data flow, and required inputs"),
+			mcp.WithTemplateDescription("Step-by-step integration flow showing each call's method, data flow, and required inputs"),
 			mcp.WithTemplateMIMEType("text/markdown"),
 		),
 		s.handleWorkflowResource,
@@ -187,7 +188,7 @@ func (s *Server) registerTestResources() {
 
 	s.mcp.AddResourceTemplate(
 		mcp.NewResourceTemplate("aat://template/{adapter}", "Template Detail",
-			mcp.WithTemplateDescription("HTTP template detail for a specific adapter"),
+			mcp.WithTemplateDescription("Request template detail for a specific adapter, HTTP or gRPC"),
 			mcp.WithTemplateMIMEType("text/markdown"),
 		),
 		s.handleTemplateResource,
@@ -195,7 +196,7 @@ func (s *Server) registerTestResources() {
 
 	s.mcp.AddResourceTemplate(
 		mcp.NewResourceTemplate("aat://workflow/{name}", "Workflow Detail",
-			mcp.WithTemplateDescription("Enriched step-by-step recipe for a workflow showing HTTP methods, data flow, and inputs"),
+			mcp.WithTemplateDescription("Enriched step-by-step recipe for a workflow showing each call's method, data flow, and inputs"),
 			mcp.WithTemplateMIMEType("text/markdown"),
 		),
 		s.handleWorkflowResource,
@@ -215,11 +216,15 @@ func (s *Server) handleAPIOverviewResource(_ context.Context, req mcp.ReadResour
 		method := ""
 		path := ""
 
-		// Try to get HTTP method/path from template
+		// The call comes from the template: an HTTP method and path, or a
+		// gRPC method, which has neither and is named whole.
 		if node.Adapter != "" {
 			if tmpl, ok := s.ctx.Registry.GetTemplate(node.Adapter); ok {
 				method = tmpl.Request.Method
 				path = tmpl.Request.Path
+				if tmpl.Protocol == adapter.ProtocolGRPC {
+					method, path = "gRPC", tmpl.Request.RPC
+				}
 			}
 		}
 
