@@ -269,7 +269,7 @@ response:
 - **A 64-bit integer (`int64`, `uint64`, `fixed64`) is a JSON string**: `"4200"`, not `4200`. Write `fieldEquals` values quoted, and predicate equality too (`total == "4200"`); ordering compares by value, so `total > 100` works
 - Other encodings: `bytes` is base64; an enum is its name; `Timestamp` is RFC 3339; `Duration` is `"3s"`; `Any` is `{"@type": …}` and needs its type in the descriptor set (`--include_imports`); map keys are always strings; `NaN`/`Infinity` are strings
 - Zero values are present in the JSON, so an extract rule for a `0` or `""` field does not fail. An unset `optional` field, message field, or map entry stays absent, which is what `fieldAbsent` tests
-- **Statuses are named**: `expect: OK`, `status: [NOT_FOUND]` in `expectFailure`, `expectStatus: [INVALID_ARGUMENT]` in a mutation. Prefer the name to a number: `INVALID_ARGUMENT`, `FAILED_PRECONDITION`, and `OUT_OF_RANGE` all map to HTTP 400, so a number cannot tell them apart. A number still matches, so a plan can read against either protocol
+- **Statuses are named**: `expect: OK`, `status: [NOT_FOUND]` in `expectFailure` (a step's, or an override's or overlay's), `expectStatus: [INVALID_ARGUMENT]` in a mutation. Prefer the name to a number: `INVALID_ARGUMENT`, `FAILED_PRECONDITION`, and `OUT_OF_RANGE` all map to HTTP 400, so a number cannot tell them apart. A number still matches, so a plan can read against either protocol
 - A failed call still has a JSON body: `{"code": "NOT_FOUND", "message": "...", "details": [...]}`, which assertions and `errorDetection` read normally
 - **Unary methods only.** A streaming method is rejected by `aat validate` and by the executor
 - The target is `grpc://host:port` (plaintext) or `grpcs://host:port` (TLS), set as `apiBaseUrl` or in an `overrides:` entry so one project can span both protocols. Auth needs nothing new: a credential travels as metadata
@@ -815,7 +815,9 @@ Semantics:
   plan-supplied values. Precedence: overlay values > plan step values > graph
   defaults.
 - `expectFailure:` is applied to any step whose node matches `match`, but only
-  when the step's plan doesn't already declare its own `expectFailure`.
+  when the step's plan doesn't already declare its own `expectFailure`. Its
+  `status` takes what a step's takes: codes `>= 400`, or gRPC status names
+  (`status: [INVALID_ARGUMENT]`).
 - Match resolution: exact matches win over glob matches on conflicting keys.
 
 ### Patterns You'll Use

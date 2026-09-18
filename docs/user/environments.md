@@ -439,10 +439,10 @@ grpc:
 One `grpc:` block serves every `grpcs://` route of the environment, overrides
 included.
 
-An override's or overlay's `expectFailure.status` takes numbers only. It
-matches a gRPC step through the HTTP status the code maps to, so `[400]`
-matches `INVALID_ARGUMENT` and `FAILED_PRECONDITION` alike; a plan's own
-`expectFailure` can [name the status](plans.md#negative-testing-expectfailure).
+An override's or overlay's `expectFailure.status` names a gRPC status the way
+a plan step's does: `status: [INVALID_ARGUMENT]` matches that code alone, where
+`[400]` matches every gRPC status that maps to it (see
+[Negative Testing](plans.md#negative-testing-expectfailure)).
 
 `pathRewrite` has no meaning for a gRPC route — a path there is a method name —
 and naming both is an error rather than a silent no-op. See [gRPC](grpc.md).
@@ -711,7 +711,7 @@ overrides:
 Semantics:
 
 - `values:` merge into the resolved inputs map at step execution time, overwriting plan-supplied values. Precedence: overlay values > plan step values > graph defaults. They are used exactly as written: `{{...}}` expressions such as `{{today}}` are not evaluated, and the input's graph type is not applied. The archive records each one as the input's resolution, with the source `override_value`, so the decision trail shows the value that was sent.
-- `expectFailure:` applies to matched steps only when the plan step doesn't already declare its own `expectFailure`. Status codes must all be `>= 400`.
+- `expectFailure:` applies to matched steps only when the plan step doesn't already declare its own `expectFailure`. Every status must be a failure: a code `>= 400`, or a [gRPC status name](grpc.md#statuses) other than `OK`.
 - Match precedence: exact matches win over glob matches on key conflicts, and later registrations overwrite earlier ones (`env.yaml` → `.aat-overrides.yaml` → `--overlay` → `--override`). For `expectFailure`, the last exact match wins; if no exact match, the last glob match wins.
 
 Both fields can be combined with `baseUrl`, `auth`, `headers`, and `pathRewrite` in a single override entry.
@@ -944,7 +944,7 @@ overrides:                                # optional — per-node routing overri
       amount: 0                           #     each key is an input name on the matched node
       currency: "XYZ"
     expectFailure:                        #   optional — flip matched steps to negative-test mode
-      status: [400, 422]                  #     all entries must be >= 400
+      status: [400, 422]                  #     codes >= 400, or gRPC names such as NOT_FOUND
       description: "invalid payment"
 
 values:                                   # optional — key-value pairs for {{env.KEY}}

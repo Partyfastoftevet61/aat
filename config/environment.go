@@ -109,8 +109,9 @@ type HostOverride struct {
 // OverrideExpectFailure declares expected failure statuses for matched nodes
 // without editing the plan. Translated to plan.ExpectFailure at engine time.
 type OverrideExpectFailure struct {
-	Status      []int  `yaml:"status"`
-	Description string `yaml:"description,omitempty"`
+	// Status takes HTTP codes and gRPC status names, as a plan step's does.
+	Status      ExpectedStatuses `yaml:"status"`
+	Description string           `yaml:"description,omitempty"`
 }
 
 // ResolvedOverride is a HostOverride after authentication and header merging.

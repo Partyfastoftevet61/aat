@@ -133,7 +133,7 @@ func (r *ExecutorRouter) AddResolvedOverride(ov config.ResolvedOverride) error {
 	var ef *plan.ExpectFailure
 	if ov.ExpectFailure != nil {
 		ef = &plan.ExpectFailure{
-			Status:      plan.HTTPStatuses(ov.ExpectFailure.Status),
+			Status:      ov.ExpectFailure.Status,
 			Description: ov.ExpectFailure.Description,
 		}
 	}

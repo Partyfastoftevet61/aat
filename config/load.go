@@ -190,9 +190,9 @@ func validateOverrides(overrides []HostOverride) []string {
 			if len(ov.ExpectFailure.Status) == 0 {
 				errs = append(errs, fmt.Sprintf("overrides[%d]: expectFailure must have at least one status", i))
 			}
-			for _, code := range ov.ExpectFailure.Status {
-				if code < 400 {
-					errs = append(errs, fmt.Sprintf("overrides[%d]: expectFailure status %d must be >= 400", i, code))
+			for _, status := range ov.ExpectFailure.Status {
+				if !status.IsFailure() {
+					errs = append(errs, fmt.Sprintf("overrides[%d]: expectFailure status %s must be a failure: a code >= 400, or a gRPC status other than OK", i, status))
 				}
 			}
 		}

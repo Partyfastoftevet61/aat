@@ -22,7 +22,8 @@ the graph and plan formats may still change before 1.0.
   Messages cross into the rest of AAT as JSON, so extract rules, predicates, assertions, error
   detection, archives, and `aat run show` work exactly as they do for HTTP; `metadata:` carries what
   headers carry, credentials included, so `oauth2`, `apikey`, and `bearer` need no new configuration.
-  `expectFailure`, `expectStatus`, a `status` assertion, and `retry.on`/`retry.failOn` accept gRPC status names —
+  `expectFailure` (a step's, or an override's or overlay's), `expectStatus`, a `status` assertion, and
+  `retry.on`/`retry.failOn` accept gRPC status names —
   `expect: OK`, `status: [NOT_FOUND]` — which match more precisely than a code can, because several
   gRPC statuses share one HTTP status. Numbers still work, so a plan can read against either
   protocol. `aat validate` checks gRPC nodes against the

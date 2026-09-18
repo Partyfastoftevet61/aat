@@ -28,7 +28,7 @@ func TestExecutorRouter_AddResolvedOverride_ValueOnlyKeepsRoute(t *testing.T) {
 		Pattern:       "paymentCharge",
 		APIConfig:     config.APIConfig{BaseURL: "http://shop"},
 		Values:        map[string]any{"cardNumber": "4000000000000002"},
-		ExpectFailure: &config.OverrideExpectFailure{Status: []int{402}},
+		ExpectFailure: &config.OverrideExpectFailure{Status: config.HTTPStatuses([]int{402})},
 	}))
 
 	exec, cfg, _ := router.Resolve("paymentCharge")

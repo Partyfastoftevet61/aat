@@ -296,6 +296,18 @@ expectFailure:
 so a negative test that expects one should not pass on another. Naming the code
 gets that right; a number cannot.
 
+An [override or an overlay file](environments.md#input-value-and-expected-failure-overrides)
+names a status the same way, so an existing plan reruns as a negative test
+without being edited:
+
+```yaml
+overrides:
+  - match: paymentCharge
+    values: {cardNumber: "4000000000000002"}
+    expectFailure:
+      status: [INVALID_ARGUMENT]
+```
+
 Numbers still work, so a plan can read against either protocol:
 
 ```yaml
@@ -425,10 +437,6 @@ it would mean a second execution model. For a flow that genuinely needs one,
 - A response message larger than 4 MiB, gRPC's default receive limit, fails
   with `RESOURCE_EXHAUSTED`. That code is transient, so a step with a `retry`
   rule retries it to no effect; page the request instead.
-- `expectFailure` in an [override or an overlay file](environments.md#input-value-and-expected-failure-overrides)
-  takes numbers only, so it matches a gRPC step through the HTTP mapping
-  (`status: [400]`) and cannot tell `INVALID_ARGUMENT` from
-  `FAILED_PRECONDITION`. A plan's own `expectFailure` can.
 - The MCP server has no tools for browsing a descriptor set, as it has for an
   OpenAPI spec. An assistant writing new gRPC nodes reads the `.proto` source.
 - gRPC's own retry and load-balancing configuration is deliberately disabled;

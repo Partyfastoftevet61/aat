@@ -341,7 +341,7 @@ Workflows:             OK (4 files, 2 templates)
 | `unknown mutationScope "X"` | `mutationScope` is something other than `"shared"` or `"isolated"` | Use one of the two supported values (or omit for the default `"shared"`) |
 | `mutationScope is set but step has no mutations` | `mutationScope` is declared on a step without a `mutations:` block | Remove `mutationScope`, or add mutations |
 | `cloned step id "X" collides with an existing step` | An isolated-mutation clone id matches a pre-existing step id | Rename either the existing step or the mutation so `<origId>__<mutationName>` is unique |
-| `overrides[N]: expectFailure status M must be >= 400` | Overlay override's `expectFailure` has a success status | Overlay `expectFailure` is for negative tests; use 400+ |
+| `overrides[N]: expectFailure status M must be a failure: a code >= 400, or a gRPC status other than OK` | Overlay override's `expectFailure` has a success status | Overlay `expectFailure` is for negative tests; use 400+, or a gRPC status name other than `OK` |
 | `overrides[N]: expectFailure must have at least one status` | Overlay override has empty `expectFailure.status` | Provide a non-empty list of `>= 400` status codes |
 
 ## Validation in CI/CD

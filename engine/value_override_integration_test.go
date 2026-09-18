@@ -9,7 +9,10 @@ import (
 	"testing"
 
 	"github.com/gburgyan/aat/adapter"
+	"github.com/gburgyan/aat/config"
 	"github.com/gburgyan/aat/graph"
+	"github.com/gburgyan/aat/internal/grpcstatus"
+	"github.com/gburgyan/aat/internal/yamlx"
 	"github.com/gburgyan/aat/plan"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -270,4 +273,65 @@ func TestOverlayValueOverride_StepExpectFailureWins(t *testing.T) {
 	require.NotNil(t, sr.ExpectFailure)
 	assert.Equal(t, []int{404}, sr.ExpectFailure.ExpectedStatuses.Codes(), "plan step expectFailure takes precedence over overlay")
 	assert.True(t, sr.ExpectFailure.Passed)
+}
+
+// statusExecutor answers every request with one gRPC status, so a test can
+// say what a server sent without serving gRPC.
+type statusExecutor struct {
+	code uint32
+}
+
+func (e *statusExecutor) Execute(context.Context, *adapter.Request) (*adapter.Response, error) {
+	return &adapter.Response{
+		Protocol:   adapter.ProtocolGRPC,
+		StatusCode: grpcstatus.HTTPStatus(e.code),
+		Body:       []byte(`{"code":"` + grpcstatus.Name(e.code) + `"}`),
+		GRPC:       &adapter.GRPCStatus{Code: e.code, Name: grpcstatus.Name(e.code)},
+	}, nil
+}
+func (e *statusExecutor) Protocol() string { return adapter.ProtocolHTTP }
+func (e *statusExecutor) Target() string   { return "grpc://payments.example.com:443" }
+func (e *statusExecutor) Close() error     { return nil }
+
+// TestOverlayExpectFailure_NamesAGRPCStatus verifies that an override's
+// expectFailure keeps the name it was written with: INVALID_ARGUMENT and
+// FAILED_PRECONDITION both map to HTTP 400, and an overlay that names one must
+// not pass on the other.
+func TestOverlayExpectFailure_NamesAGRPCStatus(t *testing.T) {
+	g := &graph.Graph{
+		Version: "1.0.0",
+		Nodes:   map[string]*graph.Node{"charge": {Name: "charge", Adapter: "test.charge"}},
+	}
+	registry := adapter.NewRegistry()
+	require.NoError(t, registry.Register("test.charge", &stubAdapter{method: "POST", path: "/charges"}))
+
+	var status config.ExpectedStatuses
+	require.NoError(t, yamlx.Decode([]byte("[INVALID_ARGUMENT]"), &status))
+	override := config.ResolvedOverride{
+		Pattern:       "charge",
+		ExpectFailure: &config.OverrideExpectFailure{Status: status, Description: "declined"},
+	}
+
+	cases := []struct {
+		name string
+		sent uint32
+		want Outcome
+	}{
+		{"the named status passes", grpcstatus.InvalidArgument, OutcomePassed},
+		{"another status with the same HTTP code fails", grpcstatus.FailedPrecondition, OutcomeFailed},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			router := NewExecutorRouter(&statusExecutor{code: tc.sent}, &adapter.EnvironmentConfig{})
+			require.NoError(t, router.AddResolvedOverride(override))
+			p := &plan.Plan{
+				Metadata:  plan.Metadata{GraphVersion: "1.0.0"},
+				Execution: plan.Execution{Steps: []plan.Step{{Node: "charge"}}},
+			}
+
+			result := NewEngine(g, registry, router).Run(context.Background(), p)
+
+			assert.Equal(t, tc.want, result.Outcome, "error: %v", result.Error)
+		})
+	}
 }

@@ -80,7 +80,7 @@ func TestSubstituteVars_FieldsTheOldListSkipped(t *testing.T) {
 				Credentials: map[string]SecretRef{"key": {Source: "literal", Value: "${key}"}},
 			},
 			Values:        map[string]any{"note": "via ${host}", "nested": []any{"${host}", 3}},
-			ExpectFailure: &OverrideExpectFailure{Status: []int{402}, Description: "declined on ${host}"},
+			ExpectFailure: &OverrideExpectFailure{Status: HTTPStatuses([]int{402}), Description: "declined on ${host}"},
 		}},
 		Settings: &RuntimeSettings{OASValidation: "${grant}"},
 	}
