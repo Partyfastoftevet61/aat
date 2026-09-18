@@ -47,17 +47,20 @@ The same property that makes the files fit an agent's context window makes them 
 
 ## The proof is that it runs
 
-Three complete projects against real, public APIs, each built openly and each run against the live test API. Every claim in their READMEs is something a run recorded.
+Four complete projects against real, public APIs, each built openly: three run against an API's live test mode, and the fourth against the database itself, in a local container. Every claim in their READMEs is something a run recorded.
 
 | Project | Scale | What it shows |
 |---|---|---|
 | [aat-duffel](https://github.com/gburgyan/aat-duffel) | 66 operations, 47 plans, 14 layers; the full batch passes 47/47 in about 3½ minutes | An API with **no official OpenAPI spec**. Everything the README says about Duffel came from runs |
 | [aat-stripe](https://github.com/gburgyan/aat-stripe) | 82 operations, 53 plans, 14 layers; 53/53 in about 5 minutes | About 6,300 lines of graph and templates against Stripe's **205,000-line** vendored spec, with every request and response checked against it as it goes |
 | [aat-shippo](https://github.com/gburgyan/aat-shippo) | 46 of 70 operations, 28 plans, 9 layers; 28/28 in about 2½ minutes | Layers as the headline — a lane × parcel matrix and six deterministic tracking fixtures — with real shipping labels rendered in the web UI |
+| [aat-qdrant](https://github.com/gburgyan/aat-qdrant) | all 52 public unary gRPC methods as 77 operations, 38 plans, 6 layers; 38/38 in about 70 seconds | The same files over **[gRPC](grpc.md)**: about 5,400 lines of YAML against a 4,700-line proto surface nobody on the AAT side wrote, every node checked offline against Qdrant's published protos, and every refusal asserted by status name and exact message |
 
 `aat-shippo` makes the argument on this page in one command. Its lane × parcel matrix runs eight combinations from two plan files. A second matrix, over an axis those plans never read, expands to fourteen runs — seven execute, seven are skipped as duplicates, ten seconds, nothing bought. A layer only multiplies the plans it actually reaches. With collections, every one of those combinations is a copy you maintain by hand.
 
-[Real APIs](examples/real-apis.md) says what each covers, proves, and leaves out. Two smaller projects ship in this repository and need no account at all: the [shop](examples/shop.md), which runs offline against `aat-sandbox`, and the [petstore](petstore-walkthrough.md). See [Examples](examples/index.md).
+`aat-qdrant` makes a different one: the argument does not depend on the protocol. The graph, the plans, the layers, and the archives are the same files over gRPC as over REST. It was built to find what AAT's gRPC support had not thought of, and twelve changes to AAT came out of building it, each made as the gap turned up.
+
+[Real APIs](examples/real-apis.md) says what each covers, proves, and leaves out. Three smaller projects ship in this repository and need no account at all: the [shop](examples/shop.md) and [gRPC payments](grpc.md#the-60-second-version), which run offline against `aat-sandbox`, and the [petstore](petstore-walkthrough.md). See [Examples](examples/index.md).
 
 ## If you already have API tooling
 

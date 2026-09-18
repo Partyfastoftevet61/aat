@@ -69,6 +69,11 @@ the graph and plan formats may still change before 1.0.
   installed `aat-sandbox` runs the gRPC demo with no checkout of the repository; `init` with no flag
   still extracts the shop.
 
+- **A fourth public project, [aat-qdrant](https://github.com/gburgyan/aat-qdrant)**, is listed in the README, on the
+  Examples, Real APIs, and Why pages, and in the AI assistant primer as the reference for gRPC idioms: all 52
+  of Qdrant's public unary gRPC methods, against a pinned local container. It is what the gRPC support was
+  stress-tested against.
+
 - **`docs/user/grpc.md`**, a guide covering descriptor sets, the template and graph shape, routing
   and auth, status names, and the proto3 JSON encoding rules most likely to surprise a plan author
   — starting with 64-bit integers, which encode as strings. The AI assistant primer gained the same

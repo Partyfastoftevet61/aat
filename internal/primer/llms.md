@@ -65,7 +65,7 @@ AAT also has its own MCP server (`aat mcp serve`) that exposes graph introspecti
 
 ### Reference Projects
 
-Three complete projects against public APIs are the reference for idioms: [aat-duffel](https://github.com/gburgyan/aat-duffel) (66 operations, no official spec), [aat-stripe](https://github.com/gburgyan/aat-stripe) (82 operations, strict validation against a vendored spec), and [aat-shippo](https://github.com/gburgyan/aat-shippo) (46 operations, layer matrices). Before inventing a pattern — cleanup chains, guards, polling with `repeat`, form bodies, layers — read the matching row of a project's "AAT features on display" table, which names the file that uses it. [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/) compares the three.
+Four complete projects against public APIs are the reference for idioms: [aat-duffel](https://github.com/gburgyan/aat-duffel) (66 operations, no official spec), [aat-stripe](https://github.com/gburgyan/aat-stripe) (82 operations, strict validation against a vendored spec), [aat-shippo](https://github.com/gburgyan/aat-shippo) (46 operations, layer matrices), and [aat-qdrant](https://github.com/gburgyan/aat-qdrant) (gRPC: all 52 of Qdrant's unary methods, against a local container). Before inventing a pattern — cleanup chains, guards, polling with `repeat`, form bodies, layers — read the matching row of a project's "AAT features on display" table, which names the file that uses it. For a gRPC API, read aat-qdrant first: its "Reading it as a gRPC example" table maps each gRPC concern — descriptor sets, oneofs, maps, 64-bit integers, errors by status name, auth as metadata, retry hints in trailers, message cursors — to the file that handles it. [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/) compares the four.
 
 ### Starting from an OpenAPI Spec
 
@@ -274,7 +274,7 @@ response:
 - **Unary methods only.** A streaming method is rejected by `aat validate` and by the executor
 - The target is `grpc://host:port` (plaintext) or `grpcs://host:port` (TLS), set as `apiBaseUrl` or in an `overrides:` entry so one project can span both protocols. Auth needs nothing new: a credential travels as metadata
 
-Cross-ref: [gRPC](https://gburgyan.github.io/aat/grpc/)
+Cross-ref: [gRPC](https://gburgyan.github.io/aat/grpc/). A complete gRPC project to copy idioms from: [aat-qdrant](https://github.com/gburgyan/aat-qdrant)
 
 ### Form Bodies and Query Strings
 
