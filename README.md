@@ -62,17 +62,23 @@ Nobody wired the data by hand: the graph says where each input comes from, and t
 
 ## Why
 
-AAT started as a pile of Postman collections.
+I was changing a service I could not test on its own.
 
-They worked, at first. Then the team grew. Everyone had their own copy with their own tweaks, and none of them were reliable. Nothing was in source control, so there was no diff, no review, and no way to tell whose version was right. Every new test case meant editing a collection in place, so the case it replaced was gone. The chaining lived in pre-request scripts, which put the interesting part of a flow — what depends on what — inside JavaScript instead of in front of you. And none of it was legible to an AI coding tool: the export was one file too large to read, in a shape nothing else consumes.
+It was one of a set of badly factored microservices, and reaching the one I was touching meant standing up everything in front of it first: a dozen calls to create the account, the records, and the state it expected before it would do anything interesting. What I had for that was half a dozen Postman collections, all slightly different, none of which worked all the time.
+
+They had worked, at first. Then the team grew. Everyone had their own copy with their own tweaks, and none of them were reliable. Nothing was in source control, so there was no diff, no review, and no way to tell whose version was right. Every new test case meant editing a collection in place, so the case it replaced was gone. The chaining lived in pre-request scripts, which put the interesting part of a flow — what depends on what — inside JavaScript instead of in front of you. And none of it was legible to an AI coding tool: the export was one file too large to read, in a shape nothing else consumes.
 
 The underlying problem is that real integrations are not one call. Buying something means browse, cart, checkout, pay, ship, and maybe return and refund: 8 to 20 calls, each needing IDs from the calls before it, leaving state behind that someone has to clean up. A collection is a folder of single requests. Everything that makes those requests a *flow* has to live somewhere else, and that somewhere was scripts.
 
 Postman is good at what it is for: exploring an API by hand, one request at a time. It is a poor place to *keep* the knowledge of how an API works. That knowledge ends up in a format only Postman reads, in a workspace rather than your repository, and it scales by copying.
 
+Two attempts came before this one. The first was a recording proxy that found the values chaining between calls on its own and generated a Postman collection with the extraction scripts already written; it worked, but the wiring it found was baked into the recording, so reaching the same goal another way meant recording again — the pile of slightly different collections, now generated. The second handed an LLM a list of operations and a goal, and failed for the mirror-image reason: nothing had written the connections down, so every run was a fresh guess. The connections are a fact about the operations, not about a run. Attaching them there is what AAT is.
+
 So the knowledge moved into the repository. AAT keeps three things apart. **API knowledge** is a graph of operations and request templates, written once. **Test intent** is a plan that lists steps, not wiring. **Variation** is layers (named sets of test data) and environments that turn one plan into a matrix. Small files, reviewed like code, that an AI coding tool can read one at a time and a person can follow without opening a debugger.
 
 Describing the API that precisely turned out to be worth more than the tests it was written for. The question stopped being *what else should this run?* and became *what else can read this?* The same graph is what `aat mcp serve` hands an AI coding tool, so it calls the API correctly instead of guessing at it — and it is what makes a run archive worth sending: every request, response, resolved value, retry, and assertion in one file the other team opens in the same viewer, rather than a screenshot of one pane. Neither was a roadmap; both fell out of having the graph.
+
+One description also does several jobs. The batch a developer runs while changing something is the batch CI runs on every commit, and the batch you run in front of whoever signs off a release; debugging your own build is that same run with one node pointed at your laptop, not a fork of the suite. What a pipeline leaves behind is an artifact you open in the viewer rather than scrollback to reconstruct. And with one description instead of a copy per person, a template corrected or an assertion tightened lands once and holds for everyone who runs it next.
 
 The point is not that the files are tidy. It is that they run: every claim in this repository and in the four projects below is something `aat` executed and recorded. [Why AAT exists](https://gburgyan.github.io/aat/why/) tells the longer version.
 
