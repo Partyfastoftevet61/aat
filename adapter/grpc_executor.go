@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -140,14 +139,14 @@ func (e *GRPCExecutor) Execute(ctx context.Context, req *Request) (*Response, er
 		// not something the server said. Returning it as a response would have
 		// the step's assertions run against it, and the archive record an
 		// exchange that never finished. It is an error, as it is over HTTP.
-		if ctx.Err() != nil {
-			return nil, fmt.Errorf("executing %s: %w", req.Path, ctx.Err())
+		if err := callerErr(ctx); err != nil {
+			return nil, fmt.Errorf("executing %s: %w", req.Path, err)
 		}
 		// A DEADLINE_EXCEEDED the caller never asked for reads as a server
 		// behaviour rather than aat's limit, so the limit says so itself. A
 		// cancelled run, or a deadline the server hit on its own terms before
 		// ours, is left alone.
-		if callTimedOut(ctx, callCtx, start, e.timeout) {
+		if callTimedOut(ctx, invokeErr, start, e.timeout) {
 			return nil, fmt.Errorf("executing %s: no response within aat's %s request timeout", req.Path, e.timeout)
 		}
 		return e.errorResponse(invokeErr, header, trailer)
@@ -167,12 +166,28 @@ func (e *GRPCExecutor) Execute(ctx context.Context, req *Request) (*Response, er
 	}, nil
 }
 
+// callerErr is ctx.Err, except that a deadline already past counts before its
+// timer fires. The server gets the caller's deadline too, and its
+// DEADLINE_EXCEEDED for it can arrive first, while ctx.Err is still nil; that
+// answer is to the caller's deadline, not something the server decided.
+func callerErr(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
 // callTimedOut reports whether the call ran out of aat's request timeout
-// rather than the caller's own context: the call's deadline passed, the whole
-// limit had elapsed, and the run itself was still live.
-func callTimedOut(ctx, callCtx context.Context, start time.Time, limit time.Duration) bool {
-	return ctx.Err() == nil &&
-		errors.Is(callCtx.Err(), context.DeadlineExceeded) &&
+// rather than the caller's own context: it ended in DEADLINE_EXCEEDED, the
+// whole limit had elapsed, and the run itself was still live. The status and
+// the clock decide it, not the call context's timer: the server gets the same
+// deadline, and its DEADLINE_EXCEEDED for it can arrive before that timer fires.
+func callTimedOut(ctx context.Context, invokeErr error, start time.Time, limit time.Duration) bool {
+	return callerErr(ctx) == nil &&
+		status.Code(invokeErr) == codes.DeadlineExceeded &&
 		time.Since(start) >= limit
 }
 

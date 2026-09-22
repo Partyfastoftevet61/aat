@@ -517,6 +517,26 @@ func TestGRPCExecutor_CallersDeadlineIsAnErrorNotAResponse(t *testing.T) {
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
+// expiredCtx is a context whose deadline has passed but whose timer has not
+// fired yet: Err is still nil. It is the instant a caller's deadline races
+// the server's DEADLINE_EXCEEDED for it, held still so a test can land in it.
+type expiredCtx struct{ context.Context }
+
+func (expiredCtx) Deadline() (time.Time, bool) { return time.Now().Add(-time.Millisecond), true }
+
+// The server's answer to the caller's own deadline can arrive before the
+// caller's timer fires. It is still the caller's deadline, not a response.
+func TestGRPCExecutor_CallersDeadlineBeatenByTheServerIsStillAnError(t *testing.T) {
+	exec := startShopServer(t, func(context.Context, *dynamicpb.Message) (proto.Message, error) {
+		return nil, status.Error(codes.DeadlineExceeded, "context deadline exceeded")
+	})
+
+	resp, err := exec.Execute(expiredCtx{context.Background()}, grpcRequest(`{}`))
+	require.Error(t, err)
+	assert.Nil(t, resp)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
 // A deadline the server reports on its own account is still a response.
 func TestGRPCExecutor_ServersDeadlineExceededIsAResponse(t *testing.T) {
 	exec := startShopServer(t, func(context.Context, *dynamicpb.Message) (proto.Message, error) {
