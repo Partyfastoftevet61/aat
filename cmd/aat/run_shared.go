@@ -68,11 +68,19 @@ type RunSummary struct {
 	// CleanupSkipped lists the registered cleanups that did not run because
 	// they were no longer needed.
 	CleanupSkipped []CleanupSkipSummary `json:"cleanup_skipped,omitempty"`
-	Summary        SummaryStats         `json:"summary"`
-	ArchivePath    string               `json:"archive_path,omitempty"`
-	Attempts       int                  `json:"attempts,omitempty"`   // total attempts (omitted if 1)
-	Retried        bool                 `json:"retried,omitempty"`    // true if any retries occurred
-	StoppedAt      string               `json:"stopped_at,omitempty"` // checkpoint step ID when the outcome is "stopped"
+	// KnownIssues lists the entries that kept a failure out of Outcome, so a
+	// pipeline reading this JSON can see that a passed run still holds a
+	// failed step, and when that stops being true.
+	KnownIssues []KnownIssueSummary `json:"known_issues,omitempty"`
+	// KnownIssuesResolved lists entries whose step passed anyway.
+	KnownIssuesResolved []KnownIssueSummary `json:"known_issues_resolved,omitempty"`
+	// EndedEarly is true when a covered failure stopped the run short.
+	EndedEarly  bool         `json:"ended_early,omitempty"`
+	Summary     SummaryStats `json:"summary"`
+	ArchivePath string       `json:"archive_path,omitempty"`
+	Attempts    int          `json:"attempts,omitempty"`   // total attempts (omitted if 1)
+	Retried     bool         `json:"retried,omitempty"`    // true if any retries occurred
+	StoppedAt   string       `json:"stopped_at,omitempty"` // checkpoint step ID when the outcome is "stopped"
 	// State is the accumulated run state (base URLs, request headers, step
 	// inputs and outputs), populated only when --dump-state=- requests stdout
 	// output. Its credentials are redacted unless --dump-state-secrets asked
@@ -189,13 +197,46 @@ func runSetupFailure(jsonOut bool, err error) error {
 	return &exitError{Code: exitCodeInfra, Err: err}
 }
 
+// KnownIssueSummary is one knownIssue entry in the --json document.
+type KnownIssueSummary struct {
+	StepID   string `json:"step_id"`
+	Node     string `json:"node,omitempty"`
+	Until    string `json:"until"`
+	Reason   string `json:"reason"`
+	URL      string `json:"url,omitempty"`
+	Expired  bool   `json:"expired,omitempty"`
+	Resolved bool   `json:"resolved,omitempty"`
+}
+
+func toKnownIssueSummaries(applied []engine.KnownIssueApplied) []KnownIssueSummary {
+	if len(applied) == 0 {
+		return nil
+	}
+	out := make([]KnownIssueSummary, len(applied))
+	for i, a := range applied {
+		out[i] = KnownIssueSummary{
+			StepID:   a.StepID,
+			Node:     a.Node,
+			Until:    a.Until.String(),
+			Reason:   a.Reason,
+			URL:      a.URL,
+			Expired:  a.Expired,
+			Resolved: a.Resolved,
+		}
+	}
+	return out
+}
+
 // buildRunSummary converts an engine.RunResult to a RunSummary.
 func buildRunSummary(result *engine.RunResult, archivePath string) *RunSummary {
 	s := &RunSummary{
-		Outcome:     result.Outcome.String(),
-		Error:       errString(result.Error),
-		ArchivePath: archivePath,
-		StoppedAt:   result.StoppedAt,
+		Outcome:             result.Outcome.String(),
+		Error:               errString(result.Error),
+		ArchivePath:         archivePath,
+		StoppedAt:           result.StoppedAt,
+		KnownIssues:         toKnownIssueSummaries(result.KnownIssues),
+		KnownIssuesResolved: toKnownIssueSummaries(result.KnownIssuesResolved),
+		EndedEarly:          result.EndedEarly,
 	}
 
 	var passed, failed int

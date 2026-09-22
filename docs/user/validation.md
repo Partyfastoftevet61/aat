@@ -93,6 +93,7 @@ A manifest that exists but fails to load is an error for every command that disc
 | Workflows | Workflow directory files, subdirectories included, parse correctly and validate against graph. Warns about a required input that takes `from:` an optional output |
 | Layers | Layer files parse, names are unique, every input key matches a node input in the graph, and values fit the input's shape |
 | Plans | Plan directory files parse correctly and validate against graph; recipes reconstitute. Warns about a required input that takes `from:` an optional output in a plan file |
+| Known issues | Lists every [`knownIssue`](plans.md#known-issues-a-failure-with-a-deadline) in the project's plans with how long it has left, or how long it has been lapsed. Reported, never failed — even under `--strict`: whether a covered failure still counts is a question for the run, and a project should not go red offline over a date in a file |
 
 Sections that depend on optional artifacts (environment file, domain, visualizers, OAS specs, workflows, layers, plans) are skipped when those artifacts are not configured.
 
@@ -329,6 +330,9 @@ Workflows:             OK (4 files, 2 templates)
 | `value "Y" has 'from' reference to "X" but does not list it in dependsOn` | Value `Y` takes data from step `X`, which is missing from `dependsOn` | Add the referenced step to `dependsOn` to ensure execution order |
 | `dependsOn cycle detected` | Steps have circular dependencies | Remove the circular reference; draw out the dependency chain to find the loop |
 | `unknown selection strategy "X"` | Invalid strategy in a selection config | Use one of: `first`, `last`, `index`, `random`, `min`, `max`, `match` |
+| `knownIssue.reason is required` | A [`knownIssue`](plans.md#known-issues-a-failure-with-a-deadline) with no explanation — an entry nobody can judge later | Say what the defect is and why waiting is the right response |
+| `knownIssue.until is required` | The entry has no expiry, which is the whole point of it | Add `until: YYYY-MM-DD` |
+| `"X" is not a valid date (use YYYY-MM-DD)` | `until` is not a calendar date | Write it as `2026-10-06` |
 | `sortField "X" not found in elementFields` | Selection sort field doesn't match any elementField | Check the array output's elementFields in the graph; use a field name, not a path |
 | `output "X" is not an array type` | Selection source isn't an array | Selections require array outputs; check the source step's output type |
 | `plan graphVersion incompatible with graph version` | Major version mismatch between plan and graph | Update the plan's `graphVersion` or regenerate the plan |

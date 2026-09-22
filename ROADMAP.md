@@ -2,7 +2,7 @@
 
 ## Status
 
-AAT's current release is v0.3.0, which added gRPC; the public launch release was v0.2.0. It was built and proven against a private 74-node airline
+AAT's current release is v0.3.1, which added the `knownIssue` primitive on top of v0.3.0's gRPC support; the public launch release was v0.2.0. It was built and proven against a private 74-node airline
 booking API with 63 workflows, 53 recipes, and 6 environments, so the core loop — graph, templates,
 plans, engine, archives, web UI, MCP server — has carried real traffic. Four further projects run
 against real, public APIs: [aat-duffel](https://github.com/gburgyan/aat-duffel),

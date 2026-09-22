@@ -197,7 +197,18 @@ PASSED (15/15 steps, 2.9s)
 Archive: /path/to/shop/_output/runs/run-20260910-231537-19c3c1c5/archive.json
 ```
 
-Notes after the duration mark step-level retries (`retried 2x: transient`; the duration includes the waits between attempts), failed assertions (`ASSERTIONS FAILED`, with each failed assertion's message indented below), and OpenAPI violations (`OAS: 2 warning(s)`). Display outputs appear indented below their step.
+Notes after the duration mark step-level retries (`retried 2x: transient`; the duration includes the waits between attempts), failed assertions (`ASSERTIONS FAILED`, with each failed assertion's message indented below), OpenAPI violations (`OAS: 2 warning(s)`), and a step covered by a [`knownIssue`](plans.md#known-issues-a-failure-with-a-deadline) (`known issue until 2026-10-06`). Display outputs appear indented below their step.
+
+A run that a known issue kept green says so on its outcome line and lists what it forgave, so a green build never quietly means "green apart from the parts we are ignoring":
+
+```
+PASSED (15/15 steps, 2.9s)  1 known issue
+
+known issues (1):
+  refund                 until 2026-10-06
+    Vendor test-mode defect, confirmed; live is unaffected.
+    https://example.com/tickets/4471
+```
 
 ### Quiet (`--quiet`)
 

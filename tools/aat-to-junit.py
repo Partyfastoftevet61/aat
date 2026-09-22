@@ -147,6 +147,16 @@ def convert_step(step, index, run_id, cleanup=False):
         body = build_failure_body(step)
         if body:
             failure.text = body
+    else:
+        # A covered failure is skipped, not passed: the report says the step
+        # did not really succeed, and names the date the cover runs out.
+        skip_msg = known_issue_skip(step)
+        if skip_msg:
+            skipped = ET.SubElement(tc, "skipped")
+            skipped.set("message", truncate(skip_msg, 1000))
+            body = build_failure_body(step)
+            if body:
+                skipped.text = body
 
     # Properties (dd_tags)
     response = step.get("response")
@@ -167,8 +177,28 @@ def convert_step(step, index, run_id, cleanup=False):
     return tc
 
 
+def known_issue_skip(step):
+    """Return the <skipped> message for a step a knownIssue covers, else None.
+
+    A covered failure is reported as skipped rather than failed: it really did
+    fail, but it is accounted for and has a date, and turning the suite red
+    for it is exactly what the entry exists to prevent. An entry that has
+    expired covers nothing, so it falls through to the usual rules.
+    """
+    ki = step.get("knownIssue")
+    if not ki or not ki.get("applied"):
+        return None
+    until = ki.get("until", "")
+    reason = ki.get("reason", "")
+    return f"known issue until {until}: {reason}"
+
+
 def is_step_failed(step, cleanup=False):
     """Determine if a step failed. Returns (failed, type, message)."""
+    # 0. A failure covered by an unexpired knownIssue is reported as skipped.
+    if known_issue_skip(step):
+        return False, "", ""
+
     # 1. Explicit error
     error = step.get("error")
     if error:

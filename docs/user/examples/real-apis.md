@@ -37,6 +37,8 @@ Shippo rates a shipment across carriers, buys the label, and tracks the package.
 
 The project covers 46 of Shippo's 70 operations with 28 plans and 9 layers; the full batch passes 28/28 in about two and a half minutes. Layers are the headline: a lane × parcel matrix and Shippo's six deterministic tracking fixtures, each from two plan files, each deduplicated, one command apiece ([why that matters](../why.md#the-proof-is-that-it-runs)). Every response is checked against Shippo's published spec, which reports rather than fails, because the spec is what is wrong. Five fixes to AAT came from it, three of them findable only by running `aat generate` on a real spec.
 
+It also runs itself nightly against Shippo's live test API, which is how it caught that environment's refunds changing behaviour overnight in September 2026 — a defect Shippo confirmed, in test only, with live unaffected. [What a nightly run caught](nightly-catch.md) is the diagnosis, start to finish, from the archive the failing run left behind.
+
 A shipping team clones it for the call order Shippo's docs don't give: rate, buy, refund, validate an address, track. Shippo's own MCP server lets an assistant ship a package for you; this project lets an assistant build and keep your integration. Not covered: customs, international lanes end to end, batches, manifests, pickups, and orders.
 
 ![A purchased label rendered in the web UI, with its tracking number and carrier link](https://raw.githubusercontent.com/gburgyan/aat-shippo/main/docs/images/ui-label.png)

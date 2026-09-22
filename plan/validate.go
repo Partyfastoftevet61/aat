@@ -56,6 +56,23 @@ func validateRetryConfig(prefix string, rc *RetryConfig) []string {
 	return errs
 }
 
+// validateKnownIssue checks a knownIssue block. The date is not compared
+// against today here: Validate has no clock, and an entry that has lapsed is
+// reported by aat validate and enforced by the engine, both of which do.
+func validateKnownIssue(prefix string, ki *KnownIssue) []string {
+	if ki == nil {
+		return nil
+	}
+	var errs []string
+	if ki.Until.IsZero() {
+		errs = append(errs, fmt.Sprintf("%s: knownIssue.until is required (a date written YYYY-MM-DD, after which the failure counts again)", prefix))
+	}
+	if strings.TrimSpace(ki.Reason) == "" {
+		errs = append(errs, fmt.Sprintf("%s: knownIssue.reason is required (say what the defect is, so the entry can be judged later)", prefix))
+	}
+	return errs
+}
+
 // validateRepeatConfig checks a step's repeat block against its node: until is
 // a predicate that reads only the node's outputs, next maps the node's inputs
 // to its cursor outputs, collect names list or number outputs, the limits are
@@ -788,7 +805,11 @@ func Validate(p *Plan, g *graph.Graph) error {
 				}
 			}
 		}
+
+		errs = append(errs, validateKnownIssue(fmt.Sprintf("step %d (%s)", i, sid), step.KnownIssue)...)
 	}
+
+	errs = append(errs, validateKnownIssue("knownIssue", p.KnownIssue)...)
 
 	// Gap 4: Validate constraint AppliesTo references
 	// AppliesTo entries may be "stepID" or "stepID.input" — extract the step ID part.

@@ -475,7 +475,7 @@ execution:
       runOn: always
 ```
 
-A plan's top-level keys are `metadata` (`created`, `prompt`, `graphVersion`), `graph`, `auth`, `headers`, `intent` (`goal` — the step ID of the `isGoal` step — `description`, and `constraints`), and `execution` (`steps`, `verification`, `cleanup`). A verification step takes `node`, `purpose`, `assertions`, and `values`. Anything else is rejected.
+A plan's top-level keys are `metadata` (`created`, `prompt`, `graphVersion`), `graph`, `auth`, `headers`, `intent` (`goal` — the step ID of the `isGoal` step — `description`, and `constraints`), `knownIssue` (`until`, `reason`, `url` — see primitive 5), and `execution` (`steps`, `verification`, `cleanup`). A step also takes `knownIssue`. A verification step takes `node`, `purpose`, `assertions`, and `values`. Anything else is rejected.
 
 ### Step Value Forms
 
@@ -658,7 +658,7 @@ A list step reads one page. To read every page, give it `repeat.next`, which sen
 
 ## Depth and Negative Testing Primitives
 
-AAT exposes four primitives for authoring per-endpoint error-case suites. All
+AAT exposes five primitives for authoring per-endpoint error-case suites. All
 compose with the normal plan/run pipeline — no separate CLI surface. You, the
 agent, compose them into plans; AAT just runs them.
 
@@ -819,6 +819,49 @@ Semantics:
   `status` takes what a step's takes: codes `>= 400`, or gRPC status names
   (`status: [INVALID_ARGUMENT]`).
 - Match resolution: exact matches win over glob matches on conflicting keys.
+
+### 5. `knownIssue` on a step — a failure with a deadline
+
+For a failure you have understood and cannot fix: a defect in the API under
+test, with someone else's fix pending. It keeps the failure out of the run's
+outcome until a date, and no longer.
+
+```yaml
+- id: refund
+  node: createRefund
+  knownIssue:
+    until: 2026-10-06        # required; YYYY-MM-DD, the day itself included
+    reason: >-               # required; what the defect is
+      Vendor test-mode defect, confirmed: refunds answer 201 with status
+      ERROR where they answered PENDING. Live is unaffected.
+    url: https://example.com/tickets/4471   # optional; where it is tracked
+```
+
+Semantics:
+
+- The step still runs, still checks its assertions, and **still reads as
+  failed** everywhere a run is displayed. Only the run's `outcome` is
+  forgiving, so the exit code is 0 and CI stays green.
+- Execution **continues to the next step** when the failing step produced a
+  response, so the rest of the plan keeps testing. When it did not — a 500, an
+  unexpected status, a body error — the run ends there and sets
+  `result.endedEarly`.
+- Once `until` passes the entry stops applying: the failure counts, the build
+  goes red, and the error names the expiry
+  (`... (knownIssue expired 2026-10-06)`).
+- A step that **passes** while an entry is in force is reported under
+  `knownIssuesResolved` — the entry has outlived the defect and should be
+  deleted. This never fails a run.
+- A plan-level `knownIssue:` covers every step that declares none; a step's own
+  entry wins.
+- `aat validate` lists every entry with how long it has left. It never fails
+  validation.
+
+A transport error is **never** covered: a step that could not reach the API is
+infrastructure, not a defect with a date.
+
+Do not reach for this to quiet a flaky step — that is a `retry` rule — or in
+place of `expectFailure`, which says the API *should* refuse the call.
 
 ### Patterns You'll Use
 
@@ -1078,14 +1121,22 @@ The archive is the primary debugging artifact. Read it to understand what happen
   "cleanupSkipped": [
     { "node": "string", "cleanupFor": "string", "reason": "released | when", "releasedBy": "string", "when": "string" }
   ],
+  "knownIssues": [
+    { "stepId": "string", "node": "string", "until": "2026-10-06", "reason": "string", "url": "string", "applied": true }
+  ],
+  "knownIssuesResolved": [
+    { "stepId": "string", "node": "string", "until": "2026-10-06", "reason": "string", "resolved": true }
+  ],
   "result": {
     "outcome": "passed | failed | error | aborted | stopped",
-    "error": "string (omitted if blank)"
+    "error": "string (omitted if blank)",
+    "knownIssues": 1,
+    "endedEarly": false
   }
 }
 ```
 
-`plan` is the plan as loaded (a recipe's reconstituted plan); `instantiatedPlan` is the plan after graph defaults, layers, and mutations were applied. `attempt`, `totalAttempts`, and `layers` are omitted when unused, and so is `cleanupSkipped` when no cleanup was skipped. `oasValidation` is the OpenAPI validation mode the run used, omitted when the graph references no spec.
+`plan` is the plan as loaded (a recipe's reconstituted plan); `instantiatedPlan` is the plan after graph defaults, layers, and mutations were applied. `attempt`, `totalAttempts`, and `layers` are omitted when unused, and so is `cleanupSkipped` when no cleanup was skipped. `oasValidation` is the OpenAPI validation mode the run used, omitted when the graph references no spec. `knownIssues` and `knownIssuesResolved` are omitted when empty; when `knownIssues` is present the run reports `passed` although a step failed, so read the steps rather than the outcome alone.
 
 **StepRecord** — one per executed step:
 
@@ -1174,6 +1225,14 @@ The archive is the primary debugging artifact. Read it to understand what happen
     "expected": [400, 422],
     "actual": 400,
     "passed": true
+  },
+  "knownIssue": {
+    "until": "2026-10-06",
+    "reason": "string",
+    "url": "string (omitted if blank)",
+    "applied": true,
+    "expired": false,
+    "resolved": false
   },
   "responseBodyError": {
     "rulePath": "string",

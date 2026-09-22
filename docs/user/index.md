@@ -12,13 +12,13 @@ aat run plan full-lifecycle
 
 ![aat run plan full-lifecycle against the shop sandbox: fifteen steps stream in with their status codes and durations, two steps retry, cleanup deletes the order and the cart, and the run passes](assets/demo-plan.gif)
 
-AAT started as a pile of Postman collections: everyone's own copy, none of them reliable, none in source control, and the chaining buried in pre-request scripts. The knowledge of how an API works belongs in your repository, in small files you review like code and an AI coding tool can read one at a time. See [Why AAT exists](why.md).
+AAT started with a service that could not be tested on its own, and half a dozen Postman collections for reaching it: everyone's own copy, none of them reliable, none in source control, and the chaining buried in pre-request scripts. The knowledge of how an API works belongs in your repository, in small files you review like code and an AI coding tool can read one at a time. See [Why AAT exists](why.md).
 
-AAT keeps three things apart. **API knowledge** is a [graph](graphs.md) of operations and request templates, written once. **Test intent** is a [plan](plans.md) that lists steps, not wiring. **Variation** is [layers](batch-layers.md) and [environments](environments.md) that turn one plan into a matrix. Describing the API that precisely turned out to be worth more than the tests: the question stopped being *what else should this run?* and became *what else can read this?* The [MCP server](mcp-server.md) and the [run archives](archives.md) fell out of having the graph, and three projects against [Duffel, Stripe, and Shippo](examples/real-apis.md) are the proof that it runs.
+AAT keeps three things apart. **API knowledge** is a [graph](graphs.md) of operations and request templates, written once. **Test intent** is a [plan](plans.md) that lists steps, not wiring. **Variation** is [layers](batch-layers.md) and [environments](environments.md) that turn one plan into a matrix. Describing the API that precisely turned out to be worth more than the tests: the question stopped being *what else should this run?* and became *what else can read this?* The [MCP server](mcp-server.md) and the [run archives](archives.md) fell out of having the graph, and four projects against [Duffel, Stripe, Shippo, and Qdrant](examples/real-apis.md) are the proof that it runs.
 
 ## Start Here
 
-- **[Why AAT exists](why.md)** — the Postman pile it replaced, the three things it keeps apart, and what else reads the graph
+- **[Why AAT exists](why.md)** — the Postman pile it replaced, the two dead ends before it, the three things it keeps apart, and what else reads the graph
 - **[Shop example](examples/shop.md)** — watch AAT drive a realistic API in a minute, offline: an order through every state, a layer matrix, two regions, negative tests
 - **[Quickstart from an OpenAPI spec](quickstart.md)** — go from the Petstore spec to a passing, self-cleaning test in five minutes
 - **[MCP Server](mcp-server.md)** — give Claude Code or another MCP client your graph and the tools to write and run tests

@@ -93,6 +93,7 @@ nav:
       - examples/index.md
       - Real APIs: examples/real-apis.md
       - Airline case study: examples/airline-case-study.md
+      - "What a nightly run caught": examples/nightly-catch.md
   - Core guides:
       - Project setup: project-setup.md
       - API graphs: graphs.md

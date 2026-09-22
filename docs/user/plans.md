@@ -275,6 +275,7 @@ steps:
 | `slot` | Slot marker name (exclusive with `node` — only used in workflow templates) |
 | `description` | Human-readable step description |
 | `isGoal` | Marks this step as the primary goal of the plan (at most one step; when `intent.goal` is set it must name this step) |
+| `knownIssue` | Keeps this step's failure out of the run's outcome until a date ([Known issues](#known-issues-a-failure-with-a-deadline)) |
 
 When multiple steps target the same graph node, use `id` to give each a unique identifier. All references (`dependsOn`, `from`) use the step ID.
 
@@ -635,6 +636,92 @@ When `expectFailure` is set:
 - The step fails if the response returns a success status (2xx)
 - Retries are skipped — the first response determines the outcome
 - Cleanup still runs normally
+
+#### Known issues: a failure with a deadline
+
+Sometimes a step fails for a reason you have already understood and cannot fix:
+a defect in the API you are testing against, confirmed by whoever owns it, with
+someone else's fix pending. The suite is right and the API is wrong, so
+loosening the assertion would be a lie — but a permanently red build teaches
+everyone to ignore the build.
+
+`knownIssue` is the third answer. It keeps the failure out of the run's
+outcome until a date you name, and no longer:
+
+```yaml
+  - id: refund
+    node: createRefund
+    knownIssue:
+      until: 2026-10-06
+      reason: >-
+        Vendor test-mode defect, confirmed: refunds answer 201 with
+        status ERROR where they answered PENDING. Live is unaffected.
+      url: https://example.com/tickets/4471
+```
+
+| Field | Description |
+|-------|-------------|
+| `until` | Required. The last day the entry applies, written `YYYY-MM-DD`. The day itself is included |
+| `reason` | Required. What the defect is, and why waiting is the right response |
+| `url` | Optional. Where it is tracked: a ticket, a changelog, a write-up |
+
+While the entry is in force:
+
+- The step **still runs**, and its assertions are still checked.
+- The step **still reads as failed** — in the progress line, in `aat run show`,
+  in the archive, and in the web UI. Nothing is hidden.
+- The **run** reports `passed`, so the exit code is 0 and CI stays green.
+- Execution **carries on to the next step** when the failing step produced a
+  response, so the rest of the plan keeps testing. When it did not — a 500, an
+  unexpected status, an error in the body — there is nothing to carry on from,
+  so the run ends there and says it ended early.
+
+Then the date passes, and the entry stops applying. The failure counts again,
+the build goes red, and the message says why:
+
+```
+FAILED: step "refund" failed mechanical validation (knownIssue expired 2026-10-06)
+```
+
+That is the whole point. Switching a test off is easy; this is the version you
+cannot forget about, because it switches itself back on.
+
+Two more things it does. A step that **starts passing** while an entry is in
+force has outlived it, and the run says so without ever breaking:
+
+```
+known issues no longer needed (1):
+  refund                 passing again; remove the entry
+```
+
+And `aat validate` lists every entry in the project with how long it has left,
+so a deadline is visible before a run reaches it. It never fails validation —
+whether a failure still counts is a question for the run:
+
+```
+Known issues:        OK (2, 1 expired)
+  note: plans/labels/buy-and-refund.yaml refund: expires 2026-10-06 (in 14 days)
+  note: plans/orders/cancel.yaml step-4: EXPIRED 2026-09-01 (21 days ago)
+```
+
+A plan can also carry one entry for all of its steps, for a scenario blocked as
+a whole. A step's own entry wins over the plan's:
+
+```yaml
+knownIssue:
+  until: 2026-10-06
+  reason: the vendor's sandbox cannot complete this flow at all
+execution:
+  steps:
+    - node: createOrder
+```
+
+**What it is not.** A `knownIssue` is not a way to quiet a flaky step — a
+failure that comes and goes is a [retry](#retry) rule. It is not
+`expectFailure`, which says the API *should* refuse the call and fails when the
+call succeeds. And it does not cover an infrastructure error: a step that could
+not reach the API at all is never covered, because a connection failure is not
+a defect somebody else is going to fix by a date.
 
 #### Mutations: codified negative suites
 
@@ -1239,6 +1326,14 @@ execution:
       expectFailure:
         status: [400, 422]            # expected failure status codes
         description: "Why this should fail"
+
+      # Optional — keep this step's failure out of the run's outcome until a
+      # date. The step still runs and still reads as failed; only the run is
+      # forgiving, and only until then.
+      knownIssue:
+        until: 2026-10-06             # required; YYYY-MM-DD, the day included
+        reason: "what the defect is"  # required
+        url: https://…                # optional; where it is tracked
 
       # Optional — raw request body override, bypasses template substitution
       rawBody: '{"oops":'             # use for malformed-payload tests

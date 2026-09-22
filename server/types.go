@@ -128,6 +128,7 @@ type StepDetail struct {
 	Resolutions          []ResolutionDetail       `json:"resolutions,omitempty"`
 	ErrorClassification  *ErrorClassDetail        `json:"errorClassification,omitempty"`
 	ExpectFailure        *ExpectFailureDetail     `json:"expectFailure,omitempty"`
+	KnownIssue           *KnownIssueDetail        `json:"knownIssue,omitempty"`
 	ResponseBodyError    *ResponseBodyErrorDetail `json:"responseBodyError,omitempty"`
 	OASValidation        *OASValidationDetail     `json:"oasValidation,omitempty"`
 	TransformScript      string                   `json:"transformScript,omitempty"`
@@ -342,6 +343,17 @@ type ExpectFailureDetail struct {
 	Expected []string `json:"expected"`
 	Actual   string   `json:"actual"`
 	Passed   bool     `json:"passed"`
+}
+
+// KnownIssueDetail is a step's knownIssue entry, which explains why a failed
+// step sits inside a passed run.
+type KnownIssueDetail struct {
+	Until    string `json:"until"`
+	Reason   string `json:"reason"`
+	URL      string `json:"url,omitempty"`
+	Applied  bool   `json:"applied,omitempty"`
+	Expired  bool   `json:"expired,omitempty"`
+	Resolved bool   `json:"resolved,omitempty"`
 }
 
 // ResponseBodyErrorDetail captures an error detected in a 2xx response body.
