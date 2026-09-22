@@ -6,6 +6,12 @@ the graph and plan formats may still change before 1.0.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-22
+
+A bug-fix release: a gRPC call that outlives its deadline is now always an error, never a response the step asserts
+on. The docs also lead with what one description of an API does, and say how AAT differs from tools that script the
+wiring between calls.
+
 ### Fixed
 - **A gRPC call that outlives its deadline is always an error.** The server is sent the call's deadline and answers
   `DEADLINE_EXCEEDED` when it passes. When that answer arrived a moment before the client's own timer fired, the step
@@ -13,6 +19,18 @@ the graph and plan formats may still change before 1.0.
   This happened with the run's own deadline (such as the time budget an aborted run gives its cleanup) and with aat's
   request timeout. The clock now decides, not the timer, so both are errors, as they are over HTTP. A
   `DEADLINE_EXCEEDED` the server reports on its own account is still a response.
+
+### Changed
+- **The README and the docs home lead with four jobs one description does.** They are: testing real flows over REST
+  and gRPC; testing locally without editing anything; knowing when an API you depend on changes; and getting an
+  integration working before handing it to an agent. The Shippo regression a nightly run caught, and the clean-room
+  builds from the launch post, now sit beside the real-API projects as proof.
+- **[CI/CD](https://gburgyan.github.io/aat/ci-cd/#scheduled-runs-against-a-provider) gains scheduled runs against a
+  provider:** a cron trigger, archive retention, and `knownIssue` for a defect the provider has confirmed.
+- **[Why AAT exists](https://gburgyan.github.io/aat/why/#other-tools-script-the-flow-too) says how AAT differs from
+  scripted tools.** Bruno, Karate, and Hurl keep the wiring between calls inside each test, and nothing checks it
+  until the requests run. AAT declares it on the operations and checks it first: guardrails at the interface
+  between agents and APIs.
 
 ## [0.3.1] - 2026-09-22
 
@@ -1234,7 +1252,8 @@ The first tagged version.
   headers, and OAuth2 token caching.
 - The Petstore example, the user documentation, and the Apache 2.0 license.
 
-[Unreleased]: https://github.com/gburgyan/aat/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/gburgyan/aat/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/gburgyan/aat/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/gburgyan/aat/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/gburgyan/aat/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/gburgyan/aat/compare/v0.1.0...v0.2.0
