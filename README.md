@@ -13,6 +13,15 @@
 
 </div>
 
+One description of your API does four jobs:
+
+- **Test real flows, not single calls.** Chains of dependent calls over REST and [gRPC](https://gburgyan.github.io/aat/grpc/), with the data wired between steps, every response checked, and what was created cleaned up afterwards.
+- **Test locally without editing anything.** [Point one operation at your laptop](https://gburgyan.github.io/aat/local-dev/) and the rest of the flow keeps running against the real environment, with its auth intact.
+- **Know when an API you depend on changes.** Run the plans [on a schedule](https://gburgyan.github.io/aat/ci-cd/#scheduled-runs-against-a-provider) against a vendor's sandbox; when its behaviour changes, a run goes red and leaves one file with the exact exchange to send them. That is how [a nightly run caught a regression](https://gburgyan.github.io/aat/examples/nightly-catch/) in Shippo's test environment, which Shippo confirmed.
+- **Get an integration working, then hand it to an agent.** An agent authors, validates, and runs against the sandbox until the calls work — the Stripe project took about an hour that way — and then [`aat mcp serve`](https://gburgyan.github.io/aat/mcp-server/) hands a coding assistant the same graph. Working clients have come out of a single prompt in Java, Go, Python, C#, Perl, and Lisp.
+
+The same YAML does all four; nothing is copied per job. Every job runs through the same guardrails — strict files, a validator that names the wrong line, a run that names the failing step — which is what AAT puts at the interface between agents and APIs.
+
 ## 60-second quick start
 
 With `aat` and `aat-sandbox` [installed](#install) and on your `PATH`, the offline shop example runs with no signup and no network:
@@ -54,11 +63,10 @@ Nobody wired the data by hand: the graph says where each input comes from, and t
 ## Use it to
 
 - **Test your own API's real flows in CI.** An order through cart, checkout, payment, shipping, and refund, cleaned up afterwards, with exit codes and JUnit for the pipeline: the [shop](examples/shop/README.md) and [CI/CD](https://gburgyan.github.io/aat/ci-cd/).
-- **Test the third-party APIs you depend on.** Clone a project, export your test key, run it: [Stripe, Shippo, and Duffel](https://gburgyan.github.io/aat/examples/real-apis/). Each plan asserts the exact status and error body, so a rerun says what changed.
+- **Test the third-party APIs you depend on, every night.** Clone a project, export your test key, run it, then schedule it: [Stripe, Shippo, and Duffel](https://gburgyan.github.io/aat/examples/real-apis/). Each plan asserts the exact status and error body, so a red run says what changed, and a defect you have reported can be [pinned with a deadline](https://gburgyan.github.io/aat/plans/#known-issues-a-failure-with-a-deadline) instead of loosened.
 - **Run one plan across every configuration.** Regions, card brands, parcel sizes: layers multiply plans into a matrix, and permutations that would send the same requests are skipped: [Matrix testing](https://gburgyan.github.io/aat/batch-layers/).
 - **Give integrators a kit their AI tools can code against.** The graph your tests keep true, served over MCP; a working client has taken a single prompt: [Share your API with integrators](https://gburgyan.github.io/aat/integration-kit/).
 - **Send a run instead of a screenshot.** One file with every request, response, resolved value, retry, and assertion, opened in the same viewer by whoever you send it to: [Archives](https://gburgyan.github.io/aat/archives/).
-- **Point one call at your laptop.** Route a single operation to a local build, with the environment's auth intact, without editing the project: [Local development](https://gburgyan.github.io/aat/local-dev/).
 
 ## Why
 
@@ -80,7 +88,7 @@ Describing the API that precisely turned out to be worth more than the tests it 
 
 One description also does several jobs. The batch a developer runs while changing something is the batch CI runs on every commit, and the batch you run in front of whoever signs off a release; debugging your own build is that same run with one node pointed at your laptop, not a fork of the suite. What a pipeline leaves behind is an artifact you open in the viewer rather than scrollback to reconstruct. And with one description instead of a copy per person, a template corrected or an assertion tightened lands once and holds for everyone who runs it next.
 
-The point is not that the files are tidy. It is that they run: every claim in this repository and in the four projects below is something `aat` executed and recorded. [Why AAT exists](https://gburgyan.github.io/aat/why/) tells the longer version.
+The point is not that the files are tidy. It is that they run: every claim in this repository and in the four projects below is something `aat` executed and recorded. Scripted API tools, in source control or not, keep the wiring inside each test and share Postman's fragility; [how AAT differs](https://gburgyan.github.io/aat/why/#other-tools-script-the-flow-too) is its own section of [Why AAT exists](https://gburgyan.github.io/aat/why/), which tells the longer version.
 
 ## Pick your demo
 
@@ -100,6 +108,8 @@ Four complete projects against real, public APIs live in their own repositories.
 | [aat-qdrant](https://github.com/gburgyan/aat-qdrant) | all 52 public unary gRPC methods, 77 operations, 38 plans, 6 layers; 38/38 in ~70 s | **A vector database over gRPC**: the protobuf a real API sends (oneofs, maps, 64-bit ids, a cursor that is a message), errors asserted by status name, credentials as metadata, and a few REST reads of the same data checked against Qdrant's OpenAPI spec. It is what AAT's gRPC support was stress-tested against |
 
 Each is a complete AAT project in its own repository: clone it, export a free test-mode key, and it runs against your account. aat-qdrant needs no account: it runs against a pinned Qdrant in Docker, and needs aat 0.3.0 or later, the first release with gRPC. [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/) says what each covers and leaves out.
+
+They have also done real work. aat-shippo's nightly run is the one that caught Shippo's refunds changing behaviour overnight in September 2026, in test only, with live unaffected; [What a nightly run caught](https://gburgyan.github.io/aat/examples/nightly-catch/) is the diagnosis, from the one file the failing run left behind. And before any of the four were built, coding agents in clean rooms, given only AAT's published docs and the API's public documentation, built a Duffel project twice and a Stripe project three times, from one prompt each. Every attempt validated clean and passed every plan it wrote; the Duffel runs handled 13 of the 14 flows asked for unaided, the Stripe runs 13 of 13. The projects above are separate builds with more human curation; the [launch post](https://gburgyan.github.io/aat/blog/introducing-aat/) has the clean-room story.
 
 ## What it does
 
@@ -213,7 +223,7 @@ The shop is laid out this way. See [Share your API with integrators](https://gbu
 
 With that much machine-readable detail, a working client has taken a single prompt in every language tried: on a 74-node airline API, AI coding tools built search-and-booking clients this way in Java, C#, Go, Python, Perl, and Lisp. That project is private, but the same test on the shop is reproducible: [Reproduce the single-prompt test](https://gburgyan.github.io/aat/integration-kit/#reproduce-the-single-prompt-test) has the exact prompt, the setup, and the results of a Python run and a Go run.
 
-LLMs are optional and authoring-time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API. Execution never calls an LLM.
+Execution never calls an LLM, so a run is deterministic: the same plan sends the same requests every time, costs nothing beyond the API calls themselves, and does not change when a model does. LLMs help at authoring time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API.
 
 ## Install
 

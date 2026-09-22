@@ -2,7 +2,16 @@
 
 **Model your API as a graph once. Get long-chain integration tests, layer × environment matrices, CI-ready runs, and an MCP server for AI coding tools — all from the same YAML.**
 
-AAT describes an API as a graph of operations: what each one takes and returns, which must run before which, and which undoes which. From that graph it runs multi-step test plans that wire data between steps, check every response, clean up after themselves, and leave an archive of every request and decision. LLMs are optional and authoring-time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API. Execution never calls an LLM.
+AAT describes an API as a graph of operations: what each one takes and returns, which must run before which, and which undoes which. From that graph it runs multi-step test plans that wire data between steps, check every response, clean up after themselves, and leave an archive of every request and decision. Execution never calls an LLM, so a run is deterministic: the same plan sends the same requests every time and does not change when a model does. LLMs help at authoring time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API.
+
+One description of your API does four jobs:
+
+- **Test real flows, not single calls** — chains of dependent calls over REST and [gRPC](grpc.md), wired, checked, and cleaned up.
+- **Test locally without editing anything** — [point one operation at your laptop](local-dev.md) and the rest of the flow runs against the real environment.
+- **Know when an API you depend on changes** — [run the plans on a schedule](ci-cd.md#scheduled-runs-against-a-provider) against a vendor's sandbox, and a red run leaves the exact exchange to send them.
+- **Get an integration working, then hand it to an agent** — an agent iterates against the sandbox until the calls work, and the [MCP server](mcp-server.md) hands a coding assistant the same graph.
+
+Every job runs through the same guardrails — strict files, a validator that names the wrong line, a run that names the failing step — which is what AAT puts at the interface between agents and APIs.
 
 ```bash
 aat-sandbox init shop && cd shop     # after installing: see Install
@@ -14,7 +23,7 @@ aat run plan full-lifecycle
 
 AAT started with a service that could not be tested on its own, and half a dozen Postman collections for reaching it: everyone's own copy, none of them reliable, none in source control, and the chaining buried in pre-request scripts. The knowledge of how an API works belongs in your repository, in small files you review like code and an AI coding tool can read one at a time. See [Why AAT exists](why.md).
 
-AAT keeps three things apart. **API knowledge** is a [graph](graphs.md) of operations and request templates, written once. **Test intent** is a [plan](plans.md) that lists steps, not wiring. **Variation** is [layers](batch-layers.md) and [environments](environments.md) that turn one plan into a matrix. Describing the API that precisely turned out to be worth more than the tests: the question stopped being *what else should this run?* and became *what else can read this?* The [MCP server](mcp-server.md) and the [run archives](archives.md) fell out of having the graph, and four projects against [Duffel, Stripe, Shippo, and Qdrant](examples/real-apis.md) are the proof that it runs.
+AAT keeps three things apart. **API knowledge** is a [graph](graphs.md) of operations and request templates, written once. **Test intent** is a [plan](plans.md) that lists steps, not wiring. **Variation** is [layers](batch-layers.md) and [environments](environments.md) that turn one plan into a matrix. Describing the API that precisely turned out to be worth more than the tests: the question stopped being *what else should this run?* and became *what else can read this?* The [MCP server](mcp-server.md) and the [run archives](archives.md) fell out of having the graph, and four projects against [Duffel, Stripe, Shippo, and Qdrant](examples/real-apis.md) are the proof that it runs — one of them [caught a regression](examples/nightly-catch.md) in Shippo's test environment overnight, which Shippo confirmed.
 
 ## Start Here
 
