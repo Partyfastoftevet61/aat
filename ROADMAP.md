@@ -18,6 +18,11 @@ The graph and plan YAML formats may still change before 1.0. Breaking changes wi
 
 Roughly in priority order. None of these have dates.
 
+- **A run report in Markdown.** `aat run show <ref> --markdown`, so CI can put the outcome, the
+  plans, and any [known issues](https://gburgyan.github.io/aat/plans/#known-issues-a-failure-with-a-deadline)
+  into a job summary with one line, instead of each project piping terminal output into a fenced
+  block or parsing archives with `jq`. A batch rollup of the entries it applied belongs with it:
+  today they are visible per step in the stream but are not gathered at the end of a batch.
 - **Resume from checkpoint.** Restart a failed or aborted run from its last checkpoint instead of
   from the first step.
 - **On-demand web assets.** A binary from `go install github.com/gburgyan/aat/cmd/aat@latest` should
