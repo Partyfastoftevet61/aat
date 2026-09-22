@@ -260,6 +260,30 @@ aat run batch --json --layer-group "premium,standard"
 
 See [Running Tests: Layer Expansion](running.md#layer-expansion) and [Plans: Layers](plans.md#layers) for how layers work.
 
+### Scheduled Runs Against a Provider
+
+The plans that test an API you depend on are also how you find out it changed. Run them on a schedule against the provider's sandbox, and keep the archives. Nothing on your side has to move for a run to go red, and when one does, the archive holds the exact exchange: the file you send the provider instead of a description.
+
+In GitHub Actions, that is the [example below](#github-actions-example) with a `schedule` trigger and a longer artifact retention, so last week's passing run is still there to compare against:
+
+```yaml
+on:
+  schedule:
+    - cron: "17 6 * * *"   # daily; any quiet minute
+  workflow_dispatch:        # and a button to run it now
+
+# ...the same steps as the example below, then:
+      - name: Upload archives
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-archives
+          path: my-ecommerce-api/_output/runs/
+          retention-days: 30
+```
+
+Once you have reported a defect and the provider has confirmed it, pin it with [`knownIssue`](plans.md#known-issues-a-failure-with-a-deadline) rather than loosening the assertion: the step still runs and still reads as failed, the build stays green until the date you name, and it goes red again if the fix does not arrive. [What a nightly run caught](examples/nightly-catch.md) is this pattern end to end, against Shippo's test API: the red run, the diagnosis from one downloaded archive, and the confirmation.
+
 ## GitHub Actions Example
 
 ```yaml

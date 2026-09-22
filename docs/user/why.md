@@ -108,6 +108,12 @@ That loop does not need a person steering it. Before any of the four projects we
 
 [Real APIs](examples/real-apis.md) says what each covers, proves, and leaves out. Three smaller projects ship in this repository and need no account at all: the [shop](examples/shop.md) and [gRPC payments](grpc.md#the-60-second-version), which run offline against `aat-sandbox`, and the [petstore](petstore-walkthrough.md). See [Examples](examples/index.md).
 
+## Other tools script the flow too
+
+Postman is not the only tool that keeps the wiring in the test. Bruno puts collections in plain files in your repository and chains calls with JavaScript. Karate chains them in its own scenario language. Hurl chains them with captures written into each file. All three fix real problems with Postman — Bruno and Hurl files diff and review like code — but the connection between two calls is still written inside a particular test. A second path to the same goal writes it again, and when an operation changes, every flow that spelled out its wiring has to change with it. That is the fragility of the Postman pile, now under source control. Spec-driven fuzzers such as Schemathesis are a different thing and a good complement: they go looking for inputs that break a single operation, and do not know your flows.
+
+Scripted wiring is also hard on an agent, because nothing checks it until the requests run. A mistake shows up at runtime — at best as a clear error, often as a server rejecting a value a step later, in words that say nothing about where the value came from — and every check costs a pass against the live API. The agent works backwards from a symptom. In AAT the wiring is declared on the operations, so it can be checked before anything is sent. An unknown key is an error with the line and the likely intended name; [`aat validate --strict`](validation.md) resolves every input from where the graph says it comes from; and a run that fails names the step and the assertion. That is [the loop above](#what-else-could-read-it), and it is what AAT brings to the interface between agents and APIs: guardrails. An agent working inside them edits one small file and tries again, instead of guessing. A person working inside them gets the same thing.
+
 ## If you already have API tooling
 
 - **An OpenAPI spec** is the best starting point. [`aat generate --oas`](generate.md) scaffolds the graph and one template per operation — roughly the mechanical 70% — and you add the part a spec cannot describe: which calls reach a goal, in what order, and what undoes what.

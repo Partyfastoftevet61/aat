@@ -2,13 +2,16 @@
 
 **Model your API as a graph once. Get long-chain integration tests, layer × environment matrices, CI-ready runs, and an MCP server for AI coding tools — all from the same YAML.**
 
-AAT describes an API as a graph of operations: what each one takes and returns, which must run before which, and which undoes which. From that graph it runs multi-step test plans that wire data between steps, check every response, clean up after themselves, and leave an archive of every request and decision. LLMs are optional and authoring-time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API. Execution never calls an LLM.
+AAT describes an API as a graph of operations: what each one takes and returns, which must run before which, and which undoes which. From that graph it runs multi-step test plans that wire data between steps, check every response, clean up after themselves, and leave an archive of every request and decision. Execution never calls an LLM, so a run is deterministic: the same plan sends the same requests every time and does not change when a model does. LLMs help at authoring time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API.
 
-One description of your API does three jobs:
+One description of your API does four jobs:
 
 - **Test real flows, not single calls** — chains of dependent calls over REST and [gRPC](grpc.md), wired, checked, and cleaned up.
 - **Test locally without editing anything** — [point one operation at your laptop](local-dev.md) and the rest of the flow runs against the real environment.
-- **Teach an AI agent the API** — the [MCP server](mcp-server.md) hands a coding assistant the same graph the tests run.
+- **Know when an API you depend on changes** — [run the plans on a schedule](ci-cd.md#scheduled-runs-against-a-provider) against a vendor's sandbox, and a red run leaves the exact exchange to send them.
+- **Get an integration working, then hand it to an agent** — an agent iterates against the sandbox until the calls work, and the [MCP server](mcp-server.md) hands a coding assistant the same graph.
+
+Every job runs through the same guardrails — strict files, a validator that names the wrong line, a run that names the failing step — which is what AAT puts at the interface between agents and APIs.
 
 ```bash
 aat-sandbox init shop && cd shop     # after installing: see Install
