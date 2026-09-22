@@ -6,6 +6,14 @@ the graph and plan formats may still change before 1.0.
 
 ## [Unreleased]
 
+### Fixed
+- **A gRPC call that outlives its deadline is always an error.** The server is sent the call's deadline and answers
+  `DEADLINE_EXCEEDED` when it passes. When that answer arrived a moment before the client's own timer fired, the step
+  treated it as a response: its assertions ran against it, and the archive recorded an exchange that never finished.
+  This happened with the run's own deadline (such as the time budget an aborted run gives its cleanup) and with aat's
+  request timeout. The clock now decides, not the timer, so both are errors, as they are over HTTP. A
+  `DEADLINE_EXCEEDED` the server reports on its own account is still a response.
+
 ## [0.3.1] - 2026-09-22
 
 A small release with one new primitive: a failure you already understand can stop turning CI red, but only
