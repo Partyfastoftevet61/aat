@@ -6,6 +6,92 @@ the graph and plan formats may still change before 1.0.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-22
+
+A small release with one new primitive: a failure you already understand can stop turning CI red, but only
+until a date you name.
+
+### Added
+- **`knownIssue`: a failure with a deadline.** A step — or a whole plan — can declare a defect it is waiting on:
+
+  ```yaml
+  - id: refund
+    node: createRefund
+    knownIssue:
+      until: 2026-10-06
+      reason: >-
+        Vendor test-mode defect, confirmed: refunds answer 201 with status ERROR
+        where they answered PENDING. Live is unaffected.
+      url: https://example.com/tickets/4471
+  ```
+
+  Until that date the failure does not turn the run red. Everything else stays honest: the step still runs, still
+  checks its assertions, and still reads as **failed** in the progress line, in `aat run show`, in the archive, in
+  the MCP tools, and in the web UI. Only the run's `outcome` is forgiving, so the exit code is 0 and CI is green on
+  a fact somebody wrote down. Execution carries on to the next step when the failing step produced a response, so
+  the rest of the plan keeps testing; when it did not — a 500, an unexpected status, an error in the body — there
+  is nothing to carry on from, the run ends there, and it says `endedEarly` rather than passing off a short run as
+  a complete one.
+
+  Then the date passes and the entry stops applying, with the expiry named in the failure:
+  `step "refund" failed mechanical validation (knownIssue expired 2026-10-06)`. That is the whole point of it.
+  Turning a test off is easy; this is the version that turns itself back on, so a suppression cannot quietly
+  outlive the problem it was written for.
+
+  Both fields are required. An entry with no `reason` is one nobody can judge later, and an entry with no `until`
+  is the thing this feature exists to prevent. A transport error is never covered: a step that could not reach the
+  API at all is infrastructure, not a defect with a date. It is not a way to quiet a flaky step — that is a `retry`
+  rule — and not `expectFailure`, which says the API *should* refuse the call.
+
+  A step that **passes** while an entry is in force is reported under `knownIssuesResolved`: the entry has outlived
+  the defect and should be deleted. That never fails a run, so good news never breaks a build.
+
+  `aat validate` gains a **Known issues** section listing every entry in the project with how long it has left, or
+  how long it has been lapsed. It never changes the exit code — whether a covered failure still counts is a
+  question for the run.
+
+  `--json` gains `known_issues`, `known_issues_resolved` and `ended_early`; the archive gains `knownIssues`,
+  `knownIssuesResolved`, `result.knownIssues` and `result.endedEarly`, and a step gains `knownIssue`.
+  `tools/aat-to-junit.py` reports a covered step as `<skipped>` rather than `<failure>`. Documented in
+  [Plans](https://gburgyan.github.io/aat/plans/#known-issues-a-failure-with-a-deadline), and in the AI assistant
+  primer as the fifth negative-testing primitive.
+
+### Changed
+- **"Why AAT exists" tells the actual origin story.** The page opened on the conclusion — a pile of Postman
+  collections — and skipped how it got there. It now opens on the problem that produced them, a service that could
+  not be tested on its own behind a dozen setup calls, and adds the two attempts that failed before the graph
+  existed: a recording proxy that discovered the chained values on its own and generated a Postman collection with
+  the extraction scripts written, which worked but baked the wiring into the recording so any other path to the same
+  goal meant recording again; and handing an LLM a list of operations and a goal, which failed for the mirror-image
+  reason, with nothing written down to guess from. Both kept the connections attached to a run rather than to the
+  operations, which is the move the graph makes. A new section walks
+  the features in the order the problems arrived — local overrides, archives and the web UI, layers, then the MCP
+  server — and a new section makes the case the page never made outright: one description does several jobs. The
+  batch a developer runs while changing something is the batch CI runs on every commit and the batch a release is
+  signed off with; debugging a local build is that same run with one node redirected rather than a fork of the suite;
+  what a pipeline leaves behind is an archive that opens in the web UI instead of scrollback; and with one
+  description instead of a copy per person, a correction lands once and holds for everyone who runs it next. The page
+  also now says why a described API is a Rosetta stone an assistant writes a client from, that
+  `aat validate --strict` is the guardrail that closes an agent's loop, and that `aat prompt`, the surviving piece of
+  the second dead end, is the least load-bearing thing in the project. The README's `Why` and the docs home carry the
+  short version, as before.
+- The docs home lists four real-API projects rather than three; `aat-qdrant` had been missing from that sentence.
+
+### Added
+- **A case study, [What a nightly run caught](https://gburgyan.github.io/aat/examples/nightly-catch/).**
+  `aat-shippo`'s scheduled run went red on 2026-09-18 because Shippo's test environment began
+  answering `POST /refunds` with `201 Created` and `"status": "ERROR"`, where it had answered
+  `PENDING` the day before. The page is the diagnosis end to end — the failing batch downloaded as
+  one file, `aat run show --step refund` naming the predicate that failed, the same command against
+  the last passing run four days earlier, and the two checks that ruled out a label-state race and
+  an intermediate status — followed by what the vendor's own documentation says and what the
+  OpenAPI spec could not say, because `ERROR` is a legal value in it. Shippo confirmed it as a known
+  test-environment defect; live refunds are unaffected. Linked from the Why page and Real APIs.
+- **A blog post for the gRPC release**, ["gRPC, without a second toolchain"](https://gburgyan.github.io/aat/blog/grpc-without-a-second-toolchain/):
+  the cross-protocol demo run, how a value crosses the boundary between an HTTP step and a gRPC one, status names
+  against a shared HTTP status, what `aat validate` catches offline, proto3's 64-bit integers, and where the support
+  was stress-tested.
+
 ## [0.3.0] - 2026-09-18
 
 The gRPC release, and the one [aat-qdrant](https://github.com/gburgyan/aat-qdrant) was built on; it needs this
@@ -1140,7 +1226,8 @@ The first tagged version.
   headers, and OAuth2 token caching.
 - The Petstore example, the user documentation, and the Apache 2.0 license.
 
-[Unreleased]: https://github.com/gburgyan/aat/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/gburgyan/aat/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/gburgyan/aat/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/gburgyan/aat/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/gburgyan/aat/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gburgyan/aat/compare/v0.0.4...v0.1.0
