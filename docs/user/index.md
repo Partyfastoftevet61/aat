@@ -4,6 +4,12 @@
 
 AAT describes an API as a graph of operations: what each one takes and returns, which must run before which, and which undoes which. From that graph it runs multi-step test plans that wire data between steps, check every response, clean up after themselves, and leave an archive of every request and decision. LLMs are optional and authoring-time only: `aat prompt` can draft a plan, and the MCP server teaches AI tools your API. Execution never calls an LLM.
 
+One description of your API does three jobs:
+
+- **Test real flows, not single calls** — chains of dependent calls over REST and [gRPC](grpc.md), wired, checked, and cleaned up.
+- **Test locally without editing anything** — [point one operation at your laptop](local-dev.md) and the rest of the flow runs against the real environment.
+- **Teach an AI agent the API** — the [MCP server](mcp-server.md) hands a coding assistant the same graph the tests run.
+
 ```bash
 aat-sandbox init shop && cd shop     # after installing: see Install
 aat-sandbox serve &
@@ -14,7 +20,7 @@ aat run plan full-lifecycle
 
 AAT started with a service that could not be tested on its own, and half a dozen Postman collections for reaching it: everyone's own copy, none of them reliable, none in source control, and the chaining buried in pre-request scripts. The knowledge of how an API works belongs in your repository, in small files you review like code and an AI coding tool can read one at a time. See [Why AAT exists](why.md).
 
-AAT keeps three things apart. **API knowledge** is a [graph](graphs.md) of operations and request templates, written once. **Test intent** is a [plan](plans.md) that lists steps, not wiring. **Variation** is [layers](batch-layers.md) and [environments](environments.md) that turn one plan into a matrix. Describing the API that precisely turned out to be worth more than the tests: the question stopped being *what else should this run?* and became *what else can read this?* The [MCP server](mcp-server.md) and the [run archives](archives.md) fell out of having the graph, and four projects against [Duffel, Stripe, Shippo, and Qdrant](examples/real-apis.md) are the proof that it runs.
+AAT keeps three things apart. **API knowledge** is a [graph](graphs.md) of operations and request templates, written once. **Test intent** is a [plan](plans.md) that lists steps, not wiring. **Variation** is [layers](batch-layers.md) and [environments](environments.md) that turn one plan into a matrix. Describing the API that precisely turned out to be worth more than the tests: the question stopped being *what else should this run?* and became *what else can read this?* The [MCP server](mcp-server.md) and the [run archives](archives.md) fell out of having the graph, and four projects against [Duffel, Stripe, Shippo, and Qdrant](examples/real-apis.md) are the proof that it runs — one of them [caught a regression](examples/nightly-catch.md) in Shippo's test environment overnight, which Shippo confirmed.
 
 ## Start Here
 

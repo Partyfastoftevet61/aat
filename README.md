@@ -13,6 +13,14 @@
 
 </div>
 
+One description of your API does three jobs:
+
+- **Test real flows, not single calls.** Chains of dependent calls over REST and [gRPC](https://gburgyan.github.io/aat/grpc/), with the data wired between steps, every response checked, and what was created cleaned up afterwards.
+- **Test locally without editing anything.** [Point one operation at your laptop](https://gburgyan.github.io/aat/local-dev/) and the rest of the flow keeps running against the real environment, with its auth intact.
+- **Teach an AI agent the API.** [`aat mcp serve`](https://gburgyan.github.io/aat/mcp-server/) hands a coding assistant the same graph the tests run. Working clients have come out of a single prompt in Java, Go, Python, C#, Perl, and Lisp.
+
+The same YAML does all three; nothing is copied per job.
+
 ## 60-second quick start
 
 With `aat` and `aat-sandbox` [installed](#install) and on your `PATH`, the offline shop example runs with no signup and no network:
@@ -58,7 +66,6 @@ Nobody wired the data by hand: the graph says where each input comes from, and t
 - **Run one plan across every configuration.** Regions, card brands, parcel sizes: layers multiply plans into a matrix, and permutations that would send the same requests are skipped: [Matrix testing](https://gburgyan.github.io/aat/batch-layers/).
 - **Give integrators a kit their AI tools can code against.** The graph your tests keep true, served over MCP; a working client has taken a single prompt: [Share your API with integrators](https://gburgyan.github.io/aat/integration-kit/).
 - **Send a run instead of a screenshot.** One file with every request, response, resolved value, retry, and assertion, opened in the same viewer by whoever you send it to: [Archives](https://gburgyan.github.io/aat/archives/).
-- **Point one call at your laptop.** Route a single operation to a local build, with the environment's auth intact, without editing the project: [Local development](https://gburgyan.github.io/aat/local-dev/).
 
 ## Why
 
@@ -100,6 +107,8 @@ Four complete projects against real, public APIs live in their own repositories.
 | [aat-qdrant](https://github.com/gburgyan/aat-qdrant) | all 52 public unary gRPC methods, 77 operations, 38 plans, 6 layers; 38/38 in ~70 s | **A vector database over gRPC**: the protobuf a real API sends (oneofs, maps, 64-bit ids, a cursor that is a message), errors asserted by status name, credentials as metadata, and a few REST reads of the same data checked against Qdrant's OpenAPI spec. It is what AAT's gRPC support was stress-tested against |
 
 Each is a complete AAT project in its own repository: clone it, export a free test-mode key, and it runs against your account. aat-qdrant needs no account: it runs against a pinned Qdrant in Docker, and needs aat 0.3.0 or later, the first release with gRPC. [Real APIs](https://gburgyan.github.io/aat/examples/real-apis/) says what each covers and leaves out.
+
+They have also done real work. aat-shippo runs nightly against Shippo's test API, and in September 2026 it caught that environment's refunds changing behaviour overnight: a regression Shippo confirmed, in test only, with live unaffected. [What a nightly run caught](https://gburgyan.github.io/aat/examples/nightly-catch/) is the diagnosis, from the one file the failing run left behind. And before any of the four were built, coding agents in clean rooms, given only AAT's published docs and the API's public documentation, built a Duffel project twice and a Stripe project three times, from one prompt each. Every attempt validated clean and passed every plan it wrote; the Duffel runs handled 13 of the 14 flows asked for unaided, the Stripe runs 13 of 13. The projects above are separate builds with more human curation; the [launch post](https://gburgyan.github.io/aat/blog/introducing-aat/) has the clean-room story.
 
 ## What it does
 
