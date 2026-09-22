@@ -115,6 +115,7 @@ export interface StepDetail {
   resolutions?: ResolutionDetail[];
   errorClassification?: ErrorClassDetail;
   expectFailure?: ExpectFailureDetail;
+  knownIssue?: KnownIssueDetail;
   responseBodyError?: ResponseBodyErrorDetail;
   oasValidation?: OASValidationDetail;
   transformScript?: string;
@@ -293,6 +294,16 @@ export interface ExpectFailureDetail {
   expected: string[];
   actual: string;
   passed: boolean;
+}
+
+/** A step's knownIssue entry: why a failed step sits inside a passed run. */
+export interface KnownIssueDetail {
+  until: string;
+  reason: string;
+  url?: string;
+  applied?: boolean;
+  expired?: boolean;
+  resolved?: boolean;
 }
 
 export interface ResponseBodyErrorDetail {

@@ -759,6 +759,7 @@ func deepCopyStep(s Step) Step {
 	}
 
 	cp.Repeat = s.Repeat.Clone()
+	cp.KnownIssue = s.KnownIssue.Clone()
 
 	if len(s.Mutations) > 0 {
 		cp.Mutations = make([]Mutation, len(s.Mutations))

@@ -2,18 +2,21 @@
   import type {
     ErrorClassDetail,
     ExpectFailureDetail,
+    KnownIssueDetail,
     ResponseBodyErrorDetail,
   } from '../lib/types';
 
   interface Props {
     errorClassification?: ErrorClassDetail;
     expectFailure?: ExpectFailureDetail;
+    knownIssue?: KnownIssueDetail;
     responseBodyError?: ResponseBodyErrorDetail;
   }
 
   let {
     errorClassification,
     expectFailure,
+    knownIssue,
     responseBodyError,
   }: Props = $props();
 
@@ -74,6 +77,41 @@
   </div>
 {/if}
 
+{#if knownIssue}
+  <div class="error-section">
+    <h4 class="error-section-title">Known Issue</h4>
+    <div class="error-detail-grid">
+      <span class="error-detail-label">Status</span>
+      <span>
+        {#if knownIssue.resolved}
+          <span class="badge badge-sm badge-success">PASSING AGAIN</span>
+        {:else if knownIssue.expired}
+          <span class="badge badge-sm badge-error">EXPIRED</span>
+        {:else}
+          <span class="badge badge-sm badge-skipped">COVERED</span>
+        {/if}
+      </span>
+      <span class="error-detail-label">Until</span>
+      <span>{knownIssue.until}</span>
+      <span class="error-detail-label">Reason</span>
+      <span>{knownIssue.reason}</span>
+      {#if knownIssue.url}
+        <span class="error-detail-label">Tracked</span>
+        <span><a href={knownIssue.url} target="_blank" rel="noopener noreferrer">{knownIssue.url}</a></span>
+      {/if}
+    </div>
+    <p class="known-issue-note">
+      {#if knownIssue.resolved}
+        The step passes, so this entry is no longer earning its place. Remove it.
+      {:else if knownIssue.expired}
+        The entry has lapsed, so this failure counts again.
+      {:else}
+        This failure did not turn the run red. It will from {knownIssue.until}.
+      {/if}
+    </p>
+  </div>
+{/if}
+
 {#if responseBodyError}
   <div class="error-section">
     <h4 class="error-section-title">Response Body Error</h4>
@@ -97,3 +135,11 @@
     </div>
   </div>
 {/if}
+
+<style>
+  .known-issue-note {
+    margin: 0.5rem 0 0;
+    font-size: 0.85rem;
+    color: var(--text-muted, #888);
+  }
+</style>

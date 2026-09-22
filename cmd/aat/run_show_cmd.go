@@ -420,6 +420,11 @@ type shownRunList struct {
 	Steps          []shownStepRow       `json:"steps"`
 	Cleanup        []shownStepRow       `json:"cleanup,omitempty"`
 	CleanupSkipped []CleanupSkipSummary `json:"cleanup_skipped,omitempty"`
+	// KnownIssues explains why a passed run can hold a failed step, and
+	// KnownIssuesResolved which entries have outlived what they were for.
+	KnownIssues         []archive.KnownIssueRecord `json:"known_issues,omitempty"`
+	KnownIssuesResolved []archive.KnownIssueRecord `json:"known_issues_resolved,omitempty"`
+	EndedEarly          bool                       `json:"ended_early,omitempty"`
 }
 
 // shownOAS is a run's OpenAPI validation, or its sum across a batch's runs, as
@@ -504,6 +509,17 @@ func showRun(out io.Writer, a *archive.Archive, src shownRun, format showFormat)
 		b.WriteString("\ncleanup skipped:\n")
 		writeCleanupSkips(&b, list.CleanupSkipped)
 	}
+	if len(list.KnownIssues) > 0 {
+		b.WriteString("\nknown issues:\n")
+		writeKnownIssueRows(&b, list.KnownIssues)
+		if list.EndedEarly {
+			b.WriteString("     the run ended at the step above: it left nothing to carry on from\n")
+		}
+	}
+	if len(list.KnownIssuesResolved) > 0 {
+		b.WriteString("\nknown issues no longer needed:\n")
+		writeKnownIssueRows(&b, list.KnownIssuesResolved)
+	}
 	_, err := io.WriteString(out, b.String())
 	return err
 }
@@ -523,6 +539,10 @@ func buildShownRunList(a *archive.Archive, src shownRun) shownRunList {
 		OtherAttempts: src.Attempts,
 		OAS:           newShownOAS(summary.OAS),
 		Steps:         []shownStepRow{},
+
+		KnownIssues:         a.KnownIssues,
+		KnownIssuesResolved: a.KnownIssuesResolved,
+		EndedEarly:          a.Result.EndedEarly,
 	}
 	verificationNodes := map[string]bool{}
 	if a.Metadata.Plan != nil {
@@ -628,6 +648,28 @@ func writeCleanupSkips(b *strings.Builder, skips []CleanupSkipSummary) {
 	line("NODE", "FOR", "REASON")
 	for _, s := range skips {
 		line(s.Node, s.CleanupFor, archive.CleanupSkipRecord(s).Description())
+	}
+}
+
+// writeKnownIssueRows writes the table of knownIssue entries a run applied,
+// which is what explains a passed run holding a step marked FAIL.
+func writeKnownIssueRows(b *strings.Builder, issues []archive.KnownIssueRecord) {
+	stepWidth, untilWidth := len("STEP"), len("UNTIL")
+	for _, ki := range issues {
+		stepWidth = max(stepWidth, len(ki.StepID))
+		untilWidth = max(untilWidth, len(ki.Until.String()))
+	}
+	line := func(step, until, reason string) {
+		b.WriteString(strings.TrimRight(fmt.Sprintf("     %-*s  %-*s  %s", stepWidth, step, untilWidth, until, reason), " "))
+		b.WriteByte('\n')
+	}
+	line("STEP", "UNTIL", "REASON")
+	for _, ki := range issues {
+		reason := ki.Reason
+		if ki.Resolved {
+			reason = "passing again; remove the entry"
+		}
+		line(ki.StepID, ki.Until.String(), reason)
 	}
 }
 

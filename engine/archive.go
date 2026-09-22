@@ -23,15 +23,19 @@ func ToArchive(result *RunResult, meta archive.ArchiveMetadata, baseURL string, 
 	a := &archive.Archive{
 		Metadata: meta,
 		Result: archive.ArchiveResult{
-			Outcome:    result.Outcome.String(),
-			Error:      errString(result.Error),
-			DurationMs: result.Elapsed().Milliseconds(),
+			Outcome:     result.Outcome.String(),
+			Error:       errString(result.Error),
+			DurationMs:  result.Elapsed().Milliseconds(),
+			KnownIssues: len(result.KnownIssues),
+			EndedEarly:  result.EndedEarly,
 		},
 	}
 
 	a.Steps = convertStepResults(result.Steps, baseURL)
 	a.Cleanup = convertStepResults(result.CleanupResults, baseURL)
 	a.CleanupSkipped = convertCleanupSkips(result.CleanupSkipped)
+	a.KnownIssues = convertKnownIssues(result.KnownIssues)
+	a.KnownIssuesResolved = convertKnownIssues(result.KnownIssuesResolved)
 	a.Metadata.InstantiatedPlan = redactPlan(result.InstantiatedPlan)
 
 	// Redact fails only on a value encoding/json cannot marshal. The archive is
@@ -104,6 +108,16 @@ func convertStepResult(s StepResult, baseURL string) archive.StepRecord {
 			Actual:     s.ExpectFailure.ActualStatus,
 			ActualName: grpcStatusName(s.Response),
 			Passed:     s.ExpectFailure.Passed,
+		}
+	}
+	if s.KnownIssue != nil {
+		rec.KnownIssue = &archive.KnownIssueRecord{
+			Until:    s.KnownIssue.Until,
+			Reason:   s.KnownIssue.Reason,
+			URL:      s.KnownIssue.URL,
+			Applied:  s.KnownIssue.Applied,
+			Expired:  s.KnownIssue.Expired,
+			Resolved: s.KnownIssue.Resolved,
 		}
 	}
 	if len(s.DisplayOutputs) > 0 {
@@ -398,4 +412,26 @@ func toRawMessage(data []byte) json.RawMessage {
 	// Not valid JSON — encode as a JSON string
 	encoded, _ := json.Marshal(string(data))
 	return json.RawMessage(encoded)
+}
+
+// convertKnownIssues turns the run-level knownIssue lists into records, each
+// naming the step it governed.
+func convertKnownIssues(applied []KnownIssueApplied) []archive.KnownIssueRecord {
+	if len(applied) == 0 {
+		return nil
+	}
+	records := make([]archive.KnownIssueRecord, len(applied))
+	for i, a := range applied {
+		records[i] = archive.KnownIssueRecord{
+			StepID:   a.StepID,
+			Node:     a.Node,
+			Until:    a.Until,
+			Reason:   a.Reason,
+			URL:      a.URL,
+			Applied:  a.Applied,
+			Expired:  a.Expired,
+			Resolved: a.Resolved,
+		}
+	}
+	return records
 }

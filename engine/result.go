@@ -55,6 +55,16 @@ type RunResult struct {
 	Error            error
 	InstantiatedPlan *plan.Plan // fully merged plan with graph defaults, nil on early errors
 
+	// KnownIssues lists the entries that kept a failure out of this run's
+	// outcome. When it is non-empty, Outcome is passed although a step failed.
+	KnownIssues []KnownIssueApplied
+	// KnownIssuesResolved lists entries whose step passed anyway, so the
+	// entry has outlived the defect and should be deleted.
+	KnownIssuesResolved []KnownIssueApplied
+	// EndedEarly is true when a covered failure stopped the run before its
+	// last step. The run reports passed, but it did not test everything.
+	EndedEarly bool
+
 	// Stopped is true when execution halted at a --stop-after checkpoint.
 	Stopped bool
 	// StoppedAt is the StepID of the checkpoint step (set when Stopped is true).
@@ -106,8 +116,12 @@ type StepResult struct {
 	DisplayOutputs    []DisplayOutput            // outputs tagged with display labels
 	ExpectFailure     *ExpectFailureResult       // non-nil for negative assertion steps
 	ResponseBodyError *ResponseBodyError         // non-nil when error detected in 2xx response body
-	ActualBaseURL     string                     // executor's BaseURL used for this step (set when Request is non-nil)
-	OriginalPath      string                     // request path before rewriting (empty if no rewrite occurred)
+	// KnownIssue is set when the step carried a knownIssue entry, whether or
+	// not it ended up applying. Applied says it kept this step's failure out
+	// of the run's outcome; Expired says the entry had lapsed.
+	KnownIssue    *KnownIssueResult
+	ActualBaseURL string // executor's BaseURL used for this step (set when Request is non-nil)
+	OriginalPath  string // request path before rewriting (empty if no rewrite occurred)
 	// CleanupFor links a cleanup step to what it cleans up after: the ID of
 	// the step that created the resource, or of the cleanup step before it in
 	// a chain. Empty for main steps and for plan-level cleanup steps that are
@@ -186,6 +200,25 @@ type ExpectFailureResult struct {
 	ActualStatus     int                   // the actual response status
 	Passed           bool                  // true if ActualStatus is in ExpectedStatuses
 	Description      string                // from plan's expectFailure.description
+}
+
+// KnownIssueResult records a step's knownIssue entry and what it did.
+type KnownIssueResult struct {
+	Until   plan.Date // the last day the entry applies
+	Reason  string    // what the defect is
+	URL     string    // where it is tracked, if anywhere
+	Expired bool      // the date had passed, so the entry did not apply
+	Applied bool      // the entry kept this step's failure out of the run outcome
+	// Resolved is true when the step passed although an entry was in force,
+	// which means the entry has outlived the defect.
+	Resolved bool
+}
+
+// KnownIssueApplied names the step an entry governed, for the run-level lists.
+type KnownIssueApplied struct {
+	StepID string
+	Node   string
+	KnownIssueResult
 }
 
 // SelectionDecision records how a particular array selection was resolved.

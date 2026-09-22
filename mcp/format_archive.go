@@ -127,6 +127,18 @@ func formatStepRecord(s *archive.StepRecord, idx, total int) string {
 			result, s.ExpectFailure.Expected, expectFailureActual(s.ExpectFailure))
 	}
 
+	// KnownIssue: why a failed step did not turn the run red.
+	if s.KnownIssue != nil {
+		switch {
+		case s.KnownIssue.Resolved:
+			fmt.Fprintf(&b, "**Known Issue:** RESOLVED — the step passes; remove the entry (expires %s)\n\n", s.KnownIssue.Until)
+		case s.KnownIssue.Expired:
+			fmt.Fprintf(&b, "**Known Issue:** EXPIRED %s — the failure counts again. %s\n\n", s.KnownIssue.Until, s.KnownIssue.Reason)
+		case s.KnownIssue.Applied:
+			fmt.Fprintf(&b, "**Known Issue:** the failure is covered until %s. %s\n\n", s.KnownIssue.Until, s.KnownIssue.Reason)
+		}
+	}
+
 	// Request body (truncated), as fields when it is form-encoded
 	if s.Request != nil && len(s.Request.Body) > 0 {
 		if archive.IsFormMediaType(archive.HeaderValue(s.Request.Headers, "Content-Type")) {
@@ -563,6 +575,11 @@ func suggestNextSteps(category string) string {
 func findFailedSteps(steps []archive.StepRecord) []archive.StepRecord {
 	var failed []archive.StepRecord
 	for _, s := range steps {
+		// A failure a knownIssue covers is accounted for and has a date; it is
+		// not what an assistant asking "why did this run fail?" is looking for.
+		if s.KnownIssue != nil && s.KnownIssue.Applied {
+			continue
+		}
 		isFailed := false
 		if s.Error != "" {
 			isFailed = true

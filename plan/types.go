@@ -18,6 +18,19 @@ type Plan struct {
 	Headers   map[string]string  `yaml:"headers,omitempty" json:"headers,omitempty"`
 	Intent    Intent             `yaml:"intent,omitempty" json:"intent,omitempty"`
 	Execution Execution          `yaml:"execution" json:"execution"`
+	// KnownIssue applies to every step in the plan that does not declare its
+	// own. Use it when a whole scenario is blocked on something understood;
+	// prefer a step's own entry, which says precisely what is affected.
+	KnownIssue *KnownIssue `yaml:"knownIssue,omitempty" json:"knownIssue,omitempty"`
+}
+
+// KnownIssueFor returns the entry governing a step: the step's own if it has
+// one, otherwise the plan's, otherwise nil.
+func (p *Plan) KnownIssueFor(s Step) *KnownIssue {
+	if s.KnownIssue != nil {
+		return s.KnownIssue
+	}
+	return p.KnownIssue
 }
 
 // Metadata captures provenance information about when and why a plan was created.
@@ -77,6 +90,10 @@ type Step struct {
 	Repeat        *RepeatConfig            `yaml:"repeat,omitempty" json:"repeat,omitempty"` // send the request until a condition holds (see RepeatConfig)
 	Assertions    *Assertions              `yaml:"assertions,omitempty" json:"assertions,omitempty"`
 	ExpectFailure *ExpectFailure           `yaml:"expectFailure,omitempty" json:"expectFailure,omitempty"`
+	// KnownIssue keeps this step's failure from turning the run red until its
+	// date passes. The step still runs and still reads as failed; only the
+	// run's outcome is forgiving. A step's own entry wins over the plan's.
+	KnownIssue *KnownIssue `yaml:"knownIssue,omitempty" json:"knownIssue,omitempty"`
 	// RawBody, when non-empty, replaces the adapter-built request body at
 	// execution time. Lets authors inject malformed payloads that bypass the
 	// template's placeholder substitution entirely.

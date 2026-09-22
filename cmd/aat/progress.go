@@ -58,7 +58,7 @@ func (o *CLIProgressObserver) OnRunComplete(result *engine.RunResult) {
 	elapsed := formatDuration(result.Elapsed())
 	switch result.Outcome {
 	case engine.OutcomePassed:
-		_, _ = fmt.Fprintf(o.out, "%s (%d/%d steps, %s)\n", colorOutcome("PASSED", color), total, total, elapsed)
+		_, _ = fmt.Fprintf(o.out, "%s (%d/%d steps, %s)%s\n", colorOutcome("PASSED", color), total, planned, elapsed, knownIssueSuffix(result, color))
 	case engine.OutcomeFailed:
 		_, _ = fmt.Fprintf(o.out, "%s: %s\n", colorOutcome("FAILED", color), outcomeMessage(result))
 	case engine.OutcomeError:
@@ -69,6 +69,7 @@ func (o *CLIProgressObserver) OnRunComplete(result *engine.RunResult) {
 		_, _ = fmt.Fprintf(o.out, "%s at %q (%d/%d steps, %s)\n", colorOutcome("STOPPED", color), result.StoppedAt, total, planned, elapsed)
 	}
 	writeOASTotal(o.out, "", result.Steps, color)
+	writeKnownIssues(o.out, "", result, o.term)
 }
 
 // OnRetryStart implements RetryNotifier for plan-level retries.
@@ -186,6 +187,9 @@ func stepMarks(result engine.StepResult, color bool) string {
 	if result.Validation != nil && !result.Validation.Passed {
 		marks += "  " + colorize("ASSERTIONS FAILED", colorYellow, color)
 	}
+	if note := knownIssueNote(result); note != "" {
+		marks += "  " + colorize(note, colorDim, color)
+	}
 	if result.OASValidation != nil && result.OASValidation.HasErrors() {
 		marks += "  " + colorize(fmt.Sprintf("OAS: %d warning(s)", result.OASValidation.ErrorCount()), colorYellow, color)
 	}
@@ -193,6 +197,68 @@ func stepMarks(result engine.StepResult, color bool) string {
 		marks += "  " + colorize(note, colorYellow, color)
 	}
 	return marks
+}
+
+// knownIssueNote marks a step whose failure a knownIssue covered, or whose
+// entry has lapsed, or which has started passing again. A covered failure is
+// dim rather than loud: it is accounted for, and the date is the part worth
+// reading.
+func knownIssueNote(result engine.StepResult) string {
+	ki := result.KnownIssue
+	if ki == nil {
+		return ""
+	}
+	switch {
+	case ki.Resolved:
+		return "known issue passing again"
+	case ki.Expired:
+		return "known issue EXPIRED " + ki.Until.String()
+	case ki.Applied:
+		return "known issue until " + ki.Until.String()
+	}
+	return ""
+}
+
+// knownIssueSuffix appends the count of forgiven failures to a passed run, so
+// a green line never quietly means "green except for the bits we are ignoring".
+func knownIssueSuffix(result *engine.RunResult, color bool) string {
+	n := len(result.KnownIssues)
+	if n == 0 {
+		return ""
+	}
+	word := "known issues"
+	if n == 1 {
+		word = "known issue"
+	}
+	return "  " + colorize(fmt.Sprintf("%d %s", n, word), colorYellow, color)
+}
+
+// writeKnownIssues prints the run-footer block naming every entry that kept a
+// failure out of the outcome, so a green run says what it forgave and when
+// that stops.
+func writeKnownIssues(w io.Writer, lead string, result *engine.RunResult, term TerminalInfo) {
+	color := term.IsTTY
+	if len(result.KnownIssues) > 0 {
+		_, _ = fmt.Fprintf(w, "\n%sknown issues (%d):\n", lead, len(result.KnownIssues))
+		for _, ki := range result.KnownIssues {
+			label := stepLabel(engine.StepResult{StepID: ki.StepID, Node: ki.Node}, nodeColWidth(term.Width, 58), false)
+			_, _ = fmt.Fprintf(w, "%s  %s %s\n", lead, label, colorize("until "+ki.Until.String(), colorYellow, color))
+			_, _ = fmt.Fprintf(w, "%s    %s\n", lead, colorize(ki.Reason, colorDim, color))
+			if ki.URL != "" {
+				_, _ = fmt.Fprintf(w, "%s    %s\n", lead, colorize(ki.URL, colorDim, color))
+			}
+		}
+		if result.EndedEarly {
+			_, _ = fmt.Fprintf(w, "%s  %s\n", lead, colorize("the run ended here: the step left nothing to carry on from", colorYellow, color))
+		}
+	}
+	if len(result.KnownIssuesResolved) > 0 {
+		_, _ = fmt.Fprintf(w, "\n%sknown issues no longer needed (%d):\n", lead, len(result.KnownIssuesResolved))
+		for _, ki := range result.KnownIssuesResolved {
+			label := stepLabel(engine.StepResult{StepID: ki.StepID, Node: ki.Node}, nodeColWidth(term.Width, 58), false)
+			_, _ = fmt.Fprintf(w, "%s  %s %s\n", lead, label, colorize("passing again; remove the entry", colorDim, color))
+		}
+	}
 }
 
 // oasSkipNote names the parts of a step that OAS validation left unvalidated,

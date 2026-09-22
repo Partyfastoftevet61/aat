@@ -101,7 +101,7 @@
   });
 
   let hasErrors = $derived(
-    !!(step?.errorClassification || step?.expectFailure || step?.responseBodyError),
+    !!(step?.errorClassification || step?.expectFailure || step?.knownIssue || step?.responseBodyError),
   );
 
   // Set initial active tab when tabs change
@@ -425,6 +425,7 @@
         <ErrorPanel
           errorClassification={step.errorClassification}
           expectFailure={step.expectFailure}
+          knownIssue={step.knownIssue}
           responseBodyError={step.responseBodyError}
         />
       {/if}

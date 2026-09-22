@@ -34,6 +34,10 @@ type Engine struct {
 	// KB is the optional domain knowledge base (used for prompt context, not execution).
 	KB *domain.KnowledgeBase
 
+	// Now supplies the clock a knownIssue's expiry is judged against. Nil
+	// means time.Now; tests set it to pin a date.
+	Now func() time.Time
+
 	// Observer receives real-time progress events during execution.
 	// Nil means no notifications (zero overhead).
 	Observer ProgressObserver
@@ -182,6 +186,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 	cleanupStack := &CleanupStack{}
 	var stepResults []StepResult
 	outcome := OutcomePassed
+	kiLog := newKnownIssueLog()
 	verificationSteps := plan.VerificationSteps(instantiatedPlan, e.graph, e.layeredDefaults)
 	total := len(sorted) + len(verificationSteps)
 
@@ -216,6 +221,41 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 		}
 
 		stepResult := e.executeStepWithTracking(ctx, step, node, state)
+
+		// expectFailure is resolved before anything is displayed or decided,
+		// because whether the step failed at all depends on it.
+		if stepResult.Error == nil && step.ExpectFailure != nil {
+			efr := &ExpectFailureResult{
+				ExpectedStatuses: step.ExpectFailure.Status,
+				ActualStatus:     stepResult.StatusCode,
+				Description:      step.ExpectFailure.Description,
+			}
+			// A gRPC step is matched by status name when the plan wrote one,
+			// so that codes sharing an HTTP status stay distinguishable.
+			efr.Passed = step.ExpectFailure.Status.Matches(stepResult.StatusCode, grpcStatusName(stepResult.Response))
+			stepResult.ExpectFailure = efr
+		}
+
+		// A knownIssue is resolved next, so the progress line, the archive,
+		// and the run's outcome all reflect one decision rather than three.
+		// A transport error is never covered: infrastructure is not a defect
+		// somebody else is going to fix by a date.
+		suppressed := false
+		if stepResult.Error == nil {
+			if ki, active := e.knownIssueFor(instantiatedPlan, step); ki != nil {
+				failed := e.stepFailed(step, &stepResult)
+				switch {
+				case failed && active:
+					kiLog.suppress(step, &stepResult, ki)
+					suppressed = true
+				case failed:
+					kiLog.expired(&stepResult, ki)
+				case active:
+					kiLog.resolve(step, &stepResult, ki)
+				}
+			}
+		}
+
 		stepResults = append(stepResults, stepResult)
 
 		if e.Observer != nil {
@@ -229,31 +269,22 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 				return e.abortedResult(ctx, instantiatedPlan, cleanupStack, state, stepResults)
 			}
 			outcome = OutcomeError
-			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s: %w", stepRef(step), stepResult.Error))
+			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, kiLog, stepResults, fmt.Errorf("step %s: %w", stepRef(step), stepResult.Error))
 		}
 
 		// Handle expectFailure steps: inverted success/failure logic
 		if step.ExpectFailure != nil {
-			efr := &ExpectFailureResult{
-				ExpectedStatuses: step.ExpectFailure.Status,
-				ActualStatus:     stepResult.StatusCode,
-				Description:      step.ExpectFailure.Description,
-			}
-			// A gRPC step is matched by status name when the plan wrote one,
-			// so that codes sharing an HTTP status stay distinguishable.
-			efr.Passed = step.ExpectFailure.Status.Matches(stepResult.StatusCode, grpcStatusName(stepResult.Response))
-			stepResult.ExpectFailure = efr
-			stepResults[len(stepResults)-1] = stepResult
+			efr := stepResult.ExpectFailure
 
 			if efr.Passed {
 				// Expected failure occurred — this is a PASS.
 				// Do NOT store outputs (error responses have no useful outputs).
 				// Do NOT push cleanup (no resource was created).
 				// Mechanical assertions still ran in executeStepWith; check them.
-				if stepResult.Validation != nil && !stepResult.Validation.Passed {
+				if stepResult.Validation != nil && !stepResult.Validation.Passed && !suppressed {
 					outcome = OutcomeFailed
 					if !e.ContinueOnAssertionFailure {
-						return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s failed mechanical validation", stepRef(step)))
+						return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, kiLog, stepResults, withExpiry(&stepResult, fmt.Errorf("step %s failed mechanical validation", stepRef(step))))
 					}
 				}
 				if stopped := e.checkpointResult(step, stepResults, instantiatedPlan); stopped != nil {
@@ -262,23 +293,37 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 				continue
 			}
 
-			// Unexpected success or wrong error code — FAIL.
+			// Unexpected success or wrong error code — FAIL. There are no
+			// outputs to carry on from, so the run ends either way; a known
+			// issue only keeps it out of the outcome.
+			if suppressed {
+				kiLog.endedEarly()
+				return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, kiLog, stepResults, nil)
+			}
 			outcome = OutcomeFailed
-			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s: expected failure status %s but got %s", stepRef(step),
-				strings.Join(step.ExpectFailure.Status.Strings(), ", "), ActualStatusText(stepResult.Response, stepResult.StatusCode)))
+			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, kiLog, stepResults, withExpiry(&stepResult, fmt.Errorf("step %s: expected failure status %s but got %s", stepRef(step),
+				strings.Join(step.ExpectFailure.Status.Strings(), ", "), ActualStatusText(stepResult.Response, stepResult.StatusCode))))
 		}
 
 		if stepResult.StatusCode >= 400 {
+			if suppressed {
+				kiLog.endedEarly()
+				return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, kiLog, stepResults, nil)
+			}
 			outcome = OutcomeFailed
-			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s returned %s", stepRef(step), failureStatusText(stepResult.Response, stepResult.StatusCode)))
+			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, kiLog, stepResults, withExpiry(&stepResult, fmt.Errorf("step %s returned %s", stepRef(step), failureStatusText(stepResult.Response, stepResult.StatusCode))))
 		}
 
 		// Check for response body errors (API returned 2xx but body indicates error)
 		if stepResult.ResponseBodyError != nil {
-			outcome = OutcomeFailed
 			// Do NOT store outputs — error responses produce unreliable data
 			// Do NOT push cleanup — failing node did not create a valid resource
-			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s: %s", stepRef(step), stepResult.ResponseBodyError.Summary()))
+			if suppressed {
+				kiLog.endedEarly()
+				return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, kiLog, stepResults, nil)
+			}
+			outcome = OutcomeFailed
+			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, kiLog, stepResults, withExpiry(&stepResult, fmt.Errorf("step %s: %s", stepRef(step), stepResult.ResponseBodyError.Summary())))
 		}
 
 		// Store outputs keyed by step ID (supports step aliasing)
@@ -299,16 +344,19 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 		// Strict OAS mode: a request or response that violates the spec fails
 		// the step. Checked after the cleanup push because the API may have
 		// accepted the request and created a resource.
-		if err := e.oasStrictError(step, &stepResult); err != nil {
+		if err := e.oasStrictError(step, &stepResult); err != nil && !suppressed {
 			outcome = OutcomeFailed
-			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, err)
+			return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, kiLog, stepResults, withExpiry(&stepResult, err))
 		}
 
-		// Run mechanical assertions if configured
-		if stepResult.Validation != nil && !stepResult.Validation.Passed {
+		// Run mechanical assertions if configured. The step stored its outputs
+		// above, so a covered failure here lets the rest of the plan carry on
+		// testing rather than stopping the run on a defect already accounted
+		// for.
+		if stepResult.Validation != nil && !stepResult.Validation.Passed && !suppressed {
 			outcome = OutcomeFailed
 			if !e.ContinueOnAssertionFailure {
-				return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, fmt.Errorf("step %s failed mechanical validation", stepRef(step)))
+				return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, kiLog, stepResults, withExpiry(&stepResult, fmt.Errorf("step %s failed mechanical validation", stepRef(step))))
 			}
 		}
 
@@ -328,7 +376,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (result *RunResult) {
 		outcome = verOutcome
 	}
 
-	return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, stepResults, verErr)
+	return e.endRun(ctx, instantiatedPlan, cleanupStack, state, outcome, kiLog, stepResults, verErr)
 }
 
 // runCleanup executes cleanup after the main flow. A graph-level cleanup
@@ -414,9 +462,12 @@ func (e *Engine) runCleanup(ctx context.Context, p *plan.Plan, cleanupStack *Cle
 
 // endRun runs cleanup for a run that ended with outcome and returns its result:
 // the steps that ran, what cleanup ran and skipped, and err.
-func (e *Engine) endRun(ctx context.Context, p *plan.Plan, cleanupStack *CleanupStack, state *RunState, outcome Outcome, steps []StepResult, err error) *RunResult {
-	cleanupResults, cleanupSkipped := e.runCleanup(ctx, p, cleanupStack, state, outcome, steps)
-	return &RunResult{
+func (e *Engine) endRun(ctx context.Context, p *plan.Plan, cleanupStack *CleanupStack, state *RunState, outcome Outcome, ki *knownIssueLog, steps []StepResult, err error) *RunResult {
+	// Cleanup is gated on what really happened, not on what the run reports:
+	// a failure covered by a knownIssue leaves resources in the same state an
+	// uncovered one would, so a runOn: failure cleanup must still fire.
+	cleanupResults, cleanupSkipped := e.runCleanup(ctx, p, cleanupStack, state, ki.gating(outcome), steps)
+	r := &RunResult{
 		Outcome:          outcome,
 		Steps:            steps,
 		CleanupResults:   cleanupResults,
@@ -424,6 +475,12 @@ func (e *Engine) endRun(ctx context.Context, p *plan.Plan, cleanupStack *Cleanup
 		Error:            err,
 		InstantiatedPlan: p,
 	}
+	if ki != nil {
+		r.KnownIssues = ki.applied
+		r.KnownIssuesResolved = ki.resolved
+		r.EndedEarly = ki.early
+	}
+	return r
 }
 
 // planStepIDs returns the IDs of p's main and verification steps, which no
@@ -461,7 +518,7 @@ const abortedCleanupBudget = 30 * time.Second
 // it runs cleanup under abortedCleanupBudget and records the outcome as
 // aborted with the steps that ran.
 func (e *Engine) abortedResult(ctx context.Context, p *plan.Plan, cleanupStack *CleanupStack, state *RunState, steps []StepResult) *RunResult {
-	return e.endRun(ctx, p, cleanupStack, state, OutcomeAborted, steps, fmt.Errorf("execution cancelled: %w", ctx.Err()))
+	return e.endRun(ctx, p, cleanupStack, state, OutcomeAborted, nil, steps, fmt.Errorf("execution cancelled: %w", ctx.Err()))
 }
 
 // cleanupRunOnMatches reports whether a plan-level cleanup step with the given

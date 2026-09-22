@@ -6,7 +6,7 @@ AAT is designed for automated pipelines: deterministic exit codes, machine-reada
 
 | Code | Meaning | Example Scenarios |
 |------|---------|-------------------|
-| `0` | Passed | All steps and assertions succeeded; also a `--stop-after` checkpoint (`stopped`) |
+| `0` | Passed | All steps and assertions succeeded; also a `--stop-after` checkpoint (`stopped`), and a run whose only failures a [`knownIssue`](plans.md#known-issues-a-failure-with-a-deadline) still covers |
 | `1` | Failed | One or more assertions failed; a step returned an unexpected status code |
 | `2` | Error | An unknown flag or subcommand, a manifest or environment file that cannot be loaded, a bad `--var`, a batch that finds no plans, an invalid plan file, a network failure, an authentication error |
 | `130` | Aborted | The process received `SIGINT` (Ctrl+C) or `SIGTERM` — a cancelled CI job, a timeout wrapper, a runner shutting down. Cleanup still runs and a partial archive is written |
@@ -32,6 +32,9 @@ aat run plan smoke-test --json
 | `steps` | array | Per-step results (see StepSummary below) |
 | `cleanup` | array | Cleanup step results (same schema as steps, plus `cleanup_for`: the step whose resource each one releases, or the cleanup step before it in a chain; omitted if none) |
 | `summary` | object | Aggregate stats: `total_steps`, `passed_steps`, `failed_steps` (main steps only), `duration_ms` (the run's wall-clock time, retry waits and cleanup included), and `issues` — a map of issue category to count (currently `oas` for OpenAPI violations; omitted when empty) |
+| `known_issues` | array | The [`knownIssue`](plans.md#known-issues-a-failure-with-a-deadline) entries that kept a failure out of `outcome`: `step_id`, `node`, `until`, `reason`, `url`. When this is present, a `"passed"` run still holds a failed step (omitted when empty) |
+| `known_issues_resolved` | array | Entries whose step passed anyway, so the entry has outlived the defect and should be deleted (omitted when empty) |
+| `ended_early` | bool | A covered failure stopped the run before its last step: it passed, but it did not test everything (omitted if false) |
 | `archive_path` | string | Path to the run's `archive.json` |
 | `attempts` | int | Total execution attempts (omitted if 1) |
 | `retried` | bool | Whether any retries occurred (omitted if false) |
@@ -46,7 +49,7 @@ aat run plan smoke-test --json
 | `node` | string | Graph node name |
 | `status` | int | HTTP status code (`0` when no response arrived) |
 | `duration_ms` | int | Step duration in milliseconds, from the first attempt to the end of the last, retry and pacing waits included |
-| `passed` | bool | Whether the step succeeded: no error, a status below 400 (or one its `expectFailure` lists), and no failed assertion |
+| `passed` | bool | Whether the step succeeded: no error, a status below 400 (or one its `expectFailure` lists), and no failed assertion. A step a `knownIssue` covers is still `false` here — the entry forgives the *run*, not the step |
 | `error` | string | Error message, such as `status 400` (omitted if step passed) |
 | `retries` | int | Number of step-level retries |
 | `retried_on` | array | Error category of each retried attempt, in order, such as `["transient", "transient"]` (omitted if none) |
@@ -403,7 +406,7 @@ The `tools/` directory in the AAT repository ships two stdlib-only Python script
 
 ### `tools/aat-to-junit.py`
 
-Converts a run or batch archive into JUnit XML. Each AAT step becomes a `<testcase>` (cleanup steps are prefixed `[cleanup]`), and Datadog-style `dd_tags` properties carry the HTTP method, status, URL, node name, run ID, and step index — batches add plan name, permutation, and layer tags. A step is reported as failed when it has an error, a failed assertion, a failed `expectFailure`, or an HTTP status `>= 400` without a passing `expectFailure`.
+Converts a run or batch archive into JUnit XML. Each AAT step becomes a `<testcase>` (cleanup steps are prefixed `[cleanup]`), and Datadog-style `dd_tags` properties carry the HTTP method, status, URL, node name, run ID, and step index — batches add plan name, permutation, and layer tags. A step is reported as failed when it has an error, a failed assertion, a failed `expectFailure`, or an HTTP status `>= 400` without a passing `expectFailure`. A step whose failure an unexpired [`knownIssue`](plans.md#known-issues-a-failure-with-a-deadline) covers becomes `<skipped>` rather than `<failure>`, with the reason and the date it lapses.
 
 ```bash
 # Single run → stdout

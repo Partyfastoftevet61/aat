@@ -1016,6 +1016,7 @@ func toStepDetail(s archive.StepRecord, isCleanup bool, nodeSteps map[string]str
 		Resolutions:          toResolutionDetails(s.Resolutions),
 		ErrorClassification:  toErrorClassDetail(s.ErrorClass),
 		ExpectFailure:        toExpectFailureDetail(s.ExpectFailure),
+		KnownIssue:           toKnownIssueDetail(s.KnownIssue),
 		ResponseBodyError:    toResponseBodyErrorDetail(s.ResponseBodyError),
 		OASValidation:        toOASValidationDetail(s.OASValidation),
 		TransformScript:      s.TransformScript,
@@ -1281,6 +1282,22 @@ func toErrorClassDetail(r *archive.ErrorClassRecord) *ErrorClassDetail {
 		Detail:       r.Detail,
 		Action:       r.Action,
 		RetryAttempt: r.RetryAttempt,
+	}
+}
+
+// toKnownIssueDetail carries a step's knownIssue to the UI, which needs it to
+// explain a failed step inside a passed run.
+func toKnownIssueDetail(r *archive.KnownIssueRecord) *KnownIssueDetail {
+	if r == nil {
+		return nil
+	}
+	return &KnownIssueDetail{
+		Until:    r.Until.String(),
+		Reason:   r.Reason,
+		URL:      r.URL,
+		Applied:  r.Applied,
+		Expired:  r.Expired,
+		Resolved: r.Resolved,
 	}
 }
 

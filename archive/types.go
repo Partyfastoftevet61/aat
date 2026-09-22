@@ -15,7 +15,13 @@ type Archive struct {
 	// CleanupSkipped lists the registered cleanups that did not run because
 	// they were no longer needed.
 	CleanupSkipped []CleanupSkipRecord `json:"cleanupSkipped,omitempty"`
-	Result         ArchiveResult       `json:"result"`
+	// KnownIssues lists the entries that kept a failure out of this run's
+	// outcome. When it is non-empty the run passed although a step failed.
+	KnownIssues []KnownIssueRecord `json:"knownIssues,omitempty"`
+	// KnownIssuesResolved lists entries whose step passed anyway, so the entry
+	// has outlived the defect it was written for and should be deleted.
+	KnownIssuesResolved []KnownIssueRecord `json:"knownIssuesResolved,omitempty"`
+	Result              ArchiveResult      `json:"result"`
 }
 
 // ArchiveMetadata captures provenance and context for a run.
@@ -40,21 +46,24 @@ type ArchiveMetadata struct {
 
 // StepRecord captures the execution trace for a single step.
 type StepRecord struct {
-	StepID            string                   `json:"stepId,omitempty" redact:"-"`
-	Node              string                   `json:"node" redact:"-"`
-	StartTime         time.Time                `json:"startTime,omitempty"`
-	DurationMs        int64                    `json:"durationMs"`
-	Inputs            map[string]any           `json:"inputs"`
-	Request           *RequestRecord           `json:"request,omitempty"`
-	Response          *ResponseRecord          `json:"response,omitempty"`
-	Outputs           map[string]any           `json:"outputs,omitempty"`
-	TransformScript   string                   `json:"transformScript,omitempty"`
-	Validation        *ValidationRecord        `json:"validation,omitempty"`
-	Selections        []SelectionRecord        `json:"selections,omitempty"`
-	Resolutions       []ValueResolutionRecord  `json:"resolutions,omitempty"`
-	DisplayOutputs    []DisplayOutputRecord    `json:"displayOutputs,omitempty"`
-	ErrorClass        *ErrorClassRecord        `json:"errorClassification,omitempty"`
-	ExpectFailure     *ExpectFailureRecord     `json:"expectFailure,omitempty"`
+	StepID          string                  `json:"stepId,omitempty" redact:"-"`
+	Node            string                  `json:"node" redact:"-"`
+	StartTime       time.Time               `json:"startTime,omitempty"`
+	DurationMs      int64                   `json:"durationMs"`
+	Inputs          map[string]any          `json:"inputs"`
+	Request         *RequestRecord          `json:"request,omitempty"`
+	Response        *ResponseRecord         `json:"response,omitempty"`
+	Outputs         map[string]any          `json:"outputs,omitempty"`
+	TransformScript string                  `json:"transformScript,omitempty"`
+	Validation      *ValidationRecord       `json:"validation,omitempty"`
+	Selections      []SelectionRecord       `json:"selections,omitempty"`
+	Resolutions     []ValueResolutionRecord `json:"resolutions,omitempty"`
+	DisplayOutputs  []DisplayOutputRecord   `json:"displayOutputs,omitempty"`
+	ErrorClass      *ErrorClassRecord       `json:"errorClassification,omitempty"`
+	ExpectFailure   *ExpectFailureRecord    `json:"expectFailure,omitempty"`
+	// KnownIssue is set when the step carried an entry, whether or not it
+	// applied. The step still reads as failed; see Archive.KnownIssues.
+	KnownIssue        *KnownIssueRecord        `json:"knownIssue,omitempty"`
 	ResponseBodyError *ResponseBodyErrorRecord `json:"responseBodyError,omitempty"`
 	OASValidation     *OASValidationRecord     `json:"oasValidation,omitempty"`
 	Error             string                   `json:"error,omitempty"`
@@ -138,6 +147,36 @@ type ExpectFailureRecord struct {
 	// an HTTP step.
 	ActualName string `json:"actualName,omitempty"`
 	Passed     bool   `json:"passed"`
+}
+
+// KnownIssueRecord captures a knownIssue entry and what it did on this run.
+type KnownIssueRecord struct {
+	// StepID and Node are set on the run-level lists and empty on a step's
+	// own record, where the step already says which one it is.
+	StepID string    `json:"stepId,omitempty"`
+	Node   string    `json:"node,omitempty"`
+	Until  plan.Date `json:"until"`
+	Reason string    `json:"reason"`
+	URL    string    `json:"url,omitempty"`
+	// Applied: the entry kept this step's failure out of the run's outcome.
+	Applied bool `json:"applied,omitempty"`
+	// Expired: the date had passed, so the failure counted as usual.
+	Expired bool `json:"expired,omitempty"`
+	// Resolved: the step passed, so the entry is no longer earning its place.
+	Resolved bool `json:"resolved,omitempty"`
+}
+
+// Description renders why the entry mattered, in the one form every surface
+// shows, as CleanupSkipRecord.Description does for a skipped cleanup.
+func (r KnownIssueRecord) Description() string {
+	switch {
+	case r.Resolved:
+		return "passing again; remove the entry (expires " + r.Until.String() + ")"
+	case r.Expired:
+		return "expired " + r.Until.String() + ": " + r.Reason
+	default:
+		return "until " + r.Until.String() + ": " + r.Reason
+	}
 }
 
 // ResponseBodyErrorRecord captures an error detected in a 2xx response body.
@@ -316,6 +355,12 @@ type OASSummary struct {
 type ArchiveResult struct {
 	Outcome string `json:"outcome" redact:"-"`
 	Error   string `json:"error,omitempty"`
+	// KnownIssues counts the failures an entry kept out of Outcome. When it is
+	// non-zero, a passed run still contains a failed step.
+	KnownIssues int `json:"knownIssues,omitempty"`
+	// EndedEarly is true when a covered failure stopped the run before its
+	// last step: it passed, but it did not test everything.
+	EndedEarly bool `json:"endedEarly,omitempty"`
 	// DurationMs is the run's wall-clock time, retry waits and cleanup
 	// included. Archives written before it was recorded omit it; see
 	// RunDurationMs.

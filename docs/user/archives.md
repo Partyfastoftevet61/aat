@@ -52,7 +52,9 @@ Directory names are `run-` or `batch-`, the local date and time (`YYYYMMDD-HHMMS
 | `steps` | One record per main and verification step (see below) |
 | `cleanup` | Cleanup step records in the same format; absent when no cleanup ran |
 | `cleanupSkipped` | Registered cleanups that did not run because they were no longer needed: `node`, `cleanupFor`, `reason` (`released` or `when`), and `releasedBy` or `when`. See [API Graphs: Cleanup](graphs.md#cleanup). Absent when none were skipped |
-| `result` | `outcome` (`passed`, `failed`, `error`, `aborted`, or `stopped`), `error`, and `durationMs`, the run's wall-clock time (archives written before it was recorded omit it, and the web UI then sums the step durations) |
+| `knownIssues` | The [`knownIssue`](plans.md#known-issues-a-failure-with-a-deadline) entries that kept a failure out of `result.outcome`: `stepId`, `node`, `until`, `reason`, `url`. When present, a `passed` run still holds a failed step. Absent when none applied |
+| `knownIssuesResolved` | Entries whose step passed anyway, so the entry has outlived the defect and should be deleted. Absent when none |
+| `result` | `outcome` (`passed`, `failed`, `error`, `aborted`, or `stopped`), `error`, `durationMs`, the run's wall-clock time (archives written before it was recorded omit it, and the web UI then sums the step durations), `knownIssues`, how many failures an entry covered, and `endedEarly` when a covered failure stopped the run short |
 
 Each step record holds:
 
@@ -186,11 +188,14 @@ cleanup:
   2  deleteCart   deleteCart      204  pass        0ms  createCart
 ```
 
+A run that a known issue kept green prints a `known issues:` table after the steps, naming each covered step, the date its cover runs out, and why — which is what explains a `FAIL` row inside a `PASSED` run. Entries whose step has started passing again are listed separately under `known issues no longer needed:`.
+
 `--step` takes a step ID, or a node name when that node ran only once. On its own, it prints:
 - the step's method and URL, status, result, duration and retries, and error
 - the inputs, each with where its value came from
 - the outputs, with arrays and objects by their size
 - assertion counts, with each failure
+- its [`knownIssue`](plans.md#known-issues-a-failure-with-a-deadline), when it has one: the reason, the date it lapses, and where it is tracked
 - warnings, such as a [selection tie](value-flow.md#selection-strategies)
 - a [repeated step](plans.md#repeat)'s requests, one line each: status, time, and whether `until` held, the inputs each sent that differ from the step's when it pages with `next`, and its outputs
 - the sizes of the request and response bodies, which on a repeated step are its last request's

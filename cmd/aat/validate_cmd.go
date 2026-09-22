@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gburgyan/aat/adapter"
 	"github.com/gburgyan/aat/config"
@@ -382,6 +383,9 @@ func validateCommand(args *validateArgs, out io.Writer) int {
 				Detail: detail,
 			})
 		}
+		if len(pvr.KnownIssues) > 0 {
+			sections = append(sections, knownIssueSection(pvr.KnownIssues, time.Now()))
+		}
 	}
 
 	printSections(out, sections)
@@ -496,6 +500,60 @@ type planValidationResult struct {
 	Warnings []string // fail only under --strict
 	Total    int
 	Recipes  int
+	// KnownIssues are the entries found across the project's plans, reported
+	// so a deadline is visible before a run reaches it. They never fail
+	// validation: whether the failure still counts is a question for the run,
+	// and a project should not go red offline for a date in a file.
+	KnownIssues []knownIssueEntry
+}
+
+// knownIssueEntry is one knownIssue found while validating plans.
+type knownIssueEntry struct {
+	Plan   string
+	StepID string
+	Until  plan.Date
+}
+
+// collectKnownIssues gathers a plan's entries, the plan-level one first.
+func collectKnownIssues(path string, p *plan.Plan) []knownIssueEntry {
+	var out []knownIssueEntry
+	if p.KnownIssue != nil {
+		out = append(out, knownIssueEntry{Plan: path, StepID: "(whole plan)", Until: p.KnownIssue.Until})
+	}
+	for _, step := range p.Execution.Steps {
+		if step.KnownIssue != nil {
+			out = append(out, knownIssueEntry{Plan: path, StepID: step.StepID(), Until: step.KnownIssue.Until})
+		}
+	}
+	return out
+}
+
+// knownIssueSection reports every entry with how long it has left, or how long
+// it has been lapsed. It is always OK: reporting is the whole job.
+func knownIssueSection(entries []knownIssueEntry, now time.Time) sectionResult {
+	expired := 0
+	notes := make([]string, 0, len(entries))
+	for _, e := range entries {
+		days := e.Until.DaysUntil(now)
+		var when string
+		switch {
+		case days < 0:
+			expired++
+			when = fmt.Sprintf("EXPIRED %s (%d days ago)", e.Until, -days)
+		case days == 0:
+			when = fmt.Sprintf("expires %s (today)", e.Until)
+		case days == 1:
+			when = fmt.Sprintf("expires %s (tomorrow)", e.Until)
+		default:
+			when = fmt.Sprintf("expires %s (in %d days)", e.Until, days)
+		}
+		notes = append(notes, fmt.Sprintf("%s %s: %s", e.Plan, e.StepID, when))
+	}
+	detail := fmt.Sprintf("(%d)", len(entries))
+	if expired > 0 {
+		detail = fmt.Sprintf("(%d, %d expired)", len(entries), expired)
+	}
+	return sectionResult{Name: "Known issues", Status: "OK", Detail: detail, Notes: notes}
 }
 
 // validatePlans walks all plan directories and validates each plan file.
@@ -519,6 +577,7 @@ func validatePlans(planDirs []string, g *graph.Graph, graphDir, layersDir string
 		}
 		switch v := parsed.(type) {
 		case *plan.Plan:
+			result.KnownIssues = append(result.KnownIssues, collectKnownIssues(entry.FullPath, v)...)
 			if _, err := plan.InstantiateAndValidate(v, g); err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", entry.FullPath, err))
 			}
